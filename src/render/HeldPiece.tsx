@@ -41,10 +41,11 @@ export function HeldPiece() {
 
   return (
     <>
-      {/* Invisible ground-plane catcher for pointer position + click-to-commit. */}
-      <mesh rotation={[-Math.PI / 2, 0, 0]} onPointerMove={onMove} onPointerDown={onDown} visible={false}>
+      {/* Transparent ground-plane catcher for pointer position + click-to-commit.
+          Must stay visible (three.js skips invisible meshes when raycasting). */}
+      <mesh rotation={[-Math.PI / 2, 0, 0]} onPointerMove={onMove} onPointerDown={onDown}>
         <planeGeometry args={[200, 200]} />
-        <meshBasicMaterial />
+        <meshBasicMaterial transparent opacity={0} depthWrite={false} />
       </mesh>
       {/* Translucent ghost preview (inert). */}
       <mesh position={pos}>
