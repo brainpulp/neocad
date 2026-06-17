@@ -207,3 +207,14 @@ The three "wow" moments, in natural build order:
 - Static stability verdicts, FEA stress/failure, soft-body deformation (future evaluators).
 - Parts kit beyond primitive-backed stock; STEP export; accounts/cloud save/galleries.
 - Distinct fastener *strengths* (names ship now, strengths come with the failure evaluator).
+
+---
+
+## 12. Details To Resolve During Planning
+
+These do not change the spec's intent but must be pinned down in the implementation plan:
+
+- **Rope state serialization (§6d, §9):** define concretely what a rope/cable's `state` serializes as (e.g. list of node positions, or rest length + endpoints) so save→load round-trip and the "rope holds a weight" scenario test have a defined assertion target.
+- **Held-piece snapping (§3):** specify grid resolution, snap tolerance, and whether snapping is toggleable.
+- **Document lifecycle (§7, §8):** define the New / Open / autosave-restore flow — how the single IndexedDB autosaved working document interacts with explicit Save/Open of named `.neocad.json` files (overwrite on load? clear/new? restore prompt on launch?).
+- **Determinism (§1, §4, §9):** confirm the **fixed-timestep** Jolt configuration required for the deterministic scenario tests to hold.
