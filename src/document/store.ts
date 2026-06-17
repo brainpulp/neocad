@@ -1,6 +1,7 @@
 import { createStore } from 'zustand/vanilla'
-import { emptyDocument, type Document, type Piece, type StockType } from './types'
+import { emptyDocument, type Document, type Piece, type StockType, type Vec3 } from './types'
 import * as ops from './document'
+import { makePiece } from './catalog'
 
 export interface DocState {
   doc: Document
@@ -12,6 +13,8 @@ export interface DocState {
   /** The stock tool selected in the palette (held-piece placement), or null. */
   activeTool: StockType | null
   setActiveTool: (tool: StockType | null) => void
+  /** Commit the active-tool stock as a piece at the given (already-snapped) position. */
+  commitHeldAt: (position: Vec3) => void
   /** Bumped whenever the physics world must be rebuilt from scratch (e.g. reset). */
   worldEpoch: number
   /** Reset every piece's live State back to its Definition and rebuild physics. */
@@ -28,7 +31,7 @@ export interface DocState {
 export type DocStore = ReturnType<typeof createDocStore>
 
 export function createDocStore(initial: Document = emptyDocument()) {
-  return createStore<DocState>((set) => {
+  return createStore<DocState>((set, get) => {
     // Apply a structural Definition edit, pushing the prior doc onto the undo stack.
     const commit = (next: (doc: Document) => Document) =>
       set((s) => ({
@@ -45,6 +48,12 @@ export function createDocStore(initial: Document = emptyDocument()) {
       setRunning: (running) => set({ running }),
       activeTool: null,
       setActiveTool: (activeTool) => set({ activeTool }),
+      commitHeldAt: (position) => {
+        const tool = get().activeTool
+        if (!tool) return
+        get().addPiece(makePiece(tool, position))
+        set({ activeTool: null })
+      },
       worldEpoch: 0,
       reset: () =>
         set((s) => ({
