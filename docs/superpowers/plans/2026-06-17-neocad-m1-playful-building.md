@@ -185,7 +185,7 @@ it('every stock entry maps to a valid primitive', () => {
   for (const s of Object.values(STOCK))
     expect(['box', 'cylinder', 'sphere']).toContain(s.primitive)
 })
-it('makePiece(joist) produces a box piece with default dims and steel material', () => {
+it('makePiece(joist) produces a box piece with default dims and wood material', () => {
   const p = makePiece('joist', [0, 1, 0])
   expect(p.stockType).toBe('joist')
   expect(p.material).toBe('wood')
@@ -208,6 +208,8 @@ export const STOCK = {
   // ...tube, dowel, slat
 } as const
 ```
+
+> **All 8 stock types are required** (per spec §6b): `rod`, `tube`, `dowel`, `slat`, `joist`, `panel`, `block`, `ball`. The example above spells out 5; the implementer MUST also add `tube` (cylinder, hollow look — collision approximated as solid cylinder in M1), `dowel` (cylinder, thin), and `slat` (box, thin plank). The `StockType` union in Task 2 enumerates all 8, so a missing entry is a type error.
 
 - [ ] **Step 4: Run, verify pass.**
 - [ ] **Step 5: Commit** — `git commit -m "feat: stock catalog and makePiece factory"`
@@ -352,7 +354,8 @@ it('an anchored piece does not move', () => {
 - [ ] **Step 2: Run, verify fails.**
 - [ ] **Step 3: Implement `PhysicsWorld`:**
   - Constructor: create `JoltSettings`/`PhysicsSystem`, a static ground plane at y=0, set gravity from `doc.ground.gravity`. For each piece, build a body via `makeShape`; `anchored` → `EMotionType_Static`, else `EMotionType_Dynamic` with mass derived from material `density × volume`; set initial position/rotation from `state.transform`. Keep a `Map<pieceId, bodyId>`.
-  - `step(dt)`: call `physicsSystem.Update(dt, ...)` with a **fixed** `dt` (always pass `1/60`; the test relies on this — see spec §12 determinism note).
+  - **Jolt setup detail:** `PhysicsSystem.Update(dt, collisionSteps, tempAllocator, jobSystem)` requires a `JPH::TempAllocatorImpl` and a `JobSystemThreadPool` (or single-threaded job system) created at init. Create these in `initJolt()`/the `PhysicsWorld` constructor and hold references; pass them on every `Update`.
+  - `step(dt)`: call `physicsSystem.Update(dt, 1, tempAllocator, jobSystem)` with a **fixed** `dt` (always pass `1/60`; the test relies on this — see spec §12 determinism note).
   - `syncToDocument(doc)`: for each piece, read body transform, write into `piece.state.transform`. **Definition is untouched.**
   - `dispose()`: free Jolt bodies/system (Jolt requires explicit `destroy()`).
 - [ ] **Step 4: Run, verify pass.**
