@@ -1,5 +1,5 @@
 import { createStore } from 'zustand/vanilla'
-import { emptyDocument, type Document, type Piece } from './types'
+import { emptyDocument, type Document, type Piece, type StockType } from './types'
 import * as ops from './document'
 
 export interface DocState {
@@ -9,6 +9,13 @@ export interface DocState {
   /** Whether physics is currently advancing (ambient mode). Pause sets this false. */
   running: boolean
   setRunning: (running: boolean) => void
+  /** The stock tool selected in the palette (held-piece placement), or null. */
+  activeTool: StockType | null
+  setActiveTool: (tool: StockType | null) => void
+  /** Bumped whenever the physics world must be rebuilt from scratch (e.g. reset). */
+  worldEpoch: number
+  /** Reset every piece's live State back to its Definition and rebuild physics. */
+  reset: () => void
   addPiece: (piece: Piece) => void
   updatePiece: (id: string, patch: Partial<Piece>) => void
   removePiece: (id: string) => void
@@ -36,6 +43,20 @@ export function createDocStore(initial: Document = emptyDocument()) {
       future: [],
       running: true,
       setRunning: (running) => set({ running }),
+      activeTool: null,
+      setActiveTool: (activeTool) => set({ activeTool }),
+      worldEpoch: 0,
+      reset: () =>
+        set((s) => ({
+          doc: {
+            ...s.doc,
+            pieces: s.doc.pieces.map((p) => ({
+              ...p,
+              state: { transform: structuredClone(p.definition.transform) },
+            })),
+          },
+          worldEpoch: s.worldEpoch + 1,
+        })),
       addPiece: (piece) => commit((doc) => ops.addPiece(doc, piece)),
       updatePiece: (id, patch) => commit((doc) => ops.updatePiece(doc, id, patch)),
       removePiece: (id) => commit((doc) => ops.removePiece(doc, id)),

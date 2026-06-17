@@ -1,0 +1,35 @@
+:root { color-scheme: dark; }
+* { box-sizing: border-box; }
+html, body, #root { height: 100%; margin: 0; }
+body { font-family: system-ui, sans-serif; background: #11151c; color: #e6e9ee; }
+
+.app { display: grid; grid-template-rows: auto 1fr auto; height: 100vh; }
+
+.toolbar {
+  display: flex; align-items: center; gap: 8px;
+  padding: 6px 12px; background: #1b2430; border-bottom: 1px solid #2a3543;
+}
+.toolbar .brand { margin-right: 8px; }
+.toolbar .sep { width: 1px; height: 20px; background: #2a3543; margin: 0 4px; }
+.toolbar button { background: #2a3543; color: #e6e9ee; border: 0; padding: 4px 10px; border-radius: 4px; cursor: pointer; }
+.toolbar button:disabled { opacity: 0.4; cursor: default; }
+
+.body { display: grid; grid-template-columns: 160px 1fr 200px; min-height: 0; }
+.palette, .properties { padding: 10px; background: #161c25; overflow: auto; }
+.palette { border-right: 1px solid #2a3543; }
+.properties { border-left: 1px solid #2a3543; }
+.palette button {
+  display: block; width: 100%; text-align: left; margin: 4px 0;
+  background: #222c38; color: #e6e9ee; border: 1px solid #2a3543; padding: 6px 8px; border-radius: 4px; cursor: pointer;
+}
+.palette button.active { background: #2f6df0; border-color: #2f6df0; }
+
+.label { font-size: 11px; letter-spacing: 0.08em; opacity: 0.6; margin-bottom: 6px; }
+.muted { opacity: 0.6; }
+
+.viewport { min-width: 0; min-height: 0; position: relative; }
+
+.statusbar {
+  display: flex; gap: 16px; padding: 4px 12px; font-size: 12px;
+  background: #1b2430; border-top: 1px solid #2a3543; color: #9fb3c8;
+}

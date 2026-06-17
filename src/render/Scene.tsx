@@ -18,10 +18,11 @@ function structureKey(pieces: { id: string; anchored: boolean }[]): string {
 function Sim({ Jolt }: { Jolt: JoltModule }) {
   const store = useStoreApi()
   const doc = useDocStore((s) => s.doc)
+  const worldEpoch = useDocStore((s) => s.worldEpoch)
   const worldRef = useRef<PhysicsWorld | null>(null)
   const meshes = useRef(new Map<string, Mesh>())
 
-  const key = structureKey(doc.pieces)
+  const key = `${structureKey(doc.pieces)}#${worldEpoch}`
 
   // (Re)build the Jolt world whenever the structure changes. Full rebuild is fine
   // for M1 (small scenes); incremental add/remove is a later-milestone optimization.
