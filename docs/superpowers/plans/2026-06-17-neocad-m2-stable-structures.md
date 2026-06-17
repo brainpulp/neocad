@@ -211,7 +211,7 @@ it('select sets selectedId; clearing sets it null; removing a selected piece cle
 ```
 
 - [ ] **Step 2: Run, verify fails.**
-- [ ] **Step 3: Implement** — store: add `selectedId: string | null` (default null), `select(id)`, and make `removePiece` clear `selectedId` if it matches. In `Scene`/`PieceMesh`: add `onPointerDown` to each mesh that (only when no `activeTool` and no `fastenTool`) calls `select(piece.id)` and `e.stopPropagation()`. Add a background click on the ground catcher to clear selection. Visually highlight the selected mesh (e.g. emissive or an outline color) — pass `selected` prop to `PieceMesh`.
+- [ ] **Step 3: Implement** — store: add `selectedId: string | null` (default null), `select(id)`, and make `removePiece` clear `selectedId` if it matches. In `Scene`/`PieceMesh`: add `onPointerDown` to each mesh that (only when no `activeTool` and no `fastenTool`) calls `select(piece.id)` and `e.stopPropagation()`. To clear selection on empty-space clicks, use R3F's built-in **`onPointerMissed`** prop on `<Canvas>` (there is no always-mounted ground catcher — the transparent catcher in `HeldPiece` only exists while a stock tool is active). Visually highlight the selected mesh (e.g. emissive or an outline color) — pass `selected` prop to `PieceMesh`.
 - [ ] **Step 4: Run, verify pass.**
 - [ ] **Step 5: Commit** — `git commit -m "feat: piece selection model and click-to-select"`
 
