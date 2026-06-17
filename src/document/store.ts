@@ -6,6 +6,9 @@ export interface DocState {
   doc: Document
   past: Document[]
   future: Document[]
+  /** Whether physics is currently advancing (ambient mode). Pause sets this false. */
+  running: boolean
+  setRunning: (running: boolean) => void
   addPiece: (piece: Piece) => void
   updatePiece: (id: string, patch: Partial<Piece>) => void
   removePiece: (id: string) => void
@@ -31,6 +34,8 @@ export function createDocStore(initial: Document = emptyDocument()) {
       doc: initial,
       past: [],
       future: [],
+      running: true,
+      setRunning: (running) => set({ running }),
       addPiece: (piece) => commit((doc) => ops.addPiece(doc, piece)),
       updatePiece: (id, patch) => commit((doc) => ops.updatePiece(doc, id, patch)),
       removePiece: (id) => commit((doc) => ops.removePiece(doc, id)),
