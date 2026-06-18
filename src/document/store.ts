@@ -35,6 +35,12 @@ export interface DocState {
   /** Current world position of the held ghost (driven by pointer over ground/pieces). */
   heldPos: Vec3
   setHeldPos: (pos: Vec3) => void
+  /** Piece currently being dragged by the transform gizmo (Sim skips its mesh-sync). */
+  transformDraggingId: string | null
+  setTransformDragging: (id: string | null) => void
+  /** Live-intervene "✋ Grab" mode: drag a piece kinematically while the sim runs. */
+  grabMode: boolean
+  setGrabMode: (on: boolean) => void
   /** Currently selected piece (transient UI state — not saved, not undoable). */
   selectedId: string | null
   select: (id: string | null) => void
@@ -114,6 +120,10 @@ export function createDocStore(initial: Document = emptyDocument()) {
       setProximityTarget: (proximityTarget) => set({ proximityTarget }),
       heldPos: [0, 1.2, 0],
       setHeldPos: (heldPos) => set({ heldPos }),
+      transformDraggingId: null,
+      setTransformDragging: (transformDraggingId) => set({ transformDraggingId }),
+      grabMode: false,
+      setGrabMode: (grabMode) => set({ grabMode }),
       worldEpoch: 0,
       reset: () =>
         set((s) => ({
