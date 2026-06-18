@@ -12,6 +12,30 @@ never abstract geometry/physics jargon.
 2. `npm install`
 3. Tell Claude: **"Read CLAUDE.md and pick up where we left off."**
 
+## ⚠️ RESUMING M-TRANSFORM (current in-flight work)
+
+The latest work (the Tinkercad-style transform gizmo) is on branch **`m-transform`**, which is
+**pushed but NOT merged to `main`**. `main` ends at M2.5.
+
+To continue it on another device:
+1. `git fetch && git checkout m-transform && npm install`
+2. `npm run dev` → open the app.
+3. **Hands-on check the gizmo (the part automation couldn't verify):**
+   - Place a Block → click it → the gizmo appears. Drag the colored handles to move / raise /
+     rotate / scale. Physics should auto-pause while dragging and resume on release; the new
+     pose & size should persist (and be undoable).
+   - Click an **inline dimension label** (floats above the piece) and type an exact value.
+   - Toggle **✋ Grab** in the toolbar, press **Run**, and drag a piece around while it
+     simulates (it goes kinematic and shoves neighbors); release → it falls again.
+4. If it feels right → `git checkout main && git merge --no-ff m-transform && git push`, then
+   update this file's status + memory. If it needs tuning, likely spots: gizmo size
+   (`scale={95}` fixed, in `src/render/TransformGizmo.tsx`), rotation/scale snap, the inline
+   dimension-label click target (`src/render/DimensionLabels.tsx`).
+   - **Known dev quirk:** editing gizmo code + HMR can corrupt the R3F canvas — just refresh
+     the page. Fresh loads are clean (not a production bug).
+
+After M-Transform lands, the agreed sequence is: **Guidance Ring 2 → Ring 3 → M3 mechanisms.**
+
 ## Two-stage vision
 
 - **Stage 1 (in progress):** physics-aware builder's sandbox. Rigid-body only.
@@ -35,9 +59,13 @@ Plans: `docs/superpowers/plans/` · Backlog: `docs/BACKLOG.md`
 - **M2.5 (builder UX quick wins) — DONE & verified.** Delete pieces/fasteners, scene tree
   (select + delete), keyboard shortcuts (Delete/Esc/Ctrl+Z/Y), empty-state hint, fastener
   count in status bar. See `docs/superpowers/plans/M2.5-verification-notes.md`.
-- **M-Transform (direct manipulation) — NEXT, NOT STARTED.** Tinkercad-style move/rotate/scale
-  gizmo, inline editable dimensions, live-intervene grab; auto-pause-on-grab. Spec written
-  (`docs/superpowers/specs/2026-06-18-neocad-builder-ux-design.md`), needs its own plan.
+- **M-Transform (direct manipulation) — CODE-COMPLETE on branch `m-transform`, NOT MERGED,
+  awaiting hands-on verification.** Tinkercad-style move/rotate/scale gizmo (drei
+  `PivotControls`), inline editable dimension labels, `✋ Grab` live-intervene (kinematic drag
+  while running), auto-pause-on-grab, scale→dimensions, drift-guarded commit. 68 tests pass.
+  **The drag interaction itself was NOT auto-verifiable** (R3F reads `offsetX`, which synthetic
+  pointer events can't set) — needs a real mouse. See **"RESUMING M-TRANSFORM"** below and
+  `docs/superpowers/plans/M-Transform-verification-notes.md`.
 - **Guidance Rings 2 & 3 — NOT STARTED.** Spec §13 amendment added a guidance layer; M2
   shipped Ring 1 (proximity) only. Ring 2 (rule-based nudges) then Ring 3 (LLM "what do you
   want to make?", needs the §12 backend-key decision) are a later **Guidance milestone**.
