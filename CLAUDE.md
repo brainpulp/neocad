@@ -92,8 +92,14 @@ static build → GitHub Pages.
   - `integration.ts` — `PhysicsWorld`: compile doc → Jolt bodies/constraints,
     **fixed-dt** step (`1/60`, for determinism), sync transforms back into State only.
 - `src/render/` — `Scene.tsx` (Canvas + physics loop in `useFrame`), `PieceMesh.tsx`,
-  `HeldPiece.tsx` (ghost placement), `geometry.ts`, `snap.ts`.
-- `src/ui/` — `App.tsx` shell, `Toolbar`, `Palette`, `Properties`, `StatusBar`, `storeContext`.
+  `HeldPiece.tsx` (ghost placement), `geometry.ts`, `snap.ts`. M-Transform adds:
+  `TransformGizmo.tsx` (PivotControls move/rotate/scale, auto-pause, drift-guarded commit),
+  `transform.ts` (pure matrix→document-patch + scale→dimensions), `DimensionLabels.tsx`
+  (inline editable dims), `proximity.ts`, `FastenerMarker.tsx`, `EmptyState.tsx`.
+- `src/ui/` — `App.tsx` shell (also installs the global keyboard handler), `Toolbar`
+  (Run/Pause, Reset, ✋ Grab, Undo/Redo, Save/Open, glTF/STL), `Palette` (Stock + Fasteners),
+  `Properties` (editable), `MaterialsEditor`, `SceneTree`, `StatusBar`, `keyboard.ts`,
+  `storeContext`.
 - `src/persistence/` — `autosave.ts` (IndexedDB), `file.ts` (download/open `.neocad.json`, `downloadBlob`).
 - `src/export/` — `scene.ts` (document → throwaway Three.Group), `exporters.ts` (glTF/STL).
 - Fasteners: `document/catalog.ts` `FASTENERS` (rigid → `fixed`), `physics/integration.ts`
@@ -114,7 +120,7 @@ static build → GitHub Pages.
 ## Commands
 
 - `npm run dev` — dev server (Vite).
-- `npm test` — Vitest (23 tests; includes deterministic physics scenarios).
+- `npm test` — Vitest (68 tests; includes deterministic physics scenarios + transform/UI logic).
 - `npm run build` — production build → `dist/`.
 - Deploy: push to `main` triggers `.github/workflows/deploy.yml` (GitHub Pages).
   Enable Pages → "GitHub Actions" in repo settings once.
@@ -123,4 +129,6 @@ static build → GitHub Pages.
 
 This project is being built with the superpowers skills: brainstorm → write spec →
 write plan → execute plan (TDD, frequent commits) → verify in a real browser before
-claiming done. Continue M2 by invoking the writing-plans skill against the Stage 1 spec.
+claiming done. Each milestone runs on its own branch, verified, then merged to `main`.
+Immediate next step: hands-on-verify M-Transform (see top of file), merge, then
+brainstorm/plan **Guidance Ring 2** against the Stage 1 spec (§13).
