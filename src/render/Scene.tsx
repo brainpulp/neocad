@@ -17,7 +17,12 @@ const FIXED_DT = 1 / 60
  */
 function structureKey(doc: import('../document/types').Document): string {
   const pieces = doc.pieces
-    .map((p) => `${p.id}:${p.anchored ? 1 : 0}:${p.material}:${Object.values(p.dimensions).join(',')}`)
+    .map(
+      (p) =>
+        `${p.id}:${p.anchored ? 1 : 0}:${p.material}:${Object.values(p.dimensions).join(',')}` +
+        // transform included so a committed move/rotate rebuilds the body at the new pose
+        `:${p.state.transform.position.join(',')}:${p.state.transform.rotation.join(',')}`,
+    )
     .join('|')
   const fasteners = doc.fasteners.map((f) => f.id).join('|')
   return `${pieces}#${fasteners}`
@@ -55,6 +60,8 @@ function Sim({ Jolt }: { Jolt: JoltModule }) {
     }
     // Drive meshes from State imperatively (no per-frame React re-render).
     for (const piece of state.doc.pieces) {
+      // While the gizmo is dragging a piece, let PivotControls own its mesh.
+      if (piece.id === state.transformDraggingId) continue
       const mesh = meshes.current.get(piece.id)
       if (!mesh) continue
       const [px, py, pz] = piece.state.transform.position
