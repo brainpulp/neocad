@@ -1,5 +1,5 @@
 import { createStore } from 'zustand/vanilla'
-import { emptyDocument, type Document, type Piece, type StockType, type Vec3 } from './types'
+import { emptyDocument, type Document, type Material, type Piece, type StockType, type Vec3 } from './types'
 import * as ops from './document'
 import { makePiece } from './catalog'
 
@@ -27,6 +27,8 @@ export interface DocState {
   removePiece: (id: string) => void
   undo: () => void
   redo: () => void
+  addMaterial: (material: Material) => void
+  updateMaterial: (name: string, patch: Partial<Material>) => void
   /** Replace the whole document (Open / autosave restore). Clears history. */
   loadDoc: (doc: Document) => void
 }
@@ -100,6 +102,8 @@ export function createDocStore(initial: Document = emptyDocument()) {
             future: s.future.slice(1),
           }
         }),
+      addMaterial: (material) => commit((doc) => ops.addMaterial(doc, material)),
+      updateMaterial: (name, patch) => commit((doc) => ops.updateMaterial(doc, name, patch)),
       loadDoc: (doc) => set({ doc, past: [], future: [] }),
     }
   })

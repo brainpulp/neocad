@@ -4,6 +4,7 @@ import { StoreContext } from './storeContext'
 import { Toolbar } from './Toolbar'
 import { Palette } from './Palette'
 import { Properties } from './Properties'
+import { MaterialsEditor } from './MaterialsEditor'
 import { StatusBar } from './StatusBar'
 import { Scene } from '../render/Scene'
 import { loadDoc, saveDoc } from '../persistence/autosave'
@@ -55,7 +56,10 @@ export function App() {
           <div className="viewport">
             <Scene />
           </div>
-          <Properties />
+          <div className="rightpanel">
+            <Properties />
+            <MaterialsEditor />
+          </div>
         </div>
         <StatusBar />
       </div>

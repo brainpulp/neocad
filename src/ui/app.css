@@ -15,9 +15,18 @@ body { font-family: system-ui, sans-serif; background: #11151c; color: #e6e9ee; 
 .toolbar button:disabled { opacity: 0.4; cursor: default; }
 
 .body { display: grid; grid-template-columns: 160px 1fr 200px; min-height: 0; }
-.palette, .properties { padding: 10px; background: #161c25; overflow: auto; }
+.palette, .rightpanel { padding: 10px; background: #161c25; overflow: auto; }
 .palette { border-right: 1px solid #2a3543; }
-.properties { border-left: 1px solid #2a3543; }
+.rightpanel { border-left: 1px solid #2a3543; }
+.materials-editor { border-top: 1px solid #2a3543; margin-top: 10px; }
+.material-row { display: flex; align-items: center; gap: 6px; margin: 4px 0; }
+.material-row .material-name { flex: 1; font-size: 12px; }
+.material-row input[type='color'] { width: 24px; height: 22px; padding: 0; border: 0; background: none; }
+.material-row input.density { width: 64px; }
+.material-row input[type='text'] {
+  flex: 1; background: #222c38; color: #e6e9ee; border: 1px solid #2a3543; border-radius: 4px; padding: 4px 6px; font-size: 12px;
+}
+.material-row button { background: #2a3543; color: #e6e9ee; border: 0; padding: 4px 8px; border-radius: 4px; cursor: pointer; }
 .palette button {
   display: block; width: 100%; text-align: left; margin: 4px 0;
   background: #222c38; color: #e6e9ee; border: 1px solid #2a3543; padding: 6px 8px; border-radius: 4px; cursor: pointer;
