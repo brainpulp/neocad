@@ -28,9 +28,13 @@ Plans: `docs/superpowers/plans/` · Backlog: `docs/BACKLOG.md`
 - **M1 (playful building) — DONE & verified.** Place stock from a palette into a live
   Jolt world, held-piece placement (inert until released), play/pause/reset, materials,
   IndexedDB autosave + file save/open. See `docs/superpowers/plans/M1-verification-notes.md`.
-- **M2 (stable structures) — NOT STARTED.** Anchoring UX, rigid fasteners
-  (weld/glue/bolt/nail), stable-structure demo, glTF/STL export, materials editor,
-  properties-panel editing. Needs its own plan via the writing-plans skill.
+- **M2 (stable structures) — DONE & verified.** Rigid fasteners (weld/glue/bolt/nail) →
+  Jolt fixed constraints; **proximity fastening** (Ring 1 affordance — click a piece onto
+  another to auto-weld, no palette hunt); selection + editable Properties; materials editor;
+  fastener markers; glTF/STL export. See `docs/superpowers/plans/M2-verification-notes.md`.
+- **Guidance Rings 2 & 3 — NOT STARTED.** Spec §13 amendment added a guidance layer; M2
+  shipped Ring 1 (proximity) only. Ring 2 (rule-based nudges) then Ring 3 (LLM "what do you
+  want to make?", needs the §12 backend-key decision) are a later **Guidance milestone**.
 - **M3 (mechanisms) — NOT STARTED.** Hinge/slider/ball/rope fasteners, motors
   (axle/wheel), pulley + driven-cart demos, incremental physics-world updates.
 
@@ -56,7 +60,11 @@ static build → GitHub Pages.
 - `src/render/` — `Scene.tsx` (Canvas + physics loop in `useFrame`), `PieceMesh.tsx`,
   `HeldPiece.tsx` (ghost placement), `geometry.ts`, `snap.ts`.
 - `src/ui/` — `App.tsx` shell, `Toolbar`, `Palette`, `Properties`, `StatusBar`, `storeContext`.
-- `src/persistence/` — `autosave.ts` (IndexedDB), `file.ts` (download/open `.neocad.json`).
+- `src/persistence/` — `autosave.ts` (IndexedDB), `file.ts` (download/open `.neocad.json`, `downloadBlob`).
+- `src/export/` — `scene.ts` (document → throwaway Three.Group), `exporters.ts` (glTF/STL).
+- Fasteners: `document/catalog.ts` `FASTENERS` (rigid → `fixed`), `physics/integration.ts`
+  compiles them to Jolt `FixedConstraint`s; `render/proximity.ts` + `HeldPiece`/`Scene` drive
+  the proximity affordance; `render/FastenerMarker.tsx` shows joins.
 
 ## Conventions / gotchas
 

@@ -10,16 +10,20 @@ Living list of work. M-numbers are Stage 1 milestones from the spec
   - Jolt integration layer (fixed-dt, deterministic), render from State, app shell
   - Held-piece placement, play/pause/reset, IndexedDB autosave, file save/open
 
-## Next up — M2: Stable structures (NEEDS A PLAN)
+- **M2 — Stable structures** ✅ (verified 2026-06-18, see `plans/M2-verification-notes.md`)
+  - Rigid fasteners (weld/glue/bolt/nail) → Jolt fixed constraints
+  - **Proximity fastening** (Ring 1 affordance) + palette A→B fallback
+  - Anchoring via Properties; selection + editable Properties; materials editor
+  - Fastener markers; glTF/STL export; fastener count in status bar
 
-- Anchoring UX (toggle a piece as anchored from the Properties panel)
-- Rigid fasteners: **weld, glue, bolt, nail** (all map to a fixed constraint in v1;
-  distinct names now, diverging strengths later)
-- Two-piece fastening interaction (select A, select B, choose fastener)
-- Stable-structure demo: build a table/frame that stands; a bad one topples
-- Properties panel editing: dimensions, material dropdown, position/rotation
-- Materials editor UI: edit presets + create new materials
-- glTF export (GLTFExporter) and STL export (geometry only)
+## Next up — Guidance milestone (Rings 2 & 3) OR M3 (mechanisms)
+
+Guidance (from spec §13 amendment):
+- **Ring 2 — rule-based nudges** (offline, deterministic): a small rules engine reads doc
+  state and surfaces one contextual nudge at a time ("4 legs placed, nothing joined — …").
+- **Ring 3 — LLM intent layer**: "what do you want to make?", propose→confirm→execute→adjust,
+  constrained to parametric recipes (not freeform geometry). Needs the §12 backend-key
+  decision (bring-your-own-key vs thin serverless proxy) — Rings 1–2 must work with no key.
 
 ## Later — M3: Mechanisms
 
