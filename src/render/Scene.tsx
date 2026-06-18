@@ -10,9 +10,14 @@ import { HeldPiece } from './HeldPiece'
 
 const FIXED_DT = 1 / 60
 
-/** Stable key describing the physics-relevant structure; world rebuilds when it changes. */
-function structureKey(doc: { pieces: { id: string; anchored: boolean }[]; fasteners: { id: string }[] }): string {
-  const pieces = doc.pieces.map((p) => `${p.id}:${p.anchored ? 1 : 0}`).join('|')
+/**
+ * Stable key describing the physics-relevant structure; the world rebuilds when it
+ * changes. Includes dimensions + material because they change a body's shape/mass.
+ */
+function structureKey(doc: import('../document/types').Document): string {
+  const pieces = doc.pieces
+    .map((p) => `${p.id}:${p.anchored ? 1 : 0}:${p.material}:${Object.values(p.dimensions).join(',')}`)
+    .join('|')
   const fasteners = doc.fasteners.map((f) => f.id).join('|')
   return `${pieces}#${fasteners}`
 }
