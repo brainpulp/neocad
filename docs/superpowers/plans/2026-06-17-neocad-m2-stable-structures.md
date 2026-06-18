@@ -16,8 +16,8 @@
 
 1. **Rigid fasteners only.** `weld | glue | bolt | nail` — all compile to a Jolt **FixedConstraint** and behave identically in v1. They ship as distinct named entries (icon/label) because their strengths will diverge once the failure/FEA evaluator arrives (spec §6b). Articulated fasteners (hinge/slider/ball/rope) and motors are **M3**, not here.
 2. **Selection = single-select, transient.** Click a piece to select it (highlights); click empty space clears. Selection is UI state — not saved, not undoable. The Properties panel edits the selected piece.
-3. **Fastening interaction.** Selecting a fastener tool from the palette enters "fasten mode". Click piece A (marks it pending), then click piece B → a fastener is created. The tool stays active for rapid chaining; pending-A clears after each fastener. Esc or re-clicking the tool exits fasten mode.
-4. **Pointer priority in the viewport:** stock placement (`activeTool`) > fastening (`fastenTool`) > selection.
+3. **Fastening is proximity-first (Ring 1, spec §13.1 — the must-nail M2 affordance).** While placing a held piece, if the ghost meets an existing piece's surface (within tolerance), the app snaps the ghost to that contact and shows an **in-place join badge** (default **Weld**); committing there places the piece *and* creates the fastener — no palette trip. The left **Fasteners palette group** is the explicit fallback / join-type selector: the chosen fastener type is what proximity offers, and a click-A-then-click-B path still works. (Ring 2 rule-based nudges and Ring 3 LLM are a later "Guidance" milestone, not M2.)
+4. **Pointer priority in the viewport:** stock placement (`activeTool`, now proximity-aware) > explicit fasten click (`fastenTool` A→B fallback) > selection.
 5. **Property edits commit on blur/Enter** (not per keystroke) to avoid flooding undo history.
 6. **glTF/STL are one-way exports** of current posed geometry (spec §8). `.neocad.json` remains canonical.
 
@@ -281,11 +281,18 @@ it('addMaterial appends; updateMaterial edits by name', () => {
 
 ---
 
-## Task 7: Fastening interaction + Fasteners palette group
+## Task 7: Fastening — proximity-first (Ring 1) + palette fallback
+
+Implements the spec §13.1 mandate. Split into 7a (store logic, fully unit-tested) and
+7b (the viewport proximity affordance, logic-helper-tested + manual verify).
 
 **Files:**
-- Modify: `src/document/store.ts`, `src/ui/Palette.tsx`, `src/render/Scene.tsx`
-- Test: `tests/ui/fastening.test.ts`
+- Modify: `src/document/store.ts`, `src/document/catalog.ts` (id helper), `src/ui/Palette.tsx`,
+  `src/render/HeldPiece.tsx`, `src/render/Scene.tsx`
+- Create: `src/render/proximity.ts` (pure nearest-piece helper)
+- Test: `tests/ui/fastening.test.ts`, `tests/render/proximity.test.ts`
+
+### 7a — Store: fasten tool, A→B fallback, and proximity-commit
 
 - [ ] **Step 1: Failing test** (store logic)
 
@@ -294,7 +301,7 @@ import { it, expect } from 'vitest'
 import { createDocStore } from '../../src/document/store'
 import { makePiece } from '../../src/document/catalog'
 
-it('two fasten clicks create a fastener and clear pending-A', () => {
+it('explicit A→B clicks create a fastener of the active type and clear pending-A', () => {
   const s = createDocStore()
   const a = makePiece('joist', [0,1,0]); const b = makePiece('joist', [0,2,0])
   s.getState().addPiece(a); s.getState().addPiece(b)
@@ -315,21 +322,63 @@ it('fastenClick on the same piece twice is ignored', () => {
   expect(s.getState().doc.fasteners).toHaveLength(0)
   expect(s.getState().pendingFastenA).toBe(a.id)
 })
+
+it('commitHeldAt with a proximity target also creates a fastener to that target', () => {
+  const s = createDocStore()
+  const top = makePiece('panel', [0, 1, 0]); s.getState().addPiece(top)
+  s.getState().setActiveTool('rod')
+  s.getState().setProximityTarget(top.id)            // viewport detected a nearby piece
+  s.getState().commitHeldAt([0, 0.5, 0])
+  expect(s.getState().doc.pieces).toHaveLength(2)
+  expect(s.getState().doc.fasteners).toHaveLength(1) // leg auto-welded to the top
+  expect(s.getState().doc.fasteners[0].type).toBe('weld') // default join
+  expect(s.getState().proximityTarget).toBeNull()    // cleared after commit
+})
 ```
 
 - [ ] **Step 2: Run, verify fails.**
-- [ ] **Step 3: Implement** — store: add `fastenTool: FastenerType | null`, `setFastenTool`, `pendingFastenA: string | null`, and `fastenClick(pieceId)`:
-  - if no `fastenTool`, ignore;
-  - if `pendingFastenA` null → set it;
-  - else if `pieceId === pendingFastenA` → ignore;
-  - else create a fastener `{ id: nextFastenerId(), type: fastenTool, partA: pendingFastenA, partB: pieceId }` via `addFastener`, then clear `pendingFastenA`.
-  - Add a `nextFastenerId()` helper (mirror catalog's id counter) in store or catalog.
-  - Selecting a stock tool clears `fastenTool` and vice-versa (mutually exclusive modes).
-  - Extend the physics `structureKey` (Scene) to include `doc.fasteners.map(f=>f.id)` so adding a fastener rebuilds the world.
-  - `Palette.tsx`: add a **FASTENERS** group below STOCK, a button per `FASTENERS` entry that toggles `fastenTool`.
-  - `Scene` piece `onPointerDown`: when `fastenTool` is set, route to `fastenClick(piece.id)` instead of `select`.
+- [ ] **Step 3: Implement** — store additions:
+  - `fastenTool: FastenerType | null`, `setFastenTool` (selecting it clears `activeTool` and vice-versa — mutually exclusive modes). The **default proximity join type** is `fastenTool ?? 'weld'`.
+  - `pendingFastenA: string | null`, `fastenClick(pieceId)`: no `fastenTool`→ignore; pending null→set; same piece→ignore; else `addFastener({ id: nextFastenerId(), type: fastenTool, partA: pendingFastenA, partB: pieceId })` then clear pending.
+  - `proximityTarget: string | null`, `setProximityTarget(id)`.
+  - Extend `commitHeldAt(position)`: after adding the held piece, if `proximityTarget` is set, also `addFastener({ id: nextFastenerId(), type: fastenTool ?? 'weld', partA: <new piece id>, partB: proximityTarget })`; clear `proximityTarget`. (Capture the created piece id — refactor `makePiece` result is added, so read the last piece, or have `addPiece` return id; simplest: build the piece, add it, then add fastener referencing its id.)
+  - `nextFastenerId()` helper in `catalog.ts` (mirror `nextId`, prefix `f`).
+  - Scene `structureKey` includes `doc.fasteners.map(f=>f.id)` so adding a fastener rebuilds the world.
 - [ ] **Step 4: Run, verify pass.**
-- [ ] **Step 5: Commit** — `git commit -m "feat: fastening interaction and fasteners palette"`
+- [ ] **Step 5: Commit** — `git commit -m "feat: fasten store logic — A→B fallback and proximity-commit"`
+
+### 7b — Viewport: proximity affordance + Fasteners palette
+
+- [ ] **Step 1: Failing test** (`tests/render/proximity.test.ts`) — pure nearest-piece helper.
+
+```ts
+import { it, expect } from 'vitest'
+import { emptyDocument } from '../../src/document/types'
+import { makePiece } from '../../src/document/catalog'
+import { nearestPiece } from '../../src/render/proximity'
+
+it('finds a piece whose center is within tolerance of a point, nearest first', () => {
+  const doc = emptyDocument()
+  const a = makePiece('block', [0, 1, 0]); const b = makePiece('block', [5, 0, 0])
+  doc.pieces.push(a, b)
+  expect(nearestPiece(doc, [0, 1.2, 0], 0.5)?.id).toBe(a.id) // within 0.5 of a
+  expect(nearestPiece(doc, [9, 9, 9], 0.5)).toBeNull()       // nothing close
+})
+
+it('ignores a piece id in the exclude set (the piece being placed)', () => {
+  const doc = emptyDocument()
+  const a = makePiece('block', [0, 1, 0]); doc.pieces.push(a)
+  expect(nearestPiece(doc, [0, 1, 0], 1, new Set([a.id]))).toBeNull()
+})
+```
+
+- [ ] **Step 2: Run, verify fails.**
+- [ ] **Step 3: Implement.**
+  - `proximity.ts`: `nearestPiece(doc, point, tolerance, exclude?)` returns the closest piece (by State position distance) within `tolerance`, or null. (Center-distance is the M2-simple proxy for surface contact; good enough for the discoverability affordance.)
+  - `HeldPiece.tsx`: also raycast against existing piece meshes (not just the ground plane) so the ghost positions at a piece surface when hovering one. Each frame compute `nearestPiece(doc, ghostPos, JOIN_TOLERANCE)`; if found, `setProximityTarget(id)` and render a small **"⊕ Weld"** badge (HTML via drei `<Html>`) at the ghost + highlight the target piece; else `setProximityTarget(null)`. Commit (existing pointer-down) now auto-joins via the store change in 7a.
+  - `Palette.tsx`: add a **FASTENERS** group (buttons from `FASTENERS`) that toggles `fastenTool` — this both selects the proximity join type and enables the A→B fallback. `Scene` piece `onPointerDown`: if `fastenTool` set, route to `fastenClick(piece.id)`.
+- [ ] **Step 4: Run, verify pass** (proximity helper). Viewport behavior is covered in T10 manual verification.
+- [ ] **Step 5: Commit** — `git commit -m "feat: proximity-fastening affordance and fasteners palette"`
 
 ---
 
@@ -400,7 +449,7 @@ it('builds one mesh per piece at its state position', () => {
 
 - [ ] **Step 1:** `npm run dev`; place 4 **Rod** legs and a **Panel** top to rough out a table.
 - [ ] **Step 2:** Select the panel; in Properties confirm you can edit its name/material/dimensions and toggle Anchored; confirm edits apply (and undo works).
-- [ ] **Step 3:** Use a **Weld**/**Bolt** to fasten the legs to the top; confirm fasten-mode click A → click B creates a fastener (marker appears) and the assembly now moves as one / holds together.
+- [ ] **Step 3 (proximity — the must-nail affordance):** with the **Rod** tool, place a leg so its ghost meets the underside of the tabletop; confirm the in-place **"⊕ Weld"** badge appears and the target highlights, and that committing there both places the leg *and* welds it to the top (fastener marker appears, assembly holds together) — **without visiting the palette.** Then confirm the palette **Fasteners** group still works as the explicit A→B fallback.
 - [ ] **Step 4:** Build a deliberately unstable structure; confirm it visibly topples when running, and a well-built/anchored one stands.
 - [ ] **Step 5:** Add a new material in the Materials editor; assign it to a piece; confirm color/behavior change.
 - [ ] **Step 6:** Export glTF and STL; confirm files download and (glTF) opens in an external viewer.
@@ -408,7 +457,10 @@ it('builds one mesh per piece at its state position', () => {
 
 ---
 
-## Out of scope for M2 (→ M3)
-- Articulated fasteners (hinge/slider/ball/rope), motors (axle/wheel), pulley/cart demos.
+## Out of scope for M2
+- **Guidance Rings 2 & 3** (spec §13.2/§13.3): rule-based nudges and the LLM "what do you
+  want to make?" layer are a later **Guidance milestone** — M2 ships Ring 1 (proximity) only.
+- Dragging *existing* pieces to re-trigger proximity joins (M2 proximity fires at placement time).
+- (→ M3) Articulated fasteners (hinge/slider/ball/rope), motors (axle/wheel), pulley/cart demos.
 - Incremental physics-world updates (still full rebuild on structural change).
 - Distinct fastener strengths / failure (arrives with the FEA evaluator).
