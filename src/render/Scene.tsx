@@ -8,6 +8,7 @@ import { PieceMesh } from './PieceMesh'
 import { useDocStore, useStoreApi } from '../ui/storeContext'
 import { HeldPiece } from './HeldPiece'
 import { FastenerMarker } from './FastenerMarker'
+import { TransformGizmo } from './TransformGizmo'
 
 const FIXED_DT = 1 / 60
 
@@ -34,6 +35,8 @@ function Sim({ Jolt }: { Jolt: JoltModule }) {
   const worldEpoch = useDocStore((s) => s.worldEpoch)
   const selectedId = useDocStore((s) => s.selectedId)
   const proximityTarget = useDocStore((s) => s.proximityTarget)
+  const grabMode = useDocStore((s) => s.grabMode)
+  const selectedPiece = doc.pieces.find((p) => p.id === selectedId) ?? null
   const worldRef = useRef<PhysicsWorld | null>(null)
   const meshes = useRef(new Map<string, Mesh>())
 
@@ -58,10 +61,10 @@ function Sim({ Jolt }: { Jolt: JoltModule }) {
       world.step(FIXED_DT)
       world.syncToDocument(state.doc)
     }
-    // Drive meshes from State imperatively (no per-frame React re-render).
+    // Drive meshes from State imperatively (no per-frame React re-render). During a
+    // gizmo drag, physics is paused and the gizmo writes State, so this still applies
+    // the dragged pose to the real mesh — gizmo and Sim agree rather than compete.
     for (const piece of state.doc.pieces) {
-      // While the gizmo is dragging a piece, let PivotControls own its mesh.
-      if (piece.id === state.transformDraggingId) continue
       const mesh = meshes.current.get(piece.id)
       if (!mesh) continue
       const [px, py, pz] = piece.state.transform.position
@@ -115,8 +118,16 @@ function Sim({ Jolt }: { Jolt: JoltModule }) {
       {doc.fasteners.map((f) => (
         <FastenerMarker key={f.id} fastener={f} />
       ))}
+      {selectedPiece && !grabMode && (
+        <TransformGizmo key={`${selectedPiece.id}:${poseSig(selectedPiece)}`} piece={selectedPiece} />
+      )}
     </>
   )
+}
+
+/** Signature that changes whenever a piece's pose/size is committed, to re-seed the gizmo. */
+function poseSig(p: import('../document/types').Piece): string {
+  return `${p.definition.transform.position.join(',')}:${p.definition.transform.rotation.join(',')}:${Object.values(p.dimensions).join(',')}`
 }
 
 export function Scene() {
