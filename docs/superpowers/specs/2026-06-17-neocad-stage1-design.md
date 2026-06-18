@@ -1,8 +1,8 @@
 # NeoCad — Stage 1 Design Spec
 
-**Date:** 2026-06-17
+**Date:** 2026-06-17 (amended 2026-06-18)
 **Status:** Approved for planning
-**Scope:** Stage 1 only (the physics-aware builder's sandbox). Stage 2 (AI-assisted design) is deliberately deferred to its own future spec.
+**Scope:** Stage 1 only (the physics-aware builder's sandbox). Stage 2 (AI-assisted design — full natural-language → manufacturable design) remains deferred to its own future spec. **Amendment (2026-06-18):** Stage 1 now includes a *guidance* layer — see §1a and §13. This is a deliberate change from the original "no AI in Stage 1" stance.
 
 ---
 
@@ -13,10 +13,21 @@ NeoCad aims to let anyone with a hardware idea model it directly — collapsing 
 - **Stage 1 — Physics-aware builder's sandbox (this spec).** A web app where makers assemble real-world stock (rods, joists, panels) using real-world fasteners (welds, bolts, hinges, axles, ropes) and watch it behave under live rigid-body physics. Deterministic, testable, shippable on its own.
 - **Stage 2 — AI-assisted design (future, separate spec).** Natural language → manufacturable designs, validated against the same physical constraint framework Stage 1 establishes.
 
-Stage 1 is explicitly the **test bed** for Stage 2. It must be compelling on its own merits without any AI.
+Stage 1 is explicitly the **test bed** for Stage 2. It must be compelling on its own merits — but compelling now requires being *usable by a non-expert on first contact*, which is why guidance (§1a) is in scope.
 
 ### Target audience (first)
 People who **intend to build** — makers, tinkerers, DIY/woodworkers, fabricators. This drives a core product decision: the user-facing vocabulary mimics the real world (stock and fasteners), never abstract geometry or physics jargon.
+
+### 1a. Positioning & the usability mandate
+
+NeoCad is a **"Tinkercad Sim Lab for builders."** The reference point is also the cautionary tale: Tinkercad's sim lab, though built for children, is *not* easy to use — a user with decades of mastery across every major CAD/3D app got stuck within five minutes, at the moment of **fastening table legs to a tabletop**. The failure was discoverability: it was not obvious *how to connect two things*.
+
+This sets a hard product mandate for Stage 1: **a first-time builder must be able to make their first real thing without instruction.** We pursue this on two fronts, in priority order:
+
+1. **Affordances first (the primary fix).** Connecting two pieces must be intrinsically discoverable — no palette hunt. When a piece is dragged so it meets another (e.g. a leg's end against a tabletop), the app *offers the join in place*. If the only way to make fastening usable were an AI pointing at a button, the button would be in the wrong place. Good affordance means you rarely need to be told.
+2. **Ambient guidance second (the backstop).** For what affordances can't cover — intent the app can't infer, or a user who is simply stuck — a quiet "experienced teacher" watches the current state and offers *one contextual nudge at a time*, pointing at the right next action. It never takes over. (Full spec: §13.)
+
+The guiding image: **a child with an experienced teacher beside her, pointing at the right button when she'd otherwise be lost.** Anyone — expert or novice — should be carried past the moment of being stuck.
 
 ---
 
@@ -61,7 +72,7 @@ Saving can capture either a settled rest pose or a mid-motion pose (whatever is 
 
 These are future *evaluators* added later via the pluggable-evaluation principle (§2). They are not engine changes to the rigid-body sim.
 
-No AI, no suggestions, no rule-based hints in Stage 1 — pure deterministic playground.
+**~~No AI, no suggestions, no rule-based hints in Stage 1 — pure deterministic playground.~~** *(Superseded by the 2026-06-18 amendment.)* The **physics engine** remains a pure deterministic playground — the guidance layer (§13) sits *outside* the simulation. The AI/teacher writes to the document exactly as a user would (place pieces, add fasteners); it never perturbs the physics step, never injects nondeterminism into the sim, and the deterministic scenario tests (§9) are unaffected. Determinism is a property of the evaluator; guidance is a property of the editor.
 
 ---
 
@@ -203,7 +214,7 @@ The three "wow" moments, in natural build order:
 
 ## 11. Explicitly Deferred (not Stage 1)
 
-- AI / natural-language design / suggestions (all of Stage 2).
+- **Full Stage 2 AI** — freeform natural-language → manufacturable design, the LLM emitting arbitrary geometry, and design *suggestions/critique*. (Stage 1's guidance layer, §13, is deliberately narrower: discoverability nudges + recipe-filling, not open-ended generation.)
 - Static stability verdicts, FEA stress/failure, soft-body deformation (future evaluators).
 - Parts kit beyond primitive-backed stock; STEP export; accounts/cloud save/galleries.
 - Distinct fastener *strengths* (names ship now, strengths come with the failure evaluator).
@@ -218,3 +229,38 @@ These do not change the spec's intent but must be pinned down in the implementat
 - **Held-piece snapping (§3):** specify grid resolution, snap tolerance, and whether snapping is toggleable.
 - **Document lifecycle (§7, §8):** define the New / Open / autosave-restore flow — how the single IndexedDB autosaved working document interacts with explicit Save/Open of named `.neocad.json` files (overwrite on load? clear/new? restore prompt on launch?).
 - **Determinism (§1, §4, §9):** confirm the **fixed-timestep** Jolt configuration required for the deterministic scenario tests to hold.
+- **LLM backend / key (§13):** decide bring-your-own-key vs. a thin serverless proxy (see §13.5) — this is the one open item that touches the "static site, no backend" constraint and must be settled before the LLM tier is built.
+- **Recipe schema (§13.4):** define the parametric-recipe format the LLM fills (parameters, defaults, validation) so "make me a table" maps to a bounded, testable operation rather than freeform geometry.
+
+---
+
+## 13. Guidance Layer (Stage 1) — Affordances + Ambient Teacher
+
+The usability mandate (§1a) is met by three concentric rings, from cheapest/most-deterministic outward to most-capable. Each ring only handles what the ring inside it couldn't.
+
+### 13.1 Ring 1 — Discoverability affordances (primary, no AI)
+Pure interaction design, no model calls, fully deterministic. The single most important one:
+
+- **Proximity fastening.** When a held/dragged piece's connectable feature meets another piece's surface (within snap tolerance, §3), the app surfaces an **in-place join offer** at the contact point — a small inline control to fasten *right there*, defaulting to the most likely join (e.g. Weld for a leg-to-top contact). No trip to the left palette. This directly dissolves the Tinkercad "how do I attach the legs?" wall.
+- Contextual cursors/highlights showing what a click will connect to; clear selected/connectable states.
+
+These ship as ordinary UX and are testable as thin interaction tests (§9). They are the **first** thing M2 must nail, since M2 is where fastening arrives.
+
+### 13.2 Ring 2 — Rule-based nudges (the teacher's reflexes)
+Cheap, instant, offline, deterministic. A small rules engine reads document state (counts, selection, what's fastened, current milestone intent) and surfaces **one nudge at a time**, pointing at the right next action — e.g. *"You've placed 4 legs and a top but nothing's joined — click Weld, then click a leg."* Dismissable; can be toggled off entirely by experienced users. No network. Cannot infer novel intent — only recognizes known patterns.
+
+### 13.3 Ring 3 — LLM intent layer (the teacher's understanding)
+Engages when rules can't resolve the situation, or the user explicitly asks. **Entry point:** the opening moment is *"What do you want to make today?"* (alongside a gallery of starters and a "just start building" escape hatch, so the prompt is never a blank-page wall). Interaction loop is strictly:
+
+> **propose → confirm → execute → adjust.**
+
+The LLM **never silently executes.** It clarifies and offers: *"Are you trying to make a roof? Tell me a bit more and I'll build a first version — then you can adjust it, or take over yourself."* On confirmation it writes pieces/fasteners into the document (exactly as a user would; §4 amendment), then hands control back for hand-editing.
+
+### 13.4 Scope guard — recipes, not freeform geometry
+Freely emitting valid geometry from natural language *is* the hard part of Stage 2 and is **out of Stage 1**. In Stage 1 the LLM is constrained to **select and fill parametric recipes/templates** (e.g. `table{legs:N, topW, topL, height}`), not arbitrary geometry. This keeps generation bounded, roughly deterministic, and testable, while still delivering the "here's a first version, now adjust" moment. The recipe library grows over time; freeform generation is the Stage 2 graduation.
+
+### 13.5 Architectural consequence — the backend tension
+Rings 1–2 are free and offline and preserve the "static site, no backend, no accounts" stance. **Ring 3 requires an LLM call**, which the original static-site constraint forecloses. This must be resolved (see §12): either **bring-your-own-key** (user supplies an API key, stays backend-less) or a **thin serverless proxy** (a single function, not a full backend/accounts system). Whichever is chosen, Rings 1–2 must remain fully functional with no key and no network, so the core builder never depends on AI availability.
+
+### 13.6 Relationship to Stage 2
+This layer is *guidance for hand-building*, not *design automation*. Stage 2 remains the deeper system: freeform NL → manufacturable design with critique and constraint-validation. §13 is the on-ramp that makes Stage 1 usable; Stage 2 is the destination.
