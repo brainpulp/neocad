@@ -12,6 +12,18 @@ never abstract geometry/physics jargon.
 2. `npm install`
 3. Tell Claude: **"Read CLAUDE.md and pick up where we left off."**
 
+## ⚠️ In-flight work lives on branch `m-transform` (NOT merged)
+
+The latest work — the Tinkercad-style transform gizmo (move/rotate/scale + inline editable
+dimensions + `✋ Grab` live drag) — is on branch **`m-transform`**, pushed but **not merged**
+to `main`. It is code-complete (68 tests pass) but its drag interaction needs a **hands-on
+mouse check** before merging (automated clicks can't drive R3F's 3D handles).
+
+To continue it: `git checkout m-transform` and **read that branch's CLAUDE.md** (it has the
+full resume + verification steps) and `docs/superpowers/plans/M-Transform-verification-notes.md`.
+Quick check: `npm run dev` → place a Block → click it → drag the colored gizmo handles; try the
+dimension labels; toggle ✋ Grab + Run and drag a piece. If it feels right, merge to `main`.
+
 ## Two-stage vision
 
 - **Stage 1 (in progress):** physics-aware builder's sandbox. Rigid-body only.
