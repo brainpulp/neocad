@@ -110,6 +110,31 @@ export class PhysicsWorld {
     this.ji.Step(dt, 1)
   }
 
+  /** Live-intervene: make a body kinematic and move it toward `pos` (keeps its rotation). */
+  grabPiece(pieceId: string, pos: [number, number, number]): void {
+    const id = this.bodies.get(pieceId)
+    if (!id) return
+    const J = this.Jolt
+    if (this.bodyInterface.GetMotionType(id) !== J.EMotionType_Kinematic) {
+      this.bodyInterface.SetMotionType(id, J.EMotionType_Kinematic, J.EActivation_Activate)
+    }
+    const rot = this.bodyInterface.GetRotation(id)
+    this.bodyInterface.SetPositionAndRotation(
+      id,
+      new J.RVec3(pos[0], pos[1], pos[2]),
+      new J.Quat(rot.GetX(), rot.GetY(), rot.GetZ(), rot.GetW()),
+      J.EActivation_Activate,
+    )
+  }
+
+  /** Release a grabbed body back to dynamic so gravity acts on it again. */
+  releaseGrab(pieceId: string): void {
+    const id = this.bodies.get(pieceId)
+    if (!id) return
+    const J = this.Jolt
+    this.bodyInterface.SetMotionType(id, J.EMotionType_Dynamic, J.EActivation_Activate)
+  }
+
   /** Write current body transforms into each piece's State. Definition untouched. */
   syncToDocument(doc: Document): void {
     for (const piece of doc.pieces) {

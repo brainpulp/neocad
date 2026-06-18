@@ -13,6 +13,7 @@ body { font-family: system-ui, sans-serif; background: #11151c; color: #e6e9ee; 
 .toolbar .sep { width: 1px; height: 20px; background: #2a3543; margin: 0 4px; }
 .toolbar button { background: #2a3543; color: #e6e9ee; border: 0; padding: 4px 10px; border-radius: 4px; cursor: pointer; }
 .toolbar button:disabled { opacity: 0.4; cursor: default; }
+.toolbar button.active { background: #2f6df0; }
 
 .body { display: grid; grid-template-columns: 160px 1fr 200px; min-height: 0; }
 .palette, .rightpanel { padding: 10px; background: #161c25; overflow: auto; }

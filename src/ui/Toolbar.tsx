@@ -10,6 +10,7 @@ interface ToolbarProps {
 export function Toolbar({ onSave, onOpen, onExportGLTF, onExportSTL }: ToolbarProps) {
   const store = useStoreApi()
   const running = useDocStore((s) => s.running)
+  const grabMode = useDocStore((s) => s.grabMode)
   const canUndo = useDocStore((s) => s.past.length > 0)
   const canRedo = useDocStore((s) => s.future.length > 0)
 
@@ -20,6 +21,13 @@ export function Toolbar({ onSave, onOpen, onExportGLTF, onExportSTL }: ToolbarPr
         {running ? '⏸ Pause' : '▶ Run'}
       </button>
       <button onClick={() => store.getState().reset()}>↺ Reset</button>
+      <button
+        className={grabMode ? 'active' : ''}
+        title="Grab: drag pieces while the sim runs"
+        onClick={() => store.getState().setGrabMode(!grabMode)}
+      >
+        ✋ Grab
+      </button>
       <span className="sep" />
       <button disabled={!canUndo} onClick={() => store.getState().undo()}>↶ Undo</button>
       <button disabled={!canRedo} onClick={() => store.getState().redo()}>↷ Redo</button>

@@ -41,6 +41,8 @@ function Sim({ Jolt }: { Jolt: JoltModule }) {
   const selectedPiece = doc.pieces.find((p) => p.id === selectedId) ?? null
   const worldRef = useRef<PhysicsWorld | null>(null)
   const meshes = useRef(new Map<string, Mesh>())
+  const grab = useRef<{ id: string; y: number } | null>(null)
+  const [grabbing, setGrabbing] = useState(false)
 
   const key = `${structureKey(doc)}#${worldEpoch}`
 
@@ -94,6 +96,15 @@ function Sim({ Jolt }: { Jolt: JoltModule }) {
           }}
           onPointerDown={(e) => {
             const s = store.getState()
+            // Live-intervene grab: drag a piece kinematically while the sim runs.
+            if (s.grabMode && s.running) {
+              e.stopPropagation()
+              const [gx, gy, gz] = piece.state.transform.position
+              grab.current = { id: piece.id, y: gy }
+              setGrabbing(true)
+              worldRef.current?.grabPiece(piece.id, [gx, gy, gz])
+              return
+            }
             // Pointer priority: stock placement > fastening (A→B) > selection.
             if (s.activeTool) {
               e.stopPropagation()
@@ -126,6 +137,23 @@ function Sim({ Jolt }: { Jolt: JoltModule }) {
       {selectedPiece && !grabMode && transformDraggingId !== selectedPiece.id && (
         <DimensionLabels piece={selectedPiece} />
       )}
+      {grabbing && grab.current && (
+        <mesh
+          rotation={[-Math.PI / 2, 0, 0]}
+          position={[0, grab.current.y, 0]}
+          onPointerMove={(e) => {
+            if (grab.current) worldRef.current?.grabPiece(grab.current.id, [e.point.x, grab.current.y, e.point.z])
+          }}
+          onPointerUp={() => {
+            if (grab.current) worldRef.current?.releaseGrab(grab.current.id)
+            grab.current = null
+            setGrabbing(false)
+          }}
+        >
+          <planeGeometry args={[200, 200]} />
+          <meshBasicMaterial transparent opacity={0} depthWrite={false} />
+        </mesh>
+      )}
     </>
   )
 }
@@ -140,6 +168,7 @@ export function Scene() {
   const joltRef = useRef<JoltModule | null>(null)
   const ready = useJolt(joltRef)
   const store = useStoreApi()
+  const grabMode = useDocStore((s) => s.grabMode)
 
   return (
     <Canvas
@@ -158,7 +187,7 @@ export function Scene() {
       <Grid args={[40, 40]} cellSize={0.5} sectionSize={2} infiniteGrid fadeDistance={30} />
       {ready && joltRef.current && <Sim Jolt={joltRef.current} />}
       <HeldPiece />
-      <OrbitControls makeDefault />
+      <OrbitControls makeDefault enabled={!grabMode} />
     </Canvas>
   )
 }
