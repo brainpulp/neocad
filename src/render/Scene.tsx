@@ -7,6 +7,7 @@ import { PhysicsWorld } from '../physics/integration'
 import { PieceMesh } from './PieceMesh'
 import { useDocStore, useStoreApi } from '../ui/storeContext'
 import { HeldPiece } from './HeldPiece'
+import { FastenerMarker } from './FastenerMarker'
 
 const FIXED_DT = 1 / 60
 
@@ -100,6 +101,9 @@ function Sim({ Jolt }: { Jolt: JoltModule }) {
             else meshes.current.delete(piece.id)
           }}
         />
+      ))}
+      {doc.fasteners.map((f) => (
+        <FastenerMarker key={f.id} fastener={f} />
       ))}
     </>
   )
