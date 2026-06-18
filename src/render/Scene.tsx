@@ -9,6 +9,7 @@ import { useDocStore, useStoreApi } from '../ui/storeContext'
 import { HeldPiece } from './HeldPiece'
 import { FastenerMarker } from './FastenerMarker'
 import { TransformGizmo } from './TransformGizmo'
+import { DimensionLabels } from './DimensionLabels'
 
 const FIXED_DT = 1 / 60
 
@@ -36,6 +37,7 @@ function Sim({ Jolt }: { Jolt: JoltModule }) {
   const selectedId = useDocStore((s) => s.selectedId)
   const proximityTarget = useDocStore((s) => s.proximityTarget)
   const grabMode = useDocStore((s) => s.grabMode)
+  const transformDraggingId = useDocStore((s) => s.transformDraggingId)
   const selectedPiece = doc.pieces.find((p) => p.id === selectedId) ?? null
   const worldRef = useRef<PhysicsWorld | null>(null)
   const meshes = useRef(new Map<string, Mesh>())
@@ -120,6 +122,9 @@ function Sim({ Jolt }: { Jolt: JoltModule }) {
       ))}
       {selectedPiece && !grabMode && (
         <TransformGizmo key={`${selectedPiece.id}:${poseSig(selectedPiece)}`} piece={selectedPiece} />
+      )}
+      {selectedPiece && !grabMode && transformDraggingId !== selectedPiece.id && (
+        <DimensionLabels piece={selectedPiece} />
       )}
     </>
   )

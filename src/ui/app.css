@@ -63,6 +63,13 @@ body { font-family: system-ui, sans-serif; background: #11151c; color: #e6e9ee; 
 }
 .tree-row button:hover { color: #ff6b6b; }
 
+.dim-labels { display: flex; gap: 4px; }
+.dim-label {
+  background: #1b2430; color: #cfe2ff; border: 1px solid #2f6df0; border-radius: 4px;
+  padding: 1px 6px; font-size: 11px; white-space: nowrap; cursor: pointer;
+}
+.dim-label input { width: 52px; background: #0d1117; color: #fff; border: 0; font-size: 11px; }
+
 .join-badge {
   background: #2ecc71; color: #06240f; font-weight: 600; font-size: 12px;
   padding: 2px 8px; border-radius: 10px; white-space: nowrap; box-shadow: 0 1px 4px rgba(0,0,0,0.4);
