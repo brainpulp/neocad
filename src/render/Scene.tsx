@@ -27,6 +27,7 @@ function Sim({ Jolt }: { Jolt: JoltModule }) {
   const doc = useDocStore((s) => s.doc)
   const worldEpoch = useDocStore((s) => s.worldEpoch)
   const selectedId = useDocStore((s) => s.selectedId)
+  const proximityTarget = useDocStore((s) => s.proximityTarget)
   const worldRef = useRef<PhysicsWorld | null>(null)
   const meshes = useRef(new Map<string, Mesh>())
 
@@ -70,11 +71,29 @@ function Sim({ Jolt }: { Jolt: JoltModule }) {
           piece={piece}
           materials={doc.materials}
           selected={piece.id === selectedId}
-          onPointerDown={(e) => {
-            // Pointer priority: stock placement > selection. (Fastening added in T7.)
-            if (store.getState().activeTool) return
+          highlighted={piece.id === proximityTarget}
+          onPointerMove={(e) => {
+            // While placing, hovering a piece offers a join to it at the contact point.
+            if (!store.getState().activeTool) return
             e.stopPropagation()
-            store.getState().select(piece.id)
+            store.getState().setHeldPos([e.point.x, e.point.y, e.point.z])
+            store.getState().setProximityTarget(piece.id)
+          }}
+          onPointerDown={(e) => {
+            const s = store.getState()
+            // Pointer priority: stock placement > fastening (A→B) > selection.
+            if (s.activeTool) {
+              e.stopPropagation()
+              s.commitHeldAt([e.point.x, e.point.y, e.point.z]) // auto-joins to proximityTarget
+              return
+            }
+            if (s.fastenTool) {
+              e.stopPropagation()
+              s.fastenClick(piece.id)
+              return
+            }
+            e.stopPropagation()
+            s.select(piece.id)
           }}
           ref={(m) => {
             if (m) meshes.current.set(piece.id, m)

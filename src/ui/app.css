@@ -45,6 +45,11 @@ body { font-family: system-ui, sans-serif; background: #11151c; color: #e6e9ee; 
 
 .viewport { min-width: 0; min-height: 0; position: relative; }
 
+.join-badge {
+  background: #2ecc71; color: #06240f; font-weight: 600; font-size: 12px;
+  padding: 2px 8px; border-radius: 10px; white-space: nowrap; box-shadow: 0 1px 4px rgba(0,0,0,0.4);
+}
+
 .statusbar {
   display: flex; gap: 16px; padding: 4px 12px; font-size: 12px;
   background: #1b2430; border-top: 1px solid #2a3543; color: #9fb3c8;

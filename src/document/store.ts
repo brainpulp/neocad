@@ -32,6 +32,9 @@ export interface DocState {
   /** Piece the held ghost is currently near; commit auto-joins to it. */
   proximityTarget: string | null
   setProximityTarget: (id: string | null) => void
+  /** Current world position of the held ghost (driven by pointer over ground/pieces). */
+  heldPos: Vec3
+  setHeldPos: (pos: Vec3) => void
   /** Currently selected piece (transient UI state — not saved, not undoable). */
   selectedId: string | null
   select: (id: string | null) => void
@@ -108,6 +111,8 @@ export function createDocStore(initial: Document = emptyDocument()) {
       },
       proximityTarget: null,
       setProximityTarget: (proximityTarget) => set({ proximityTarget }),
+      heldPos: [0, 1.2, 0],
+      setHeldPos: (heldPos) => set({ heldPos }),
       worldEpoch: 0,
       reset: () =>
         set((s) => ({

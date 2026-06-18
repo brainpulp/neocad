@@ -10,11 +10,12 @@ interface Props {
   selected?: boolean
   highlighted?: boolean
   onPointerDown?: (e: ThreeEvent<PointerEvent>) => void
+  onPointerMove?: (e: ThreeEvent<PointerEvent>) => void
 }
 
 /** Renders one piece. The mesh ref lets the physics loop drive its transform imperatively. */
 export const PieceMesh = forwardRef<Mesh, Props>(function PieceMesh(
-  { piece, materials, selected, highlighted, onPointerDown },
+  { piece, materials, selected, highlighted, onPointerDown, onPointerMove },
   ref,
 ) {
   const v = pieceVisual(piece, materials)
@@ -29,6 +30,7 @@ export const PieceMesh = forwardRef<Mesh, Props>(function PieceMesh(
       castShadow
       receiveShadow
       onPointerDown={onPointerDown}
+      onPointerMove={onPointerMove}
     >
       {v.kind === 'box' && <boxGeometry args={v.args as [number, number, number]} />}
       {v.kind === 'cylinder' && (
