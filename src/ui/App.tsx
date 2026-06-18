@@ -9,6 +9,7 @@ import { StatusBar } from './StatusBar'
 import { Scene } from '../render/Scene'
 import { loadDoc, saveDoc } from '../persistence/autosave'
 import { downloadDocument, pickDocument } from '../persistence/file'
+import { exportGLTF, exportSTL } from '../export/exporters'
 import './app.css'
 
 export function App() {
@@ -50,7 +51,12 @@ export function App() {
   return (
     <StoreContext.Provider value={store}>
       <div className="app">
-        <Toolbar onSave={onSave} onOpen={onOpen} />
+        <Toolbar
+          onSave={onSave}
+          onOpen={onOpen}
+          onExportGLTF={() => exportGLTF(store.getState().doc)}
+          onExportSTL={() => exportSTL(store.getState().doc)}
+        />
         <div className="body">
           <Palette />
           <div className="viewport">
