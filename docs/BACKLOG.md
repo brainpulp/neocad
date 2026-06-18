@@ -16,7 +16,18 @@ Living list of work. M-numbers are Stage 1 milestones from the spec
   - Anchoring via Properties; selection + editable Properties; materials editor
   - Fastener markers; glTF/STL export; fastener count in status bar
 
-## Next up — Guidance milestone (Rings 2 & 3) OR M3 (mechanisms)
+- **M2.5 — Builder UX quick wins** ✅ (verified 2026-06-18, see `plans/M2.5-verification-notes.md`)
+  - Delete pieces/fasteners, scene tree (select+delete), keyboard shortcuts, empty-state
+
+## Next up — M-Transform (direct manipulation)
+
+Spec: `specs/2026-06-18-neocad-builder-ux-design.md` (M-Transform section). Needs a plan.
+- Tinkercad-style move/rotate/scale gizmo (bounding-box handles) on the selected piece
+- Inline editable dimensions (click a label, type exact size)
+- Auto-pause-on-grab (default) + a "✋ Grab" live-intervene toggle
+- Scale maps to `dimensions`; move snaps to grid; commits to Definition
+
+## Later — Guidance milestone (Rings 2 & 3) OR M3 (mechanisms)
 
 Guidance (from spec §13 amendment):
 - **Ring 2 — rule-based nudges** (offline, deterministic): a small rules engine reads doc

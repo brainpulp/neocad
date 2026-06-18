@@ -32,6 +32,12 @@ Plans: `docs/superpowers/plans/` · Backlog: `docs/BACKLOG.md`
   Jolt fixed constraints; **proximity fastening** (Ring 1 affordance — click a piece onto
   another to auto-weld, no palette hunt); selection + editable Properties; materials editor;
   fastener markers; glTF/STL export. See `docs/superpowers/plans/M2-verification-notes.md`.
+- **M2.5 (builder UX quick wins) — DONE & verified.** Delete pieces/fasteners, scene tree
+  (select + delete), keyboard shortcuts (Delete/Esc/Ctrl+Z/Y), empty-state hint, fastener
+  count in status bar. See `docs/superpowers/plans/M2.5-verification-notes.md`.
+- **M-Transform (direct manipulation) — NEXT, NOT STARTED.** Tinkercad-style move/rotate/scale
+  gizmo, inline editable dimensions, live-intervene grab; auto-pause-on-grab. Spec written
+  (`docs/superpowers/specs/2026-06-18-neocad-builder-ux-design.md`), needs its own plan.
 - **Guidance Rings 2 & 3 — NOT STARTED.** Spec §13 amendment added a guidance layer; M2
   shipped Ring 1 (proximity) only. Ring 2 (rule-based nudges) then Ring 3 (LLM "what do you
   want to make?", needs the §12 backend-key decision) are a later **Guidance milestone**.
