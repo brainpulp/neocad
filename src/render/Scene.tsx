@@ -85,6 +85,9 @@ function Sim({ Jolt }: { Jolt: JoltModule }) {
             // Pointer priority: stock placement > fastening (A→B) > selection.
             if (s.activeTool) {
               e.stopPropagation()
+              // Pressing down on a piece while placing = join to it (robust even
+              // without a preceding hover, e.g. touch).
+              s.setProximityTarget(piece.id)
               s.commitHeldAt([e.point.x, e.point.y, e.point.z]) // auto-joins to proximityTarget
               return
             }
