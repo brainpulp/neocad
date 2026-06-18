@@ -15,6 +15,9 @@ export interface DocState {
   setActiveTool: (tool: StockType | null) => void
   /** Commit the active-tool stock as a piece at the given (already-snapped) position. */
   commitHeldAt: (position: Vec3) => void
+  /** Currently selected piece (transient UI state — not saved, not undoable). */
+  selectedId: string | null
+  select: (id: string | null) => void
   /** Bumped whenever the physics world must be rebuilt from scratch (e.g. reset). */
   worldEpoch: number
   /** Reset every piece's live State back to its Definition and rebuild physics. */
@@ -66,9 +69,17 @@ export function createDocStore(initial: Document = emptyDocument()) {
           },
           worldEpoch: s.worldEpoch + 1,
         })),
+      selectedId: null,
+      select: (selectedId) => set({ selectedId }),
       addPiece: (piece) => commit((doc) => ops.addPiece(doc, piece)),
       updatePiece: (id, patch) => commit((doc) => ops.updatePiece(doc, id, patch)),
-      removePiece: (id) => commit((doc) => ops.removePiece(doc, id)),
+      removePiece: (id) =>
+        set((s) => ({
+          doc: ops.removePiece(s.doc, id),
+          past: [...s.past, structuredClone(s.doc)],
+          future: [],
+          selectedId: s.selectedId === id ? null : s.selectedId,
+        })),
       undo: () =>
         set((s) => {
           if (s.past.length === 0) return s
