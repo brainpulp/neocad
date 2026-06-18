@@ -45,6 +45,24 @@ body { font-family: system-ui, sans-serif; background: #11151c; color: #e6e9ee; 
 
 .viewport { min-width: 0; min-height: 0; position: relative; }
 
+.empty-state {
+  position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+  pointer-events: none; color: #9fb3c8; font-size: 15px; opacity: 0.8; text-align: center; padding: 20px;
+}
+
+.scenetree { margin-bottom: 10px; border-bottom: 1px solid #2a3543; padding-bottom: 8px; }
+.tree-row {
+  display: flex; align-items: center; gap: 6px; padding: 3px 6px; border-radius: 4px; cursor: pointer; font-size: 12px;
+}
+.tree-row:hover { background: #1f2935; }
+.tree-row.active { background: #2f6df0; }
+.tree-row.fastener { cursor: default; opacity: 0.85; }
+.tree-row .tree-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tree-row button {
+  background: none; border: 0; color: #9fb3c8; cursor: pointer; font-size: 12px; padding: 0 4px; line-height: 1;
+}
+.tree-row button:hover { color: #ff6b6b; }
+
 .join-badge {
   background: #2ecc71; color: #06240f; font-weight: 600; font-size: 12px;
   padding: 2px 8px; border-radius: 10px; white-space: nowrap; box-shadow: 0 1px 4px rgba(0,0,0,0.4);

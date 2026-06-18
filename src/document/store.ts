@@ -47,6 +47,7 @@ export interface DocState {
   removePiece: (id: string) => void
   undo: () => void
   redo: () => void
+  removeFastener: (id: string) => void
   addMaterial: (material: Material) => void
   updateMaterial: (name: string, patch: Partial<Material>) => void
   /** Replace the whole document (Open / autosave restore). Clears history. */
@@ -156,6 +157,7 @@ export function createDocStore(initial: Document = emptyDocument()) {
             future: s.future.slice(1),
           }
         }),
+      removeFastener: (id) => commit((doc) => ops.removeFastener(doc, id)),
       addMaterial: (material) => commit((doc) => ops.addMaterial(doc, material)),
       updateMaterial: (name, patch) => commit((doc) => ops.updateMaterial(doc, name, patch)),
       loadDoc: (doc) => set({ doc, past: [], future: [] }),

@@ -5,8 +5,11 @@ import { Toolbar } from './Toolbar'
 import { Palette } from './Palette'
 import { Properties } from './Properties'
 import { MaterialsEditor } from './MaterialsEditor'
+import { SceneTree } from './SceneTree'
 import { StatusBar } from './StatusBar'
 import { Scene } from '../render/Scene'
+import { EmptyState } from '../render/EmptyState'
+import { isEditableTarget, keyToAction } from './keyboard'
 import { loadDoc, saveDoc } from '../persistence/autosave'
 import { downloadDocument, pickDocument } from '../persistence/file'
 import { exportGLTF, exportSTL } from '../export/exporters'
@@ -42,6 +45,30 @@ export function App() {
     }
   }, [store])
 
+  // Global keyboard shortcuts (ignored while typing in form fields).
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (isEditableTarget(e.target as Element | null)) return
+      const action = keyToAction(e)
+      if (!action) return
+      e.preventDefault()
+      const s = store.getState()
+      if (action === 'delete') {
+        if (s.selectedId) s.removePiece(s.selectedId)
+      } else if (action === 'cancel') {
+        s.setActiveTool(null)
+        s.setFastenTool(null)
+        s.select(null)
+      } else if (action === 'undo') {
+        s.undo()
+      } else if (action === 'redo') {
+        s.redo()
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [store])
+
   const onSave = () => downloadDocument(store.getState().doc)
   const onOpen = async () => {
     const d = await pickDocument()
@@ -61,8 +88,10 @@ export function App() {
           <Palette />
           <div className="viewport">
             <Scene />
+            <EmptyState />
           </div>
           <div className="rightpanel">
+            <SceneTree />
             <Properties />
             <MaterialsEditor />
           </div>
