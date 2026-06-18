@@ -50,11 +50,24 @@ export interface Ground {
   gravity: Vec3
 }
 
+// Rigid fasteners only in M2. All compile to a Jolt fixed constraint and behave
+// identically; they ship as distinct names because their strengths diverge once
+// the failure/FEA evaluator arrives (spec §6b). Articulated fasteners + motors are M3.
+export type FastenerType = 'weld' | 'glue' | 'bolt' | 'nail'
+
+export interface Fastener {
+  id: string
+  type: FastenerType
+  partA: string
+  partB: string
+}
+
 export interface Document {
   version: number
   metadata: { name: string }
   materials: Material[]
   pieces: Piece[]
+  fasteners: Fastener[]
   ground: Ground
   camera?: unknown
 }
@@ -73,6 +86,7 @@ export function emptyDocument(): Document {
     metadata: { name: 'Untitled' },
     materials: structuredClone(DEFAULT_MATERIALS),
     pieces: [],
+    fasteners: [],
     ground: { gravity: [0, -9.81, 0] },
   }
 }

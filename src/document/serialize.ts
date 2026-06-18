@@ -12,6 +12,7 @@ function migrate(raw: Record<string, unknown>): Document {
   const doc = raw as Partial<Document> & Record<string, unknown>
   if (doc.version == null) doc.version = 1
   // future: while (doc.version < CURRENT_VERSION) { ...step up...; doc.version++ }
+  if (!doc.fasteners) doc.fasteners = [] // added in M2
   doc.version = CURRENT_VERSION
   return doc as Document
 }

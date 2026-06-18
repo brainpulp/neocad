@@ -1,7 +1,7 @@
 import { setupCollisionFiltering, LAYER_MOVING, LAYER_NON_MOVING, type JoltModule } from './jolt'
 import { makeShape } from './shapes'
-import { STOCK } from '../document/catalog'
-import type { Document, Material, Piece } from '../document/types'
+import { FASTENERS, STOCK } from '../document/catalog'
+import type { Document, Fastener, Material, Piece } from '../document/types'
 
 const FALLBACK_DENSITY = 1000
 
@@ -31,22 +31,39 @@ function massOf(piece: Piece, materials: Material[]): number {
 export class PhysicsWorld {
   private Jolt: JoltModule
   private ji: any
+  private physicsSystem: any
   private bodyInterface: any
   private bodies = new Map<string, any>() // pieceId → Jolt BodyID
+  private bodyObjs = new Map<string, any>() // pieceId → Jolt Body (needed to build constraints)
 
   constructor(Jolt: JoltModule, doc: Document) {
     this.Jolt = Jolt
     const settings = new Jolt.JoltSettings()
     setupCollisionFiltering(Jolt, settings)
     this.ji = new Jolt.JoltInterface(settings)
-    const physicsSystem = this.ji.GetPhysicsSystem()
-    this.bodyInterface = physicsSystem.GetBodyInterface()
+    this.physicsSystem = this.ji.GetPhysicsSystem()
+    this.bodyInterface = this.physicsSystem.GetBodyInterface()
 
     const [gx, gy, gz] = doc.ground.gravity
-    physicsSystem.SetGravity(new Jolt.Vec3(gx, gy, gz))
+    this.physicsSystem.SetGravity(new Jolt.Vec3(gx, gy, gz))
 
     this.createGround()
     for (const piece of doc.pieces) this.createPieceBody(piece, doc.materials)
+    for (const fastener of doc.fasteners) this.createFastener(fastener)
+  }
+
+  // Rigid fasteners (weld/glue/bolt/nail) → a Jolt FixedConstraint with auto-detected
+  // anchor points. A fastener whose pieces are missing is silently skipped.
+  private createFastener(fastener: Fastener): void {
+    if (FASTENERS[fastener.type].constraint !== 'fixed') return // M3 adds other kinds
+    const bodyA = this.bodyObjs.get(fastener.partA)
+    const bodyB = this.bodyObjs.get(fastener.partB)
+    if (!bodyA || !bodyB) return
+    const J = this.Jolt
+    const settings = new J.FixedConstraintSettings()
+    settings.mAutoDetectPoint = true
+    const constraint = settings.Create(bodyA, bodyB)
+    this.physicsSystem.AddConstraint(constraint)
   }
 
   private createGround(): void {
@@ -85,6 +102,7 @@ export class PhysicsWorld {
     const body = this.bodyInterface.CreateBody(bcs)
     this.bodyInterface.AddBody(body.GetID(), isStatic ? J.EActivation_DontActivate : J.EActivation_Activate)
     this.bodies.set(piece.id, body.GetID())
+    this.bodyObjs.set(piece.id, body)
   }
 
   /** Advance the simulation by a FIXED dt (callers always pass 1/60). */
@@ -110,5 +128,6 @@ export class PhysicsWorld {
     }
     this.ji = null
     this.bodies.clear()
+    this.bodyObjs.clear()
   }
 }

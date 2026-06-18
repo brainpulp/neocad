@@ -15,9 +15,18 @@ body { font-family: system-ui, sans-serif; background: #11151c; color: #e6e9ee; 
 .toolbar button:disabled { opacity: 0.4; cursor: default; }
 
 .body { display: grid; grid-template-columns: 160px 1fr 200px; min-height: 0; }
-.palette, .properties { padding: 10px; background: #161c25; overflow: auto; }
+.palette, .rightpanel { padding: 10px; background: #161c25; overflow: auto; }
 .palette { border-right: 1px solid #2a3543; }
-.properties { border-left: 1px solid #2a3543; }
+.rightpanel { border-left: 1px solid #2a3543; }
+.materials-editor { border-top: 1px solid #2a3543; margin-top: 10px; }
+.material-row { display: flex; align-items: center; gap: 6px; margin: 4px 0; }
+.material-row .material-name { flex: 1; font-size: 12px; }
+.material-row input[type='color'] { width: 24px; height: 22px; padding: 0; border: 0; background: none; }
+.material-row input.density { width: 64px; }
+.material-row input[type='text'] {
+  flex: 1; background: #222c38; color: #e6e9ee; border: 1px solid #2a3543; border-radius: 4px; padding: 4px 6px; font-size: 12px;
+}
+.material-row button { background: #2a3543; color: #e6e9ee; border: 0; padding: 4px 8px; border-radius: 4px; cursor: pointer; }
 .palette button {
   display: block; width: 100%; text-align: left; margin: 4px 0;
   background: #222c38; color: #e6e9ee; border: 1px solid #2a3543; padding: 6px 8px; border-radius: 4px; cursor: pointer;
@@ -27,7 +36,19 @@ body { font-family: system-ui, sans-serif; background: #11151c; color: #e6e9ee; 
 .label { font-size: 11px; letter-spacing: 0.08em; opacity: 0.6; margin-bottom: 6px; }
 .muted { opacity: 0.6; }
 
+.field { display: flex; flex-direction: column; gap: 2px; font-size: 12px; margin: 6px 0; }
+.field.checkbox { flex-direction: row; align-items: center; gap: 6px; }
+.field input, .field select {
+  background: #222c38; color: #e6e9ee; border: 1px solid #2a3543; border-radius: 4px; padding: 4px 6px; font-size: 12px;
+}
+.field.checkbox input { width: auto; }
+
 .viewport { min-width: 0; min-height: 0; position: relative; }
+
+.join-badge {
+  background: #2ecc71; color: #06240f; font-weight: 600; font-size: 12px;
+  padding: 2px 8px; border-radius: 10px; white-space: nowrap; box-shadow: 0 1px 4px rgba(0,0,0,0.4);
+}
 
 .statusbar {
   display: flex; gap: 16px; padding: 4px 12px; font-size: 12px;

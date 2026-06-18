@@ -1,13 +1,12 @@
-import { useState } from 'react'
 import type { ThreeEvent } from '@react-three/fiber'
-import { STOCK } from '../document/catalog'
+import { Html } from '@react-three/drei'
+import { FASTENERS, STOCK } from '../document/catalog'
 import { geometryFor } from './geometry'
 import { snapToGrid } from './snap'
 import { useDocStore, useStoreApi } from '../ui/storeContext'
-import type { Vec3 } from '../document/types'
 
-// Height the held piece is committed at, so it visibly drops into the live world.
-const DROP_HEIGHT = 1.2
+// Height the held piece is committed at over empty ground, so it visibly drops in.
+export const DROP_HEIGHT = 1.2
 
 function GeometryFor({ kind, args }: { kind: string; args: number[] }) {
   if (kind === 'box') return <boxGeometry args={args as [number, number, number]} />
@@ -16,41 +15,52 @@ function GeometryFor({ kind, args }: { kind: string; args: number[] }) {
 }
 
 /**
- * Held-piece placement: while a stock tool is active, a translucent ghost follows
- * the cursor on the ground plane (snapped to grid) and is inert. Clicking commits
- * it as a real piece, which then drops and settles in the running world.
+ * Held-piece placement (proximity-aware, spec §13.1). While a stock tool is active a
+ * translucent ghost follows the cursor; over empty ground it sits at DROP_HEIGHT, over
+ * an existing piece it snaps to that surface and a "⊕ Weld" badge appears. Committing
+ * there places the piece AND auto-joins it to the target — no palette trip. The ground
+ * plane below catches empty-space pointer events (pieces handle their own — see Scene).
  */
 export function HeldPiece() {
   const activeTool = useDocStore((s) => s.activeTool)
+  const fastenTool = useDocStore((s) => s.fastenTool)
+  const heldPos = useDocStore((s) => s.heldPos)
+  const proximityTarget = useDocStore((s) => s.proximityTarget)
   const store = useStoreApi()
-  const [pos, setPos] = useState<Vec3>([0, DROP_HEIGHT, 0])
 
   if (!activeTool) return null
 
   const geo = geometryFor(STOCK[activeTool].primitive, STOCK[activeTool].defaultDimensions)
+  const joinLabel = FASTENERS[fastenTool ?? 'weld'].label
 
-  const onMove = (e: ThreeEvent<PointerEvent>) => {
-    const snapped = snapToGrid([e.point.x, DROP_HEIGHT, e.point.z])
-    setPos(snapped)
+  // Over empty ground: position the ghost at DROP_HEIGHT and clear any proximity target.
+  const onGroundMove = (e: ThreeEvent<PointerEvent>) => {
+    store.getState().setHeldPos(snapToGrid([e.point.x, DROP_HEIGHT, e.point.z]))
+    store.getState().setProximityTarget(null)
   }
-  const onDown = (e: ThreeEvent<PointerEvent>) => {
+  const onGroundDown = (e: ThreeEvent<PointerEvent>) => {
     e.stopPropagation()
-    const snapped = snapToGrid([e.point.x, DROP_HEIGHT, e.point.z])
-    store.getState().commitHeldAt(snapped)
+    store.getState().commitHeldAt(snapToGrid([e.point.x, DROP_HEIGHT, e.point.z]))
   }
 
   return (
     <>
-      {/* Transparent ground-plane catcher for pointer position + click-to-commit.
-          Must stay visible (three.js skips invisible meshes when raycasting). */}
-      <mesh rotation={[-Math.PI / 2, 0, 0]} onPointerMove={onMove} onPointerDown={onDown}>
+      <mesh rotation={[-Math.PI / 2, 0, 0]} onPointerMove={onGroundMove} onPointerDown={onGroundDown}>
         <planeGeometry args={[200, 200]} />
         <meshBasicMaterial transparent opacity={0} depthWrite={false} />
       </mesh>
-      {/* Translucent ghost preview (inert). */}
-      <mesh position={pos}>
+      <mesh position={heldPos}>
         <GeometryFor kind={geo.kind} args={geo.args} />
-        <meshStandardMaterial color="#2f6df0" transparent opacity={0.45} />
+        <meshStandardMaterial
+          color={proximityTarget ? '#2ecc71' : '#2f6df0'}
+          transparent
+          opacity={0.45}
+        />
+        {proximityTarget && (
+          <Html center distanceFactor={8} style={{ pointerEvents: 'none' }}>
+            <div className="join-badge">⊕ {joinLabel}</div>
+          </Html>
+        )}
       </mesh>
     </>
   )

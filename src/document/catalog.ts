@@ -1,6 +1,23 @@
-import type { Piece, StockType, Vec3 } from './types'
+import type { FastenerType, Piece, StockType, Vec3 } from './types'
 
 export type Primitive = 'box' | 'cylinder' | 'sphere'
+
+// M2 ships only rigid fasteners; all map to the 'fixed' constraint. M3 adds
+// revolute | prismatic | ball | rope.
+export type ConstraintKind = 'fixed'
+
+export interface FastenerDef {
+  label: string
+  constraint: ConstraintKind
+}
+
+// User-facing real-world fastener → hidden engine constraint (spec §6b).
+export const FASTENERS: Record<FastenerType, FastenerDef> = {
+  weld: { label: 'Weld', constraint: 'fixed' },
+  glue: { label: 'Glue', constraint: 'fixed' },
+  bolt: { label: 'Bolt', constraint: 'fixed' },
+  nail: { label: 'Nail', constraint: 'fixed' },
+}
 
 export interface StockDef {
   label: string
@@ -27,6 +44,12 @@ let idCounter = 0
 function nextId(prefix: string): string {
   idCounter += 1
   return `${prefix}_${idCounter}`
+}
+
+let fastenerCounter = 0
+export function nextFastenerId(): string {
+  fastenerCounter += 1
+  return `f_${fastenerCounter}`
 }
 
 export function makePiece(stockType: StockType, position: Vec3): Piece {

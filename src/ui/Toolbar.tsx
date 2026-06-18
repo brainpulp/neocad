@@ -1,6 +1,13 @@
 import { useDocStore, useStoreApi } from './storeContext'
 
-export function Toolbar({ onSave, onOpen }: { onSave?: () => void; onOpen?: () => void }) {
+interface ToolbarProps {
+  onSave?: () => void
+  onOpen?: () => void
+  onExportGLTF?: () => void
+  onExportSTL?: () => void
+}
+
+export function Toolbar({ onSave, onOpen, onExportGLTF, onExportSTL }: ToolbarProps) {
   const store = useStoreApi()
   const running = useDocStore((s) => s.running)
   const canUndo = useDocStore((s) => s.past.length > 0)
@@ -19,6 +26,9 @@ export function Toolbar({ onSave, onOpen }: { onSave?: () => void; onOpen?: () =
       <span className="sep" />
       <button onClick={onSave}>💾 Save</button>
       <button onClick={onOpen}>📂 Open</button>
+      <span className="sep" />
+      <button onClick={onExportGLTF}>⬇ glTF</button>
+      <button onClick={onExportSTL}>⬇ STL</button>
     </div>
   )
 }
