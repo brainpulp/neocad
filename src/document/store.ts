@@ -1,7 +1,15 @@
 import { createStore } from 'zustand/vanilla'
-import { emptyDocument, type Document, type Material, type Piece, type StockType, type Vec3 } from './types'
+import {
+  emptyDocument,
+  type Document,
+  type FastenerType,
+  type Material,
+  type Piece,
+  type StockType,
+  type Vec3,
+} from './types'
 import * as ops from './document'
-import { makePiece } from './catalog'
+import { makePiece, nextFastenerId } from './catalog'
 
 export interface DocState {
   doc: Document
@@ -15,6 +23,15 @@ export interface DocState {
   setActiveTool: (tool: StockType | null) => void
   /** Commit the active-tool stock as a piece at the given (already-snapped) position. */
   commitHeldAt: (position: Vec3) => void
+  /** Selected fastener tool (mutually exclusive with activeTool); also the proximity join type. */
+  fastenTool: FastenerType | null
+  setFastenTool: (tool: FastenerType | null) => void
+  /** First piece clicked in the explicit A→B fasten fallback. */
+  pendingFastenA: string | null
+  fastenClick: (pieceId: string) => void
+  /** Piece the held ghost is currently near; commit auto-joins to it. */
+  proximityTarget: string | null
+  setProximityTarget: (id: string | null) => void
   /** Currently selected piece (transient UI state — not saved, not undoable). */
   selectedId: string | null
   select: (id: string | null) => void
@@ -52,13 +69,45 @@ export function createDocStore(initial: Document = emptyDocument()) {
       running: true,
       setRunning: (running) => set({ running }),
       activeTool: null,
-      setActiveTool: (activeTool) => set({ activeTool }),
+      // Stock and fasten tools are mutually exclusive modes.
+      setActiveTool: (activeTool) => set({ activeTool, fastenTool: null, pendingFastenA: null }),
       commitHeldAt: (position) => {
-        const tool = get().activeTool
-        if (!tool) return
-        get().addPiece(makePiece(tool, position))
-        set({ activeTool: null })
+        const { activeTool, proximityTarget, fastenTool } = get()
+        if (!activeTool) return
+        const piece = makePiece(activeTool, position)
+        const joinType: FastenerType = fastenTool ?? 'weld'
+        commit((doc) => {
+          let d = ops.addPiece(doc, piece)
+          if (proximityTarget) {
+            d = ops.addFastener(d, {
+              id: nextFastenerId(),
+              type: joinType,
+              partA: piece.id,
+              partB: proximityTarget,
+            })
+          }
+          return d
+        })
+        set({ activeTool: null, proximityTarget: null })
       },
+      fastenTool: null,
+      setFastenTool: (fastenTool) => set({ fastenTool, activeTool: null, pendingFastenA: null }),
+      pendingFastenA: null,
+      fastenClick: (pieceId) => {
+        const { fastenTool, pendingFastenA } = get()
+        if (!fastenTool) return
+        if (!pendingFastenA) {
+          set({ pendingFastenA: pieceId })
+          return
+        }
+        if (pendingFastenA === pieceId) return
+        commit((doc) =>
+          ops.addFastener(doc, { id: nextFastenerId(), type: fastenTool, partA: pendingFastenA, partB: pieceId }),
+        )
+        set({ pendingFastenA: null })
+      },
+      proximityTarget: null,
+      setProximityTarget: (proximityTarget) => set({ proximityTarget }),
       worldEpoch: 0,
       reset: () =>
         set((s) => ({

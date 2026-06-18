@@ -46,6 +46,12 @@ function nextId(prefix: string): string {
   return `${prefix}_${idCounter}`
 }
 
+let fastenerCounter = 0
+export function nextFastenerId(): string {
+  fastenerCounter += 1
+  return `f_${fastenerCounter}`
+}
+
 export function makePiece(stockType: StockType, position: Vec3): Piece {
   const def = STOCK[stockType]
   const transform = { position, rotation: [0, 0, 0, 1] as [number, number, number, number] }
