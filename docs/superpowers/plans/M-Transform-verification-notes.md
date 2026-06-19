@@ -42,3 +42,48 @@ labels; toggle ✋ Grab, press Run, drag the block around.
   (an invisible mesh is provided).
 - A pre-guard test left one block at x≈0.29999/z≈0.30002 (float drift); cosmetic, and the
   guard prevents recurrence.
+
+---
+
+## 2026-06-19 — Hands-on outcome: NOT ready to merge (3 interlocking problems)
+
+A human mouse-check found the transform UX does **not** work well. Automated layers stay
+green (68/68 tests; clean browser mount via neocad's own vite — the preview MCP's bundled
+vite hits `EPERM` writing temp dirs inside Google Drive, so use `npm run dev` directly).
+The branch shipped the transform *mechanism* but not the *physics-aware behavior*, which is
+the hard part. Three root causes, grounded in the code:
+
+1. **Dimension labels are in the way — badly located & sized.**
+   `DimensionLabels.tsx` dumps all dimensions into a single drei `<Html>` clump pinned at a
+   fixed `py + 0.4` above the piece center (so buried inside large pieces, floating far from
+   small ones) and sized by an arbitrary `distanceFactor={6}`. Labels aren't anchored to the
+   edges they measure and don't scale with the piece.
+   → Fix direction: anchor each label to its axis/edge with size derived from the piece's
+   bounding box, or move dimension editing into the Properties panel.
+
+2. **Dragging a piece drags the weld marker, and "everything flies."** Two causes:
+   - `FastenerMarker.tsx` recomputes the fastener midpoint every frame, so dragging piece A
+     slides the orange marker toward it — cosmetic but confusing.
+   - **The real bug:** transforming one piece of a *welded assembly* ignores the fastener.
+     A moves alone, B stays; on release the world fully rebuilds (`Scene.tsx` `structureKey`
+     includes transform) and the `FixedConstraint` is recreated with `mAutoDetectPoint`
+     (`integration.ts:64`) at wherever A landed. Nothing checks for overlap, so A can be
+     dropped intersecting B or the ground → on resume Jolt's constraint+collision solver
+     violently corrects → "all flies."
+   → Fix direction: when the selected piece is fastened, transform the whole rigid assembly
+     together (or offer to break the weld); reject/snap overlapping poses on commit.
+
+3. **No difference between contact and floating.**
+   The proximity/contact affordance (`proximity.ts` + the `proximityTarget` highlight) only
+   runs during *placement* (`activeTool` set), never during a gizmo transform
+   (`Scene.tsx` `onPointerMove`). So dragging near a surface gives no snap and no highlight,
+   and a piece left mid-air looks identical to one resting on another. This missing
+   surface-snap is also what would prevent the overlap-explosion in #2.
+
+**These are interlocking** — the contact/snap work (#3) underpins the explosion fix (#2).
+Treat as a "physics-aware transform" redesign, not three isolated tweaks. Approach was not
+yet chosen (plan-first vs. fix-in-priority-order vs. rethink the free-gizmo model for a
+weld-based assembler).
+
+**Install gotcha:** `npm install` pauses on esbuild/fsevents install-script approval; approve
+them or `vitest`/`vite` won't be on PATH.
