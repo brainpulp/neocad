@@ -2,3 +2,4 @@ node_modules/
 .superpowers/
 dist/
 .DS_Store
+tsconfig.tsbuildinfo
