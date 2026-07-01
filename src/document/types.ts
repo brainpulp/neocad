@@ -30,6 +30,14 @@ export type StockType =
   | 'panel'
   | 'block'
   | 'ball'
+  // Mechanical stock: all collide as cylinders for now; teeth/grooves are visual.
+  | 'gear'
+  | 'pinion'
+  | 'axle'
+  | 'pin'
+  | 'pulley'
+  | 'cam'
+  | 'ratchet'
 
 export interface Piece {
   id: string
@@ -50,16 +58,31 @@ export interface Ground {
   gravity: Vec3
 }
 
-// Rigid fasteners only in M2. All compile to a Jolt fixed constraint and behave
-// identically; they ship as distinct names because their strengths diverge once
-// the failure/FEA evaluator arrives (spec §6b). Articulated fasteners + motors are M3.
-export type FastenerType = 'weld' | 'glue' | 'bolt' | 'nail'
+// Rigid fasteners compile to a Jolt fixed constraint and behave identically; they
+// ship as distinct names because their strengths diverge once the failure/FEA
+// evaluator arrives (spec §6b).
+export type RigidFastenerType = 'weld' | 'glue' | 'bolt' | 'nail'
+// Articulated joints, placed point-A → type → point-B with the Joint tool.
+// pivot = rotates around the axis; linear = slides along it; cylindrical = both.
+export type JointType = 'pivot' | 'cylindrical' | 'linear'
+export type FastenerType = RigidFastenerType | JointType
+
+export const JOINT_TYPES: JointType[] = ['pivot', 'cylindrical', 'linear']
+export function isJointType(t: FastenerType): t is JointType {
+  return (JOINT_TYPES as FastenerType[]).includes(t)
+}
 
 export interface Fastener {
   id: string
   type: FastenerType
   partA: string
   partB: string
+  /** Joint anchor in partA's local frame (joints only; rigid fasteners auto-detect). */
+  anchorA?: Vec3
+  /** Joint anchor in partB's local frame (joints only). */
+  anchorB?: Vec3
+  /** Joint axis in partA's local frame (joints only). */
+  axisA?: Vec3
 }
 
 export interface Document {

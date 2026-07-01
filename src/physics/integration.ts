@@ -1,7 +1,8 @@
 import { setupCollisionFiltering, LAYER_MOVING, LAYER_NON_MOVING, type JoltModule } from './jolt'
 import { makeShape } from './shapes'
 import { FASTENERS, STOCK } from '../document/catalog'
-import type { Document, Fastener, Material, Piece } from '../document/types'
+import { localDirToWorld, localToWorld, perpendicular } from '../document/math'
+import type { Document, Fastener, Material, Piece, Vec3 } from '../document/types'
 
 const FALLBACK_DENSITY = 1000
 
@@ -49,21 +50,87 @@ export class PhysicsWorld {
 
     this.createGround()
     for (const piece of doc.pieces) this.createPieceBody(piece, doc.materials)
-    for (const fastener of doc.fasteners) this.createFastener(fastener)
+    for (const fastener of doc.fasteners) this.createFastener(fastener, doc)
   }
 
-  // Rigid fasteners (weld/glue/bolt/nail) → a Jolt FixedConstraint with auto-detected
-  // anchor points. A fastener whose pieces are missing is silently skipped.
-  private createFastener(fastener: Fastener): void {
-    if (FASTENERS[fastener.type].constraint !== 'fixed') return // M3 adds other kinds
+  // Fasteners → Jolt constraints. Rigid (weld/glue/bolt/nail) = FixedConstraint with
+  // auto-detected anchors. Joints (pivot/linear/cylindrical) = hinge/slider/6-DOF
+  // built from the fastener's stored piece-local anchors + axis, converted to world
+  // space at the pieces' CURRENT poses (so rebuilds stay consistent after motion).
+  // A fastener whose pieces are missing is silently skipped.
+  private createFastener(fastener: Fastener, doc: Document): void {
     const bodyA = this.bodyObjs.get(fastener.partA)
     const bodyB = this.bodyObjs.get(fastener.partB)
     if (!bodyA || !bodyB) return
     const J = this.Jolt
-    const settings = new J.FixedConstraintSettings()
-    settings.mAutoDetectPoint = true
-    const constraint = settings.Create(bodyA, bodyB)
-    this.physicsSystem.AddConstraint(constraint)
+    const kind = FASTENERS[fastener.type].constraint
+
+    if (kind === 'fixed') {
+      const settings = new J.FixedConstraintSettings()
+      settings.mAutoDetectPoint = true
+      this.physicsSystem.AddConstraint(settings.Create(bodyA, bodyB))
+      return
+    }
+
+    const pieceA = doc.pieces.find((p) => p.id === fastener.partA)
+    const pieceB = doc.pieces.find((p) => p.id === fastener.partB)
+    if (!pieceA || !pieceB) return
+    const anchorA = fastener.anchorA ?? [0, 0, 0]
+    const anchorB = fastener.anchorB ?? [0, 0, 0]
+    const axisLocal = fastener.axisA ?? [0, 1, 0]
+    const worldA = localToWorld(pieceA.state.transform, anchorA)
+    const worldB = localToWorld(pieceB.state.transform, anchorB)
+    const axis = localDirToWorld(pieceA.state.transform, axisLocal)
+    const normal = perpendicular(axis)
+    const rvA = new J.RVec3(worldA[0], worldA[1], worldA[2])
+    const rvB = new J.RVec3(worldB[0], worldB[1], worldB[2])
+    const vAxis = new J.Vec3(axis[0], axis[1], axis[2])
+    const vNormal = new J.Vec3(normal[0], normal[1], normal[2])
+
+    if (kind === 'hinge') {
+      const settings = new J.HingeConstraintSettings()
+      settings.mSpace = J.EConstraintSpace_WorldSpace
+      settings.mPoint1 = rvA
+      settings.mPoint2 = rvB
+      settings.mHingeAxis1 = vAxis
+      settings.mHingeAxis2 = vAxis
+      settings.mNormalAxis1 = vNormal
+      settings.mNormalAxis2 = vNormal
+      this.physicsSystem.AddConstraint(settings.Create(bodyA, bodyB))
+      return
+    }
+
+    if (kind === 'slider') {
+      const settings = new J.SliderConstraintSettings()
+      settings.mSpace = J.EConstraintSpace_WorldSpace
+      settings.mPoint1 = rvA
+      settings.mPoint2 = rvB
+      settings.mSliderAxis1 = vAxis
+      settings.mSliderAxis2 = vAxis
+      settings.mNormalAxis1 = vNormal
+      settings.mNormalAxis2 = vNormal
+      this.physicsSystem.AddConstraint(settings.Create(bodyA, bodyB))
+      return
+    }
+
+    // cylindrical: rotate around AND slide along the same axis. Jolt has no
+    // dedicated constraint, so use a 6-DOF with the joint axis as constraint-X
+    // and free translation-X + rotation-X.
+    const settings = new J.SixDOFConstraintSettings()
+    settings.mSpace = J.EConstraintSpace_WorldSpace
+    settings.mPosition1 = rvA
+    settings.mPosition2 = rvB
+    settings.mAxisX1 = vAxis
+    settings.mAxisY1 = vNormal
+    settings.mAxisX2 = vAxis
+    settings.mAxisY2 = vNormal
+    settings.MakeFixedAxis(J.SixDOFConstraintSettings_EAxis_TranslationY)
+    settings.MakeFixedAxis(J.SixDOFConstraintSettings_EAxis_TranslationZ)
+    settings.MakeFixedAxis(J.SixDOFConstraintSettings_EAxis_RotationY)
+    settings.MakeFixedAxis(J.SixDOFConstraintSettings_EAxis_RotationZ)
+    settings.MakeFreeAxis(J.SixDOFConstraintSettings_EAxis_TranslationX)
+    settings.MakeFreeAxis(J.SixDOFConstraintSettings_EAxis_RotationX)
+    this.physicsSystem.AddConstraint(settings.Create(bodyA, bodyB))
   }
 
   private createGround(): void {
@@ -108,6 +175,34 @@ export class PhysicsWorld {
   /** Advance the simulation by a FIXED dt (callers always pass 1/60). */
   step(dt: number): void {
     this.ji.Step(dt, 1)
+  }
+
+  /** Start dragging a piece: it becomes kinematic so the pointer drives it. */
+  beginGrab(pieceId: string): boolean {
+    const id = this.bodies.get(pieceId)
+    if (!id) return false
+    const J = this.Jolt
+    // Anchored pieces are static and cannot be dragged.
+    if (this.bodyInterface.GetMotionType(id) === J.EMotionType_Static) return false
+    this.bodyInterface.SetMotionType(id, J.EMotionType_Kinematic, J.EActivation_Activate)
+    return true
+  }
+
+  /** Drive a grabbed piece toward a world position over dt (keeps its rotation). */
+  moveGrab(pieceId: string, pos: Vec3, dt: number): void {
+    const id = this.bodies.get(pieceId)
+    if (!id) return
+    const J = this.Jolt
+    const rot = this.bodyInterface.GetRotation(id)
+    this.bodyInterface.MoveKinematic(id, new J.RVec3(pos[0], pos[1], pos[2]), rot, dt)
+  }
+
+  /** Release a grabbed piece back to dynamic (it keeps its drag velocity — throwable). */
+  endGrab(pieceId: string): void {
+    const id = this.bodies.get(pieceId)
+    if (!id) return
+    const J = this.Jolt
+    this.bodyInterface.SetMotionType(id, J.EMotionType_Dynamic, J.EActivation_Activate)
   }
 
   /** Write current body transforms into each piece's State. Definition untouched. */
