@@ -1,4 +1,4 @@
-import { STOCK, type Primitive } from '../document/catalog'
+import { STOCK, type Primitive, type VisualKind } from '../document/catalog'
 import type { Material, Piece } from '../document/types'
 
 export interface Geometry {
@@ -11,6 +11,21 @@ export interface PieceVisual extends Geometry {
   color: string
   position: [number, number, number]
   quaternion: [number, number, number, number]
+  /** Custom mechanical look (gear teeth, pulley groove…); falls back to `kind` if unset. */
+  visual?: VisualKind
+}
+
+/** Largest extent of a piece, for sizing selection outlines etc. */
+export function maxExtent(piece: Piece): number {
+  const d = piece.dimensions
+  switch (STOCK[piece.stockType].primitive) {
+    case 'box':
+      return Math.max(d.x, d.y, d.z)
+    case 'cylinder':
+      return Math.max(d.radius * 2, d.height)
+    case 'sphere':
+      return d.radius * 2
+  }
 }
 
 const FALLBACK_COLOR = '#cccccc'
@@ -37,5 +52,6 @@ export function pieceVisual(piece: Piece, materials: Material[]): PieceVisual {
     color,
     position: piece.state.transform.position,
     quaternion: piece.state.transform.rotation,
+    visual: STOCK[piece.stockType].visual,
   }
 }

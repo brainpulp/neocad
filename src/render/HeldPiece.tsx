@@ -31,7 +31,9 @@ export function HeldPiece() {
   if (!activeTool) return null
 
   const geo = geometryFor(STOCK[activeTool].primitive, STOCK[activeTool].defaultDimensions)
-  const joinLabel = FASTENERS[fastenTool ?? 'weld'].label
+  // With a palette fastener pre-picked the drop joins immediately with it;
+  // otherwise dropping opens the attach dialog.
+  const joinLabel = fastenTool ? FASTENERS[fastenTool].label : 'Attach…'
 
   // Over empty ground: position the ghost at DROP_HEIGHT and clear any proximity target.
   const onGroundMove = (e: ThreeEvent<PointerEvent>) => {

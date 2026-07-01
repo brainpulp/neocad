@@ -2,13 +2,18 @@ import { useFrame } from '@react-three/fiber'
 import { useRef } from 'react'
 import type { Mesh } from 'three'
 import type { Document, Fastener, Vec3 } from '../document/types'
+import { localToWorld } from '../document/math'
 import { useStoreApi } from '../ui/storeContext'
 
-/** Midpoint between the two fastened pieces' State positions, or null if one is missing. */
+/**
+ * Where to draw a fastener's marker: a joint's stored anchor (tracked on part A),
+ * else the midpoint between the two pieces. Null if a piece is missing.
+ */
 export function fastenerMidpoint(doc: Document, fastener: Fastener): Vec3 | null {
   const a = doc.pieces.find((p) => p.id === fastener.partA)
   const b = doc.pieces.find((p) => p.id === fastener.partB)
   if (!a || !b) return null
+  if (fastener.anchorA) return localToWorld(a.state.transform, fastener.anchorA)
   const pa = a.state.transform.position
   const pb = b.state.transform.position
   return [(pa[0] + pb[0]) / 2, (pa[1] + pb[1]) / 2, (pa[2] + pb[2]) / 2]

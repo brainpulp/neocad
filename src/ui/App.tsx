@@ -6,6 +6,7 @@ import { Palette } from './Palette'
 import { Properties } from './Properties'
 import { MaterialsEditor } from './MaterialsEditor'
 import { SceneTree } from './SceneTree'
+import { JoinDialog } from './JoinDialog'
 import { StatusBar } from './StatusBar'
 import { Scene } from '../render/Scene'
 import { EmptyState } from '../render/EmptyState'
@@ -56,8 +57,10 @@ export function App() {
       if (action === 'delete') {
         if (s.selectedId) s.removePiece(s.selectedId)
       } else if (action === 'cancel') {
+        if (s.pendingJoin) s.resolveJoin(null) // Esc on the attach dialog = don't attach
         s.setActiveTool(null)
         s.setFastenTool(null)
+        s.cancelJoint()
         s.select(null)
       } else if (action === 'undo') {
         s.undo()
@@ -89,6 +92,7 @@ export function App() {
           <div className="viewport">
             <Scene />
             <EmptyState />
+            <JoinDialog />
           </div>
           <div className="rightpanel">
             <SceneTree />

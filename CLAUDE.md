@@ -12,17 +12,11 @@ never abstract geometry/physics jargon.
 2. `npm install`
 3. Tell Claude: **"Read CLAUDE.md and pick up where we left off."**
 
-## ⚠️ In-flight work lives on branch `m-transform` (NOT merged)
+## ⚠️ Branch `m-transform` is SUPERSEDED — do not resume it
 
-The latest work — the Tinkercad-style transform gizmo (move/rotate/scale + inline editable
-dimensions + `✋ Grab` live drag) — is on branch **`m-transform`**, pushed but **not merged**
-to `main`. It is code-complete (68 tests pass) but its drag interaction needs a **hands-on
-mouse check** before merging (automated clicks can't drive R3F's 3D handles).
-
-To continue it: `git checkout m-transform` and **read that branch's CLAUDE.md** (it has the
-full resume + verification steps) and `docs/superpowers/plans/M-Transform-verification-notes.md`.
-Quick check: `npm run dev` → place a Block → click it → drag the colored gizmo handles; try the
-dimension labels; toggle ✋ Grab + Run and drag a piece. If it feels right, merge to `main`.
+The builder-UX milestone (below) re-implemented m-transform's goals directly on `main`
+with a different design (drag-first + pause-gizmo instead of always-on PivotControls).
+The `m-transform` branch remains only as reference; delete it when convenient.
 
 ## Two-stage vision
 
@@ -47,14 +41,21 @@ Plans: `docs/superpowers/plans/` · Backlog: `docs/BACKLOG.md`
 - **M2.5 (builder UX quick wins) — DONE & verified.** Delete pieces/fasteners, scene tree
   (select + delete), keyboard shortcuts (Delete/Esc/Ctrl+Z/Y), empty-state hint, fastener
   count in status bar. See `docs/superpowers/plans/M2.5-verification-notes.md`.
-- **M-Transform (direct manipulation) — NEXT, NOT STARTED.** Tinkercad-style move/rotate/scale
-  gizmo, inline editable dimensions, live-intervene grab; auto-pause-on-grab. Spec written
-  (`docs/superpowers/specs/2026-06-18-neocad-builder-ux-design.md`), needs its own plan.
+- **M-BuilderUX (drag, gizmo, joints, mechanical stock) — DONE, needs hands-on feel pass.**
+  Tinkercad-style presentation (white bg, soft hemisphere+key lighting, light grid, orbit
+  clamped above ground); selection = orange inverted-hull outline (shading untouched);
+  default tool drags pieces across the canvas while the sim runs (kinematic grab, throwable)
+  and becomes a move/rotate/scale TransformControls gizmo when paused; dropping stock onto a
+  piece opens an attach dialog (weld/glue/bolt/nail, pivot/cylindrical/linear, or none —
+  physics pauses while it's open); Joint tool places point A → type → point B joints
+  (pivot=hinge, linear=slider, cylindrical=6-DOF) with piece-local anchors; mechanical
+  stock (gear/pinion/ratchet/cam/pulley/axle/pin) with real silhouettes, cylinder collision.
 - **Guidance Rings 2 & 3 — NOT STARTED.** Spec §13 amendment added a guidance layer; M2
   shipped Ring 1 (proximity) only. Ring 2 (rule-based nudges) then Ring 3 (LLM "what do you
   want to make?", needs the §12 backend-key decision) are a later **Guidance milestone**.
-- **M3 (mechanisms) — NOT STARTED.** Hinge/slider/ball/rope fasteners, motors
-  (axle/wheel), pulley + driven-cart demos, incremental physics-world updates.
+- **M3 (mechanisms) — PARTIALLY LANDED via M-BuilderUX.** Hinge/slider/cylindrical shipped
+  as joints. Remaining: ball/rope fasteners, motors (axle/wheel), gear-mesh physics,
+  pulley + driven-cart demos, incremental physics-world updates.
 
 ## Tech stack
 
@@ -65,7 +66,7 @@ static build → GitHub Pages.
 
 ## Architecture (key files)
 
-- `src/document/` — the source-of-truth document.
+- `src/document/` — the source-of-truth document (`math.ts` = three-free vec/quat helpers).
   - `types.ts` — Document (Definition + State), Piece, Material, Ground.
   - `catalog.ts` — real-world STOCK → engine primitive mapping + `makePiece`.
   - `document.ts` / `store.ts` — pure ops + Zustand store (undo/redo, activeTool, running, reset).
@@ -86,6 +87,13 @@ static build → GitHub Pages.
 
 ## Conventions / gotchas
 
+- **Selection signal is an outline, never shading** (`PieceMesh` inverted hull; orange =
+  selected, green = proximity/joint target).
+- **Joint fasteners store anchors/axis in piece-LOCAL space**; `integration.ts` converts to
+  world at compile time using current State, so rebuilds stay consistent after motion.
+- **Gizmo commits must bump `worldEpoch`** (`movePieceTransform`) or the paused Jolt body
+  keeps the old pose and Run snaps the piece back.
+
 - **Physics is ambient.** `running` defaults true; Pause freezes stepping.
 - **State sync mutates pieces in place** every frame and must NOT go through undo/redo —
   only structural Definition edits are undoable.
@@ -98,7 +106,7 @@ static build → GitHub Pages.
 ## Commands
 
 - `npm run dev` — dev server (Vite).
-- `npm test` — Vitest (23 tests; includes deterministic physics scenarios).
+- `npm test` — Vitest (78 tests; includes deterministic physics scenarios).
 - `npm run build` — production build → `dist/`.
 - Deploy: push to `main` triggers `.github/workflows/deploy.yml` (GitHub Pages).
   Enable Pages → "GitHub Actions" in repo settings once.
