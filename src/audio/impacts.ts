@@ -22,6 +22,8 @@ const PROFILES: Record<string, Profile> = {
   rubber: { freq: 90, decay: 0.07, noise: 0.35 },
   // The workbench and anything unknown knock like wood.
   bench: { freq: 140, decay: 0.08, noise: 0.7 },
+  // Slingshot rocks: dull stony thump.
+  rock: { freq: 220, decay: 0.05, noise: 0.85 },
 }
 
 let ctx: AudioContext | null = null

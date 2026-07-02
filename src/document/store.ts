@@ -20,6 +20,21 @@ import { planJoint } from './joints'
 /** Interaction tools. 'transform' drags pieces (sim running) or shows a gizmo (paused). */
 export type Tool = 'transform' | 'joint'
 
+/** Test-force generators + slingshot options. Session state, never persisted. */
+export interface EnvSettings {
+  windOn: boolean
+  /** N per m² of piece silhouette. */
+  windStrength: number
+  /** Radians, compass direction the wind blows toward. */
+  windAngle: number
+  quakeOn: boolean
+  /** Horizontal shake acceleration, m/s². */
+  quakeMagnitude: number
+  /** Slingshot rock speed (m/s) and radius (m); Space fires while running. */
+  rockSpeed: number
+  rockRadius: number
+}
+
 export interface PendingJoin {
   /** The just-dropped piece. */
   pieceId: string
@@ -102,11 +117,22 @@ export interface DocState {
   /** Impact sound effects on/off. */
   soundOn: boolean
   setSoundOn: (on: boolean) => void
+  /** Session-only environment generators (not saved with the document). */
+  env: EnvSettings
+  setEnv: (patch: Partial<EnvSettings>) => void
   /** Reset every piece's live State back to its Definition and rebuild physics. */
   reset: () => void
   addPiece: (piece: Piece) => void
   updatePiece: (id: string, patch: Partial<Piece>) => void
   removePiece: (id: string) => void
+  /** Clone a piece in place (Alt-drag duplicate). Returns the clone, already committed. */
+  duplicatePiece: (id: string) => Piece | null
+  /** Put the given pieces back at their rest placement (state ← definition). */
+  resetPieces: (ids: string[]) => void
+  /** Reset only pieces knocked far from their rest placement; the rest stay settled. */
+  tidy: () => void
+  /** Adopt the current physical pose as the new rest placement (definition ← state). */
+  adoptPose: (ids: string[]) => void
   /**
    * Commit a gizmo edit: sets both Definition and State to the new pose and rebuilds
    * the physics world so paused bodies match (otherwise Run would snap the piece back).
@@ -238,7 +264,14 @@ export function createDocStore(initial: Document = emptyDocument()) {
           }
           return ops.addFastener(next, plan.fastener)
         })
-        set((s) => ({ jointA: null, jointHover: null, jointType: type, worldEpoch: s.worldEpoch + 1 }))
+        // Joint placed: hand control straight back to the drag/Move tool.
+        set((s) => ({
+          jointA: null,
+          jointHover: null,
+          jointType: type,
+          tool: 'transform',
+          worldEpoch: s.worldEpoch + 1,
+        }))
       },
       cancelJoint: () => set({ jointA: null, jointHover: null }),
       pendingJoin: null,
@@ -344,6 +377,16 @@ export function createDocStore(initial: Document = emptyDocument()) {
       bumpWorldEpoch: () => set((s) => ({ worldEpoch: s.worldEpoch + 1 })),
       soundOn: true,
       setSoundOn: (soundOn) => set({ soundOn }),
+      env: {
+        windOn: false,
+        windStrength: 6,
+        windAngle: 0,
+        quakeOn: false,
+        quakeMagnitude: 3,
+        rockSpeed: 8,
+        rockRadius: 0.06,
+      },
+      setEnv: (patch) => set((s) => ({ env: { ...s.env, ...patch } })),
       reset: () =>
         set((s) => ({
           doc: {
@@ -359,6 +402,54 @@ export function createDocStore(initial: Document = emptyDocument()) {
       select: (selectedId) =>
         set(selectedId ? { selectedId, selectedFastenerId: null } : { selectedId }),
       addPiece: (piece) => commit((doc) => ops.addPiece(doc, piece)),
+      duplicatePiece: (id) => {
+        const src = get().doc.pieces.find((p) => p.id === id)
+        if (!src) return null
+        const clone = makePiece(src.stockType, [...src.state.transform.position])
+        clone.name = src.name
+        clone.material = src.material
+        clone.dimensions = { ...src.dimensions }
+        clone.definition = { transform: structuredClone(src.state.transform) }
+        clone.state = { transform: structuredClone(src.state.transform) }
+        commit((doc) => ops.addPiece(doc, clone))
+        set({ selectedId: clone.id })
+        return clone
+      },
+      resetPieces: (ids) =>
+        set((s) => ({
+          doc: {
+            ...s.doc,
+            pieces: s.doc.pieces.map((p) =>
+              ids.includes(p.id)
+                ? { ...p, state: { transform: structuredClone(p.definition.transform) } }
+                : p,
+            ),
+          },
+          worldEpoch: s.worldEpoch + 1,
+        })),
+      tidy: () => {
+        const { doc, resetPieces } = get()
+        const displaced = doc.pieces.filter((p) => {
+          const d = p.definition.transform.position
+          const st = p.state.transform.position
+          const dist = Math.hypot(st[0] - d[0], st[1] - d[1], st[2] - d[2])
+          // Quaternion dot near ±1 = same orientation.
+          const qd = Math.abs(
+            p.definition.transform.rotation.reduce((acc, v, i) => acc + v * p.state.transform.rotation[i], 0),
+          )
+          return dist > 0.15 || qd < 0.94 // ~20°
+        })
+        if (displaced.length) resetPieces(displaced.map((p) => p.id))
+      },
+      adoptPose: (ids) =>
+        commit((doc) => ({
+          ...doc,
+          pieces: doc.pieces.map((p) =>
+            ids.includes(p.id)
+              ? { ...p, definition: { transform: structuredClone(p.state.transform) } }
+              : p,
+          ),
+        })),
       updatePiece: (id, patch) => commit((doc) => ops.updatePiece(doc, id, patch)),
       removePiece: (id) =>
         set((s) => ({

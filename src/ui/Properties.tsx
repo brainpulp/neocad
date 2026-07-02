@@ -131,6 +131,21 @@ export function Properties() {
         </select>
       </label>
 
+      <div className="btn-row">
+        <button
+          title="Return this piece to its rest placement"
+          onClick={() => store.getState().resetPieces([piece.id])}
+        >
+          ↩ Put back
+        </button>
+        <button
+          title="Make the current physical pose the new rest placement"
+          onClick={() => store.getState().adoptPose([piece.id])}
+        >
+          ✓ Adopt pose
+        </button>
+      </div>
+
       <label className="field checkbox" title="A fixed piece is stationary — physics can't move it (F)">
         <input
           type="checkbox"

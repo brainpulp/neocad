@@ -1,4 +1,11 @@
-import { setupCollisionFiltering, LAYER_MOVING, LAYER_NON_MOVING, type JoltModule } from './jolt'
+import {
+  setupCollisionFiltering,
+  LAYER_MOVING,
+  LAYER_NON_MOVING,
+  LAYER_PROJECTILE,
+  LAYER_WALLS,
+  type JoltModule,
+} from './jolt'
 import { makeShape } from './shapes'
 import { FASTENERS, STOCK } from '../document/catalog'
 import { localDirToWorld, localToWorld, perpendicular } from '../document/math'
@@ -12,6 +19,10 @@ const MAX_RESTITUTION = 0.4
 const FALLBACK_FRICTION = 0.5
 // The bench/ground grips well so pieces settle instead of sliding away.
 const GROUND_FRICTION = 0.8
+// Runaway prevention: nothing in a workshop moves at highway speed. These caps
+// also make overlap resolution a firm push instead of an explosion.
+const MAX_LINEAR_VELOCITY = 8 // m/s
+const MAX_ANGULAR_VELOCITY = 25 // rad/s
 
 function volumeOf(piece: Piece): number {
   const d = piece.dimensions
@@ -22,6 +33,18 @@ function volumeOf(piece: Piece): number {
       return Math.PI * d.radius * d.radius * d.height
     case 'sphere':
       return (4 / 3) * Math.PI * d.radius ** 3
+  }
+}
+
+function maxHalfHeight(piece: Piece): number {
+  const d = piece.dimensions
+  switch (STOCK[piece.stockType].primitive) {
+    case 'box':
+      return Math.max(d.x, d.y, d.z) / 2
+    case 'cylinder':
+      return Math.max(d.height, d.radius * 2) / 2
+    case 'sphere':
+      return d.radius
   }
 }
 
@@ -63,6 +86,12 @@ export class PhysicsWorld {
 
     const [gx, gy, gz] = doc.ground.gravity
     this.physicsSystem.SetGravity(new Jolt.Vec3(gx, gy, gz))
+
+    // Gentler penetration recovery: overlapping pieces separate with a nudge,
+    // not a detonation (default Baumgarte 0.2 is tuned for games, not benches).
+    const ps = this.physicsSystem.GetPhysicsSettings()
+    ps.mBaumgarte = 0.12
+    this.physicsSystem.SetPhysicsSettings(ps)
 
     this.groupFilter = new Jolt.GroupFilterTable(doc.pieces.length)
     this.createGround(doc)
@@ -196,7 +225,11 @@ export class PhysicsWorld {
     this.physicsSystem.AddConstraint(settings.Create(bodyA, bodyB))
   }
 
-  private addStaticBox(halfExtents: [number, number, number], center: [number, number, number]): void {
+  private addStaticBox(
+    halfExtents: [number, number, number],
+    center: [number, number, number],
+    layer: number = LAYER_NON_MOVING,
+  ): void {
     const J = this.Jolt
     const shape = new J.BoxShape(new J.Vec3(...halfExtents), 0.0)
     const bcs = new J.BodyCreationSettings(
@@ -204,7 +237,7 @@ export class PhysicsWorld {
       new J.RVec3(...center),
       new J.Quat(0, 0, 0, 1),
       J.EMotionType_Static,
-      LAYER_NON_MOVING,
+      layer,
     )
     bcs.mFriction = GROUND_FRICTION
     bcs.mRestitution = 0
@@ -225,10 +258,10 @@ export class PhysicsWorld {
     // the bench (paused user moves bypass physics entirely).
     const wallH = 2.5
     const wallT = 0.05
-    this.addStaticBox([wallT / 2, wallH / 2, half + wallT], [half + wallT / 2, wallH / 2, 0])
-    this.addStaticBox([wallT / 2, wallH / 2, half + wallT], [-half - wallT / 2, wallH / 2, 0])
-    this.addStaticBox([half + wallT, wallH / 2, wallT / 2], [0, wallH / 2, half + wallT / 2])
-    this.addStaticBox([half + wallT, wallH / 2, wallT / 2], [0, wallH / 2, -half - wallT / 2])
+    this.addStaticBox([wallT / 2, wallH / 2, half + wallT], [half + wallT / 2, wallH / 2, 0], LAYER_WALLS)
+    this.addStaticBox([wallT / 2, wallH / 2, half + wallT], [-half - wallT / 2, wallH / 2, 0], LAYER_WALLS)
+    this.addStaticBox([half + wallT, wallH / 2, wallT / 2], [0, wallH / 2, half + wallT / 2], LAYER_WALLS)
+    this.addStaticBox([half + wallT, wallH / 2, wallT / 2], [0, wallH / 2, -half - wallT / 2], LAYER_WALLS)
   }
 
   private createPieceBody(piece: Piece, materials: Material[]): void {
@@ -247,6 +280,8 @@ export class PhysicsWorld {
     const mat = materials.find((m) => m.name === piece.material)
     bcs.mFriction = mat?.friction ?? FALLBACK_FRICTION
     bcs.mRestitution = Math.min(mat?.restitution ?? 0.1, MAX_RESTITUTION)
+    bcs.mMaxLinearVelocity = MAX_LINEAR_VELOCITY
+    bcs.mMaxAngularVelocity = MAX_ANGULAR_VELOCITY
     if (!isStatic) {
       // Realistic mass from material density × volume.
       bcs.mOverrideMassProperties = J.EOverrideMassProperties_CalculateInertia
@@ -301,6 +336,122 @@ export class PhysicsWorld {
     const target = new J.RVec3(cur.GetX() + dx * f, cur.GetY() + dy * f, cur.GetZ() + dz * f)
     const rot = this.bodyInterface.GetRotation(id)
     this.bodyInterface.MoveKinematic(id, target, rot, dt)
+  }
+
+  /** Set a grabbed piece's rotation kinematically (Alt-rotate during drag). */
+  rotateGrab(pieceId: string, rot: [number, number, number, number], dt: number): void {
+    const id = this.bodies.get(pieceId)
+    if (!id) return
+    const J = this.Jolt
+    const pos = this.bodyInterface.GetPosition(id)
+    this.bodyInterface.MoveKinematic(
+      id,
+      new J.RVec3(pos.GetX(), pos.GetY(), pos.GetZ()),
+      new J.Quat(rot[0], rot[1], rot[2], rot[3]),
+      dt,
+    )
+  }
+
+  /**
+   * Environmental forces, applied once per step BEFORE stepping.
+   * Wind: gusting directional force scaled by each piece's silhouette area.
+   * Earthquake: horizontal frame-shake acceleration (force ∝ mass).
+   */
+  applyEnvironment(
+    time: number,
+    wind: { strength: number; angle: number } | null,
+    quake: { magnitude: number } | null,
+    pieces: Piece[],
+    materials: Material[],
+  ): void {
+    if (!wind && !quake) return
+    const J = this.Jolt
+    let fx = 0
+    let fz = 0
+    if (quake) {
+      // Two incommensurate frequencies + a fast wobble read as a real tremor.
+      const a = quake.magnitude
+      fx += a * (Math.sin(time * 13.7) + 0.5 * Math.sin(time * 31.3))
+      fz += a * (Math.cos(time * 11.1) + 0.5 * Math.sin(time * 27.9 + 1.3))
+    }
+    let wx = 0
+    let wz = 0
+    if (wind) {
+      const gust = 0.65 + 0.35 * Math.sin(time * 1.9) * Math.sin(time * 0.53 + 1)
+      wx = Math.cos(wind.angle) * wind.strength * gust
+      wz = Math.sin(wind.angle) * wind.strength * gust
+    }
+    for (const piece of pieces) {
+      if (piece.anchored) continue
+      const id = this.bodies.get(piece.id)
+      if (!id) continue
+      const mass = massOf(piece, materials)
+      // Wind pushes on area; quake accelerates the frame (∝ mass).
+      const d = piece.dimensions
+      const area = Math.min(
+        1.5,
+        STOCK[piece.stockType].primitive === 'box'
+          ? Math.max(d.x * d.y, d.y * d.z, d.x * d.z)
+          : STOCK[piece.stockType].primitive === 'cylinder'
+            ? d.radius * 2 * d.height
+            : Math.PI * d.radius * d.radius,
+      )
+      const force = new J.Vec3(fx * mass + wx * area, 0, fz * mass + wz * area)
+      // Wind catches pieces above their midline (real gusts TIP structures);
+      // quake shakes through the center of mass. Blend: push at 1/4 height up.
+      const [px, py, pz] = piece.state.transform.position
+      const lift = wind ? maxHalfHeight(piece) * 0.5 : 0
+      this.bodyInterface.AddForce(id, force, new J.RVec3(px, py + lift, pz), J.EActivation_Activate)
+    }
+  }
+
+  // ---- Slingshot projectiles: ephemeral rocks, not part of the document. ----
+  private projectiles: { bodyId: any; born: number; radius: number }[] = []
+
+  fireProjectile(origin: Vec3, dir: Vec3, speed: number, radius: number): void {
+    const J = this.Jolt
+    if (this.projectiles.length >= 16) this.removeProjectile(0)
+    const bcs = new J.BodyCreationSettings(
+      new J.SphereShape(radius),
+      new J.RVec3(origin[0], origin[1], origin[2]),
+      new J.Quat(0, 0, 0, 1),
+      J.EMotionType_Dynamic,
+      LAYER_PROJECTILE, // flies over/through the sandbox walls
+    )
+    bcs.mFriction = 0.6
+    bcs.mRestitution = 0.25
+    bcs.mOverrideMassProperties = J.EOverrideMassProperties_CalculateInertia
+    bcs.mMassPropertiesOverride.mMass = Math.max(0.05, 2600 * (4 / 3) * Math.PI * radius ** 3)
+    const body = this.bodyInterface.CreateBody(bcs)
+    this.bodyMaterials.set(body.GetID().GetIndexAndSequenceNumber(), 'rock')
+    this.bodyInterface.AddBody(body.GetID(), J.EActivation_Activate)
+    this.bodyInterface.SetLinearVelocity(
+      body.GetID(),
+      new J.Vec3(dir[0] * speed, dir[1] * speed, dir[2] * speed),
+    )
+    this.projectiles.push({ bodyId: body.GetID(), born: performance.now(), radius })
+  }
+
+  private removeProjectile(index: number): void {
+    const p = this.projectiles[index]
+    if (!p) return
+    this.bodyInterface.RemoveBody(p.bodyId)
+    this.bodyInterface.DestroyBody(p.bodyId)
+    this.projectiles.splice(index, 1)
+  }
+
+  /** Live projectile positions+radius for rendering; expires old/fallen rocks. */
+  syncProjectiles(): { x: number; y: number; z: number; r: number }[] {
+    const now = performance.now()
+    for (let i = this.projectiles.length - 1; i >= 0; i--) {
+      const p = this.projectiles[i]
+      const pos = this.bodyInterface.GetPosition(p.bodyId)
+      if (now - p.born > 10000 || pos.GetY() < -5) this.removeProjectile(i)
+    }
+    return this.projectiles.map((p) => {
+      const pos = this.bodyInterface.GetPosition(p.bodyId)
+      return { x: pos.GetX(), y: pos.GetY(), z: pos.GetZ(), r: p.radius }
+    })
   }
 
   /** Release a grabbed piece back to dynamic; throw velocity is clamped gently. */

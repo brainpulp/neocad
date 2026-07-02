@@ -19,19 +19,29 @@ export function initJolt(): Promise<JoltModule> {
   return cached
 }
 
-// Object layers: static (non-moving) vs dynamic (moving).
+// Object layers: static (non-moving), dynamic (moving), the sandbox's invisible
+// walls (contain pieces but let slingshot rocks fly in from outside), and the
+// rocks themselves.
 export const LAYER_NON_MOVING = 0
 export const LAYER_MOVING = 1
-const NUM_OBJECT_LAYERS = 2
+export const LAYER_WALLS = 2
+export const LAYER_PROJECTILE = 3
+const NUM_OBJECT_LAYERS = 4
 
 /**
- * Configure a JoltSettings with the two-layer broadphase/collision filtering that
- * JoltInterface requires. Standard JoltPhysics.js boilerplate.
+ * Configure a JoltSettings with the layered broadphase/collision filtering that
+ * JoltInterface requires. Standard JoltPhysics.js boilerplate, plus wall/rock rules.
  */
 export function setupCollisionFiltering(Jolt: JoltModule, settings: any): void {
   const objectFilter = new Jolt.ObjectLayerPairFilterTable(NUM_OBJECT_LAYERS)
   objectFilter.EnableCollision(LAYER_NON_MOVING, LAYER_MOVING)
   objectFilter.EnableCollision(LAYER_MOVING, LAYER_MOVING)
+  objectFilter.EnableCollision(LAYER_WALLS, LAYER_MOVING) // walls contain pieces…
+  objectFilter.EnableCollision(LAYER_NON_MOVING, LAYER_PROJECTILE)
+  objectFilter.EnableCollision(LAYER_MOVING, LAYER_PROJECTILE)
+  objectFilter.EnableCollision(LAYER_PROJECTILE, LAYER_PROJECTILE)
+  // …but NOT rocks (no LAYER_WALLS↔LAYER_PROJECTILE): the slingshot fires from
+  // outside the bench and must reach the scene.
 
   const BP_NON_MOVING = new Jolt.BroadPhaseLayer(0)
   const BP_MOVING = new Jolt.BroadPhaseLayer(1)
@@ -40,6 +50,8 @@ export function setupCollisionFiltering(Jolt: JoltModule, settings: any): void {
   const bpInterface = new Jolt.BroadPhaseLayerInterfaceTable(NUM_OBJECT_LAYERS, NUM_BROAD_PHASE_LAYERS)
   bpInterface.MapObjectToBroadPhaseLayer(LAYER_NON_MOVING, BP_NON_MOVING)
   bpInterface.MapObjectToBroadPhaseLayer(LAYER_MOVING, BP_MOVING)
+  bpInterface.MapObjectToBroadPhaseLayer(LAYER_WALLS, BP_NON_MOVING)
+  bpInterface.MapObjectToBroadPhaseLayer(LAYER_PROJECTILE, BP_MOVING)
 
   settings.mObjectLayerPairFilter = objectFilter
   settings.mBroadPhaseLayerInterface = bpInterface

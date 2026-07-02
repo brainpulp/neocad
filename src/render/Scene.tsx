@@ -54,6 +54,8 @@ interface DragState {
   /** planeY − centerY, kept constant when shift-lifting rebases the plane. */
   grabOffY: number
   target: Vec3
+  /** Alt-rotate: desired orientation, driven by horizontal pointer motion. */
+  rotQuat: Quaternion
 }
 
 interface PausedDrag {
@@ -86,10 +88,41 @@ function Sim({ Jolt }: { Jolt: JoltModule }) {
   const tool = useDocStore((s) => s.tool)
   const jointA = useDocStore((s) => s.jointA)
   const jointHover = useDocStore((s) => s.jointHover)
+  const camera = useThree((s) => s.camera)
   const worldRef = useRef<PhysicsWorld | null>(null)
   const meshes = useRef(new Map<string, Mesh>())
   const drag = useRef<DragState | null>(null)
   const pausedDrag = useRef<PausedDrag | null>(null)
+
+  // Camera-right, flattened to the ground plane (Alt+Shift tilt axis).
+  const horizontalRight = () => {
+    const right = new Vector3(1, 0, 0).applyQuaternion(camera.quaternion)
+    right.y = 0
+    return right.lengthSq() < 1e-6 ? new Vector3(1, 0, 0) : right.normalize()
+  }
+
+  // Slingshot: Space fires a rock from the camera while the sim runs.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.code !== 'Space') return
+      const el = e.target as Element | null
+      if (el && ['INPUT', 'SELECT', 'TEXTAREA', 'BUTTON'].includes(el.tagName ?? '')) return
+      const s = store.getState()
+      if (!s.running) return
+      e.preventDefault()
+      const dir = new Vector3()
+      camera.getWorldDirection(dir)
+      const o = camera.position.clone().addScaledVector(dir, 0.3)
+      worldRef.current?.fireProjectile(
+        [o.x, o.y, o.z],
+        [dir.x, dir.y, dir.z],
+        s.env.rockSpeed,
+        s.env.rockRadius,
+      )
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [camera, store])
   // Pointer is over a resize handle: mute the gizmo so it can't steal the drag.
   const [handleHover, setHandleHover] = useState(false)
 
@@ -98,9 +131,6 @@ function Sim({ Jolt }: { Jolt: JoltModule }) {
   // (Re)build the Jolt world whenever the structure changes. Full rebuild is fine
   // for M1 (small scenes); incremental add/remove is a later-milestone optimization.
   useEffect(() => {
-    drag.current = null
-    pausedDrag.current = null
-    store.getState().setDraggingId(null)
     worldRef.current?.dispose()
     worldRef.current = new PhysicsWorld(Jolt, store.getState().doc, (matA, matB, speed) => {
       const s = store.getState()
@@ -108,6 +138,16 @@ function Sim({ Jolt }: { Jolt: JoltModule }) {
       playImpact(matA, speed)
       playImpact(matB, speed * 0.8) // usually throttled away; adds body on hard hits
     })
+    // A drag can survive a rebuild (e.g. Alt-duplicate adds a piece mid-drag):
+    // re-grab the same piece in the fresh world, otherwise drop the drag.
+    if (drag.current && !worldRef.current.beginGrab(drag.current.id)) {
+      drag.current = null
+      store.getState().setDraggingId(null)
+    }
+    if (pausedDrag.current && !store.getState().doc.pieces.some((p) => p.id === pausedDrag.current?.id)) {
+      pausedDrag.current = null
+      store.getState().setDraggingId(null)
+    }
     return () => {
       worldRef.current?.dispose()
       worldRef.current = null
@@ -120,15 +160,40 @@ function Sim({ Jolt }: { Jolt: JoltModule }) {
   const gizmoMesh = gizmoActive && selectedId ? meshes.current.get(selectedId) : undefined
   const selectedPiece = selectedId ? doc.pieces.find((p) => p.id === selectedId) : undefined
 
+  const simTime = useRef(0)
+  const projectileMeshes = useRef<(Mesh | null)[]>([])
+
   useFrame(() => {
     const world = worldRef.current
     if (!world) return
     const state = store.getState()
     if (state.running) {
       if (drag.current) world.moveGrab(drag.current.id, drag.current.target, FIXED_DT)
+      simTime.current += FIXED_DT
+      const env = state.env
+      world.applyEnvironment(
+        simTime.current,
+        env.windOn ? { strength: env.windStrength, angle: env.windAngle } : null,
+        env.quakeOn ? { magnitude: env.quakeMagnitude } : null,
+        state.doc.pieces,
+        state.doc.materials,
+      )
       world.step(FIXED_DT)
       world.syncToDocument(state.doc)
     }
+    // Slingshot rocks (ephemeral): drive the mesh pool from the physics list.
+    const rocks = world.syncProjectiles()
+    projectileMeshes.current.forEach((m, i) => {
+      if (!m) return
+      const rock = rocks[i]
+      if (rock) {
+        m.visible = true
+        m.position.set(rock.x, rock.y, rock.z)
+        m.scale.setScalar(rock.r)
+      } else {
+        m.visible = false
+      }
+    })
     // Drive meshes from State imperatively (no per-frame React re-render).
     for (const piece of state.doc.pieces) {
       if (gizmoActive && piece.id === state.selectedId) continue
@@ -173,8 +238,9 @@ function Sim({ Jolt }: { Jolt: JoltModule }) {
   // (slide along the axis, swing around it) so the user can align the motion;
   // loose pieces move freely on the ground plane (shift = vertically).
   const beginPausedDrag = (piece: import('../document/types').Piece, e: import('@react-three/fiber').ThreeEvent<PointerEvent>) => {
-    const mesh = meshes.current.get(piece.id)
-    if (!mesh) return
+    // Derived from document state, not the mesh: a just-made Alt-duplicate has
+    // no mounted mesh yet, but its state matches the original's pose.
+    const [px, py, pz] = piece.state.transform.position
     const s = store.getState()
     const joint = s.doc.fasteners.find(
       (f) => isJointType(f.type) && (f.partA === piece.id || f.partB === piece.id),
@@ -182,11 +248,11 @@ function Sim({ Jolt }: { Jolt: JoltModule }) {
     const base: PausedDrag = {
       id: piece.id,
       mode: 'free',
-      offX: e.point.x - mesh.position.x,
-      offZ: e.point.z - mesh.position.z,
-      centerY: mesh.position.y,
+      offX: e.point.x - px,
+      offZ: e.point.z - pz,
+      centerY: py,
       planeY: e.point.y,
-      grabOffY: e.point.y - mesh.position.y,
+      grabOffY: e.point.y - py,
     }
     if (joint) {
       const pieceA = s.doc.pieces.find((p) => p.id === joint.partA)
@@ -209,8 +275,8 @@ function Sim({ Jolt }: { Jolt: JoltModule }) {
                 axis,
                 anchor,
                 startVec: v0.normalize(),
-                quat0: mesh.quaternion.clone(),
-                center0: mesh.position.clone(),
+                quat0: new Quaternion(...piece.state.transform.rotation),
+                center0: new Vector3(px, py, pz),
               }
             }
           }
@@ -230,7 +296,7 @@ function Sim({ Jolt }: { Jolt: JoltModule }) {
               maxD = d0 - joint.slideMin
             }
           }
-          const startPos = mesh.position.clone()
+          const startPos = new Vector3(px, py, pz)
           pausedDrag.current = {
             ...base,
             mode: 'slide',
@@ -277,6 +343,13 @@ function Sim({ Jolt }: { Jolt: JoltModule }) {
       return
     }
     // free
+    if (e.nativeEvent.altKey) {
+      // Alt mid-drag = rotate in place (horizontal motion; +Shift tilts).
+      const dx = e.nativeEvent.movementX ?? 0
+      const axis = e.nativeEvent.shiftKey ? horizontalRight() : UP
+      mesh.quaternion.premultiply(new Quaternion().setFromAxisAngle(axis, dx * 0.012))
+      return
+    }
     if (e.nativeEvent.shiftKey) {
       const lineOrigin = new Vector3(mesh.position.x, 0, mesh.position.z)
       const t = lineParam(lineOrigin, UP, e.ray.origin, e.ray.direction)
@@ -319,14 +392,26 @@ function Sim({ Jolt }: { Jolt: JoltModule }) {
               s.jointHoverAt(piece.id, [e.point.x, e.point.y, e.point.z])
               return
             }
-            if (pausedDrag.current?.id === piece.id) {
+            if (pausedDrag.current) {
               movePausedDrag(e)
               return
             }
             // Dragging (running): slide the piece along the horizontal plane it
-            // was grabbed on; shift lifts it vertically instead.
+            // was grabbed on; shift lifts it vertically; Alt pressed mid-drag
+            // rotates (horizontal motion spins; +Shift tilts instead).
             const d = drag.current
-            if (d && d.id === piece.id) {
+            if (d) {
+              if (e.nativeEvent.altKey) {
+                const dx = e.nativeEvent.movementX ?? 0
+                const axis = e.nativeEvent.shiftKey ? horizontalRight() : UP
+                d.rotQuat.premultiply(new Quaternion().setFromAxisAngle(axis, dx * 0.012))
+                worldRef.current?.rotateGrab(
+                  d.id,
+                  [d.rotQuat.x, d.rotQuat.y, d.rotQuat.z, d.rotQuat.w],
+                  FIXED_DT,
+                )
+                return
+              }
               if (e.nativeEvent.shiftKey) {
                 const lineOrigin = new Vector3(d.target[0], 0, d.target[2])
                 const t = lineParam(lineOrigin, UP, e.ray.origin, e.ray.direction)
@@ -365,27 +450,41 @@ function Sim({ Jolt }: { Jolt: JoltModule }) {
               return
             }
             e.stopPropagation()
-            s.select(piece.id)
-            if (s.tool !== 'transform') return
+            if (s.tool !== 'transform') {
+              s.select(piece.id)
+              return
+            }
+            // Alt held BEFORE the click = drag away a duplicate (the original
+            // stays); Alt pressed AFTER the click rotates instead (see move).
+            let target = piece
+            if (e.nativeEvent.altKey) {
+              const clone = s.duplicatePiece(piece.id)
+              if (clone) target = clone
+            } else {
+              s.select(piece.id)
+            }
             if (s.running) {
               // Default tool while the sim runs: drag the piece across the canvas.
-              if (!piece.anchored && worldRef.current?.beginGrab(piece.id)) {
-                const [cx, cy, cz] = piece.state.transform.position
+              // (A just-made clone has no body yet; the rebuild effect re-grabs it.)
+              if (!target.anchored) {
+                worldRef.current?.beginGrab(target.id)
+                const [cx, cy, cz] = target.state.transform.position
                 drag.current = {
-                  id: piece.id,
+                  id: target.id,
                   offX: e.point.x - cx,
                   offZ: e.point.z - cz,
                   centerY: cy,
                   planeY: e.point.y,
                   grabOffY: e.point.y - cy,
                   target: [cx, cy, cz],
+                  rotQuat: new Quaternion(...target.state.transform.rotation),
                 }
-                s.setDraggingId(piece.id)
+                s.setDraggingId(target.id)
                 ;(e.target as Element).setPointerCapture(e.pointerId)
               }
             } else {
               // Paused: body-drag moves the piece (joint-constrained when jointed).
-              beginPausedDrag(piece, e)
+              beginPausedDrag(target, e)
             }
           }}
           onPointerUp={(e) => {
@@ -411,6 +510,22 @@ function Sim({ Jolt }: { Jolt: JoltModule }) {
       {doc.fasteners.map((f) => (
         <FastenerMarker key={f.id} fastener={f} />
       ))}
+      {/* Slingshot rock pool (driven imperatively from physics). */}
+      <group>
+        {Array.from({ length: 16 }).map((_, i) => (
+          <mesh
+            key={i}
+            visible={false}
+            castShadow
+            ref={(m) => {
+              projectileMeshes.current[i] = m
+            }}
+          >
+            <sphereGeometry args={[1, 14, 10]} />
+            <meshStandardMaterial color="#78828e" roughness={0.95} metalness={0.02} />
+          </mesh>
+        ))}
+      </group>
       {/* Joint tool: snap preview under the pointer + the picked point A. */}
       {jointHover && jointHover.pieceId !== jointA?.pieceId && (
         <FeatureMarker anchor={jointHover} color="#2ecc71" />

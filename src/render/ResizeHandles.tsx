@@ -86,6 +86,46 @@ function lineParam(origin: Vector3, dir: Vector3, rayOrigin: Vector3, rayDir: Ve
 
 const MIN_SCALE = 0.05
 const cm = (v: number) => `${(v * 100).toFixed(2)}`
+const UP_V = new Vector3(0, 1, 0)
+
+/** Position a dimension-line rig: main line between two world points + end ticks. */
+function setLineRig(g: Group | null, a: Vector3, b: Vector3, tickDir: Vector3): void {
+  if (!g) return
+  const dir = b.clone().sub(a)
+  const len = dir.length()
+  if (len < 1e-5) {
+    g.visible = false
+    return
+  }
+  g.visible = true
+  dir.normalize()
+  const [main, tickA, tickB] = g.children
+  main.position.copy(a).addScaledVector(dir, len / 2)
+  main.quaternion.setFromUnitVectors(UP_V, dir)
+  main.scale.set(0.0025, len, 0.0025)
+  for (const [tick, p] of [
+    [tickA, a],
+    [tickB, b],
+  ] as const) {
+    tick.position.copy(p)
+    tick.quaternion.setFromUnitVectors(UP_V, tickDir)
+    tick.scale.set(0.0025, 0.045, 0.0025)
+  }
+}
+
+/** Three thin cylinders: the dimension line and its two end ticks. */
+function LineRig({ groupRef }: { groupRef: React.RefObject<Group> }) {
+  return (
+    <group ref={groupRef} visible={false}>
+      {[0, 1, 2].map((i) => (
+        <mesh key={i} renderOrder={998} raycast={() => null}>
+          <cylinderGeometry args={[1, 1, 1, 6]} />
+          <meshBasicMaterial color="#33465c" depthTest={false} toneMapped={false} />
+        </mesh>
+      ))}
+    </group>
+  )
+}
 
 export function ResizeHandles({ piece, mesh, onHoverChange }: Props) {
   const store = useStoreApi()
@@ -98,6 +138,9 @@ export function ResizeHandles({ piece, mesh, onHoverChange }: Props) {
   const labelGroupX = useRef<Group>(null)
   const labelGroupZ = useRef<Group>(null)
   const labelGroupY = useRef<Group>(null)
+  const lineX = useRef<Group>(null)
+  const lineZ = useRef<Group>(null)
+  const lineY = useRef<Group>(null)
   const defs = handleDefs(piece)
   const prim = STOCK[piece.stockType].primitive
   const d = piece.dimensions
@@ -125,24 +168,44 @@ export function ResizeHandles({ piece, mesh, onHoverChange }: Props) {
       }
     })
     const st = drag.current
-    if (!st) return
-    // Live Tinkercad-style dimension readout (cm), pinned to the base edges.
+    if (!st) {
+      for (const rig of [lineX.current, lineZ.current, lineY.current]) if (rig) rig.visible = false
+      return
+    }
+    // Live Tinkercad-style dimension readout: extension lines with end ticks
+    // along each measured edge, number chip riding the line (values in cm).
     const sx = mesh.scale.x
     const sy = mesh.scale.y
     const sz = mesh.scale.z
+    const l2w = (x: number, y: number, z: number) => new Vector3(x, y, z).applyMatrix4(mesh.matrixWorld)
+    const halfX = prim === 'box' ? d.x / 2 : d.radius
+    const halfZ = prim === 'box' ? d.z / 2 : d.radius
+    const baseY = st.def.kind === 'top' ? -fullHeight / 2 : st.def.local[1]
     if (st.def.kind === 'corner') {
       if (labelX.current)
         labelX.current.textContent = prim === 'box' ? cm(d.x * sx) : cm(d.radius * sx)
       if (labelZ.current) labelZ.current.textContent = cm(prim === 'box' ? d.z * sz : d.radius * 2 * sz)
-      labelGroupX.current?.position
-        .set(0, st.def.local[1], st.def.local[2])
-        .applyMatrix4(mesh.matrixWorld)
-      labelGroupZ.current?.position
-        .set(st.def.local[0], st.def.local[1], 0)
-        .applyMatrix4(mesh.matrixWorld)
-    } else if (labelY.current) {
-      labelY.current.textContent = cm(fullHeight * sy)
-      labelGroupY.current?.position.set(0, st.def.local[1], 0).applyMatrix4(mesh.matrixWorld)
+      // Keep the line a constant world-distance off the edge despite live scale.
+      const offZ = st.signZ * (halfZ + 0.05 / Math.max(0.2, sz))
+      const offX = st.signX * (halfX + 0.05 / Math.max(0.2, sx))
+      const ax = l2w(-halfX, baseY, offZ)
+      const bx = l2w(halfX, baseY, offZ)
+      const tickZ = l2w(0, baseY, offZ + st.signZ).sub(l2w(0, baseY, offZ)).normalize()
+      setLineRig(lineX.current, ax, bx, tickZ)
+      labelGroupX.current?.position.copy(ax.clone().add(bx).multiplyScalar(0.5))
+      const az = l2w(offX, baseY, -halfZ)
+      const bz = l2w(offX, baseY, halfZ)
+      const tickX = l2w(offX + st.signX, baseY, 0).sub(l2w(offX, baseY, 0)).normalize()
+      setLineRig(lineZ.current, az, bz, tickX)
+      labelGroupZ.current?.position.copy(az.clone().add(bz).multiplyScalar(0.5))
+    } else if (st.def.kind === 'top') {
+      if (labelY.current) labelY.current.textContent = cm(fullHeight * sy)
+      const offX = halfX + 0.05 / Math.max(0.2, sx)
+      const ay = l2w(offX, -fullHeight / 2, halfZ)
+      const by = l2w(offX, fullHeight / 2, halfZ)
+      const tick = l2w(offX + 1, -fullHeight / 2, halfZ).sub(ay).normalize()
+      setLineRig(lineY.current, ay, by, tick)
+      labelGroupY.current?.position.copy(ay.clone().add(by).multiplyScalar(0.5))
     }
   })
 
@@ -332,7 +395,10 @@ export function ResizeHandles({ piece, mesh, onHoverChange }: Props) {
           </mesh>
         ))}
       </group>
-      {/* Live dimension readouts (cm), Tinkercad-style, only while dragging. */}
+      {/* Live dimension readouts: extension lines + cm chips, only while dragging. */}
+      <LineRig groupRef={lineX} />
+      <LineRig groupRef={lineZ} />
+      <LineRig groupRef={lineY} />
       {dragKind === 'corner' && (
         <>
           <group ref={labelGroupX}>

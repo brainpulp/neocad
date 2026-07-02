@@ -26,6 +26,12 @@ export function Toolbar({ onSave, onOpen, onExportGLTF, onExportSTL }: ToolbarPr
         {running ? '⏸ Pause' : '▶ Run'}
       </button>
       <button onClick={() => store.getState().reset()}>↺ Reset</button>
+      <button
+        title="Put back only the pieces knocked far from their rest placement"
+        onClick={() => store.getState().tidy()}
+      >
+        🧹 Tidy
+      </button>
       <span className="sep" />
       <button
         className={tool === 'transform' ? 'active' : ''}

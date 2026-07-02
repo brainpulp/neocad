@@ -5,6 +5,7 @@ import { Toolbar } from './Toolbar'
 import { Palette } from './Palette'
 import { Properties } from './Properties'
 import { MaterialsEditor } from './MaterialsEditor'
+import { EnvPanel } from './EnvPanel'
 import { SceneTree } from './SceneTree'
 import { JoinDialog } from './JoinDialog'
 import { StatusBar } from './StatusBar'
@@ -115,6 +116,7 @@ export function App() {
           <div className="rightpanel">
             <SceneTree />
             <Properties />
+            <EnvPanel />
             <MaterialsEditor />
           </div>
         </div>
