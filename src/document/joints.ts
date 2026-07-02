@@ -28,6 +28,34 @@ function halfExtentAlong(piece: Piece, dirLocal: Vec3): number {
   }
 }
 
+/** Reverse the joint's axis direction (slide range mirrors with it). */
+export function flipJointAxis(f: Fastener): Partial<Fastener> {
+  const a = f.axisA ?? [0, 1, 0]
+  return {
+    axisA: [-a[0], -a[1], -a[2]],
+    slideMin: f.slideMax != null ? -f.slideMax : undefined,
+    slideMax: f.slideMin != null ? -f.slideMin : undefined,
+  }
+}
+
+/**
+ * Exchange which piece is the joint's reference (SolidWorks-style mate flip).
+ * The world axis is preserved; it's just re-expressed in the new part A's frame.
+ */
+export function swapJointEnds(f: Fastener, pieceA: Piece, pieceB: Piece): Partial<Fastener> {
+  const axisWorld = localDirToWorld(pieceA.state.transform, f.axisA ?? [0, 1, 0])
+  return {
+    partA: f.partB,
+    partB: f.partA,
+    anchorA: f.anchorB,
+    anchorB: f.anchorA,
+    axisA: worldDirToLocal(pieceB.state.transform, axisWorld),
+    // Slide is measured as part A's motion; the new A moves oppositely.
+    slideMin: f.slideMax != null ? -f.slideMax : undefined,
+    slideMax: f.slideMin != null ? -f.slideMin : undefined,
+  }
+}
+
 export interface JointPlan {
   /** Piece to reposition so the joint starts satisfied (null = nothing moves). */
   moverId: string | null

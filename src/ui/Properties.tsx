@@ -1,5 +1,6 @@
-import { STOCK } from '../document/catalog'
-import type { Piece } from '../document/types'
+import { FASTENERS, STOCK } from '../document/catalog'
+import { flipJointAxis, swapJointEnds } from '../document/joints'
+import { isJointType, type Piece } from '../document/types'
 import { useDocStore, useStoreApi } from './storeContext'
 
 interface DimMeta {
@@ -97,7 +98,12 @@ export function Properties() {
   const store = useStoreApi()
   const selectedId = useDocStore((s) => s.selectedId)
   const piece = useDocStore((s) => s.doc.pieces.find((p) => p.id === s.selectedId) ?? null)
+  const selectedFastener = useDocStore(
+    (s) => s.doc.fasteners.find((f) => f.id === s.selectedFastenerId) ?? null,
+  )
   const materials = useDocStore((s) => s.doc.materials)
+
+  if (!piece && selectedFastener) return <JointProperties fastenerId={selectedFastener.id} />
 
   if (!piece) {
     return (
@@ -161,6 +167,92 @@ export function Properties() {
       {Object.keys(piece.dimensions).map((key) => (
         <DimRow key={`${piece.id}:${key}`} piece={piece} dimKey={key} />
       ))}
+    </div>
+  )
+}
+
+/** Inspector for the selected joint: precise limits, flip and swap. */
+function JointProperties({ fastenerId }: { fastenerId: string }) {
+  const store = useStoreApi()
+  const f = useDocStore((s) => s.doc.fasteners.find((x) => x.id === fastenerId) ?? null)
+  const pieces = useDocStore((s) => s.doc.pieces)
+  if (!f) return null
+  const a = pieces.find((p) => p.id === f.partA)
+  const b = pieces.find((p) => p.id === f.partB)
+  const joint = isJointType(f.type)
+  const hasLimits = f.slideMin != null && f.slideMax != null
+  const setLimit = (key: 'slideMin' | 'slideMax', cmValue: number) => {
+    if (!Number.isFinite(cmValue)) return
+    store.getState().updateFastener(f.id, { [key]: cmValue / 100 })
+  }
+
+  return (
+    <div className="properties">
+      <div className="label">JOINT</div>
+      <p style={{ fontSize: 13, margin: '4px 0' }}>
+        <strong>{FASTENERS[f.type].label}</strong>
+        <br />
+        <span className="muted">
+          {a?.name ?? '?'} ↔ {b?.name ?? '?'}
+        </span>
+      </p>
+      {joint && (
+        <div className="btn-row">
+          <button
+            title="Reverse the axis direction"
+            onClick={() => store.getState().updateFastener(f.id, flipJointAxis(f))}
+          >
+            ⇅ Flip axis
+          </button>
+          <button
+            title="Exchange which piece is the reference (mate flip)"
+            onClick={() => {
+              if (a && b) store.getState().updateFastener(f.id, swapJointEnds(f, a, b))
+            }}
+          >
+            ⇄ Swap ends
+          </button>
+        </div>
+      )}
+      {hasLimits && (
+        <>
+          <div className="label" style={{ marginTop: 10 }}>
+            SLIDE LIMITS
+          </div>
+          {(['slideMin', 'slideMax'] as const).map((key) => (
+            <div className="dim-row" key={`${f.id}:${key}:${f[key]}`}>
+              <div className="dim-label">{key === 'slideMin' ? 'From' : 'To'}</div>
+              <div className="dim-value">
+                <input
+                  type="number"
+                  aria-label={key}
+                  step={0.5}
+                  defaultValue={+((f[key] ?? 0) * 100).toFixed(1)}
+                  onBlur={(e) => setLimit(key, parseFloat(e.target.value))}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') (e.target as HTMLInputElement).blur()
+                  }}
+                />
+                <span className="dim-unit">cm</span>
+              </div>
+            </div>
+          ))}
+        </>
+      )}
+      <div className="btn-row">
+        <button
+          onClick={() => {
+            store.getState().removeFastener(f.id)
+            store.getState().selectFastener(null)
+          }}
+        >
+          🗑 Delete joint
+        </button>
+      </div>
+      <p className="muted" style={{ fontSize: 11 }}>
+        Tip: while paused, drag the blue handles in the 3D view for coarse limits;
+        drag a jointed piece to align its motion.
+      </p>
     </div>
   )
 }

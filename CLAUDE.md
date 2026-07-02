@@ -41,6 +41,17 @@ Plans: `docs/superpowers/plans/` · Backlog: `docs/BACKLOG.md`
 - **M2.5 (builder UX quick wins) — DONE & verified.** Delete pieces/fasteners, scene tree
   (select + delete), keyboard shortcuts (Delete/Esc/Ctrl+Z/Y), empty-state hint, fastener
   count in status bar. See `docs/superpowers/plans/M2.5-verification-notes.md`.
+- **M-BuilderUX4 (modifiers, forces, arcs, inspector) — DONE & browser-verified.**
+  Alt BEFORE click = drag a duplicate (drag survives the world rebuild); Alt DURING
+  drag = rotate in place (+Shift tilts about camera-right); dimension EXTENSION LINES
+  with end ticks during resize; joint tool reverts to Move after each joint; recovery
+  ladder (Put back / 🧹 Tidy / Adopt pose); wind (tips structures — pushes above the
+  midline), earthquake, spacebar slingshot (rocks on LAYER_PROJECTILE fly over the
+  sandbox walls; walls still contain pieces); velocity caps + softer Baumgarte;
+  TransformControls REPLACED by custom per-axis rotation arcs (RotateArcs.tsx) that
+  live on the bounding-box shell with the resize handles — no more gizmo fights;
+  joint inspector (flip axis / swap ends / numeric limits); procedural material
+  textures (render/textures.ts, canvas-generated, color multiplies through).
 - **M-BuilderUX3 (direct-manipulation polish) — DONE & browser-verified.** Corner resize
   handles anchor the OPPOSITE corner (Tinkercad-style) with live cm dimension bubbles;
   a lift cone raises/lowers pieces; rotate rings are always on while paused (no gizmo

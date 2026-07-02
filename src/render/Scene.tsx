@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Canvas, useFrame, useThree } from '@react-three/fiber'
-import { GizmoHelper, GizmoViewcube, Grid, OrbitControls, TransformControls } from '@react-three/drei'
+import { GizmoHelper, GizmoViewcube, Grid, OrbitControls } from '@react-three/drei'
 import { Quaternion, Vector3, type Mesh } from 'three'
 import type { OrbitControls as OrbitControlsImpl } from 'three-stdlib'
 import { initJolt, type JoltModule } from '../physics/jolt'
@@ -11,6 +11,7 @@ import { HeldPiece } from './HeldPiece'
 import { FastenerMarker } from './FastenerMarker'
 import { FeatureMarker } from './FeatureMarker'
 import { ResizeHandles } from './ResizeHandles'
+import { RotateArcs } from './RotateArcs'
 import { JointEditor } from './JointEditor'
 import { localDirToWorld, localToWorld } from '../document/math'
 import { isJointType, type Vec3 } from '../document/types'
@@ -123,9 +124,6 @@ function Sim({ Jolt }: { Jolt: JoltModule }) {
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
   }, [camera, store])
-  // Pointer is over a resize handle: mute the gizmo so it can't steal the drag.
-  const [handleHover, setHandleHover] = useState(false)
-
   const key = `${structureKey(doc)}#${worldEpoch}`
 
   // (Re)build the Jolt world whenever the structure changes. Full rebuild is fine
@@ -531,21 +529,14 @@ function Sim({ Jolt }: { Jolt: JoltModule }) {
         <FeatureMarker anchor={jointHover} color="#2ecc71" />
       )}
       {jointA && <FeatureMarker anchor={jointA} color="#ff8a00" />}
-      {/* Paused + transform tool: rotate rings (always on) + resize handles. */}
-      {gizmoMesh && (
-        <TransformControls object={gizmoMesh} mode="rotate" enabled={!handleHover} onMouseUp={() => {
-          const s = store.getState()
-          const id = s.selectedId
-          const mesh = id ? meshes.current.get(id) : undefined
-          if (!id || !mesh) return
-          s.movePieceTransform(id, {
-            position: [mesh.position.x, mesh.position.y, mesh.position.z],
-            rotation: [mesh.quaternion.x, mesh.quaternion.y, mesh.quaternion.z, mesh.quaternion.w],
-          })
-        }} />
-      )}
+      {/* Paused + transform tool: everything mounts on the bounding-box shell —
+          corner/top squares resize, lift cone raises, arc handles rotate.
+          Nothing overlaps, nothing fights. */}
       {gizmoMesh && selectedPiece && (
-        <ResizeHandles piece={selectedPiece} mesh={gizmoMesh} onHoverChange={setHandleHover} />
+        <>
+          <ResizeHandles piece={selectedPiece} mesh={gizmoMesh} />
+          <RotateArcs piece={selectedPiece} mesh={gizmoMesh} />
+        </>
       )}
       <JointEditor />
     </>

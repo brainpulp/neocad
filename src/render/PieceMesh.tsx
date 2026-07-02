@@ -4,6 +4,7 @@ import type { ThreeEvent } from '@react-three/fiber'
 import { STOCK } from '../document/catalog'
 import { maxExtent, pieceVisual } from './geometry'
 import { buildVisual } from './mechanical'
+import { textureFor } from './textures'
 import type { Material, Piece } from '../document/types'
 
 interface Props {
@@ -88,7 +89,12 @@ export const PieceMesh = forwardRef<Mesh, Props>(function PieceMesh(
       onPointerOut={onPointerOut}
     >
       {geometryJsx}
-      <meshStandardMaterial color={v.color} roughness={0.75} metalness={0.05} />
+      <meshStandardMaterial
+        color={v.color}
+        map={textureFor(piece.material) ?? undefined}
+        roughness={0.75}
+        metalness={0.05}
+      />
       {showOutline && (
         // Inverted-hull outline: same geometry, expanded, back faces only.
         <mesh scale={outlineScale(piece, rim)} raycast={() => null}>
