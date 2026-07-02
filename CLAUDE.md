@@ -41,6 +41,20 @@ Plans: `docs/superpowers/plans/` · Backlog: `docs/BACKLOG.md`
 - **M2.5 (builder UX quick wins) — DONE & verified.** Delete pieces/fasteners, scene tree
   (select + delete), keyboard shortcuts (Delete/Esc/Ctrl+Z/Y), empty-state hint, fastener
   count in status bar. See `docs/superpowers/plans/M2.5-verification-notes.md`.
+- **M-BuilderUX3 (direct-manipulation polish) — DONE & browser-verified.** Corner resize
+  handles anchor the OPPOSITE corner (Tinkercad-style) with live cm dimension bubbles;
+  a lift cone raises/lowers pieces; rotate rings are always on while paused (no gizmo
+  modes); paused body-drag moves pieces — jointed pieces move ALONG their joint only
+  (slide within end stops / swing around the pivot axis) so users align motion after
+  joining; Shift while dragging lifts vertically; thin selection outline; view cube
+  (drei GizmoViewcube); zoom-extents (⛶ Fit, window event `neocad:fit`); linear joints
+  slide IN the mated face plane (not along the normal) and a JointEditor widget (select
+  a joint marker / tree row while paused) drags end-stop limits and re-aims the axis
+  on screen; sandbox workbench slab (Document.ground.sandbox, size slider when nothing
+  selected) with invisible walls so physics can't fling pieces away; capped drag speed
+  + clamped throw velocity; "Fix" affordance (pin in tree, F key); material/strength-
+  aware procedural impact sounds (WebAudio + Jolt ContactListenerJS, 🔊 toggle);
+  undo/redo bump worldEpoch so restored poses actually apply.
 - **M-BuilderUX2 (feature joints, resize handles, slider inspector) — DONE & browser-verified.**
   Joints snap to part FEATURES (bore/centerline/ends/edges/face centers — see
   `document/features.ts`), suggest their type from the pairing (bore→cylindrical,

@@ -1,4 +1,5 @@
 import { FASTENERS } from '../document/catalog'
+import { isJointType } from '../document/types'
 import { useDocStore, useStoreApi } from './storeContext'
 
 export function SceneTree() {
@@ -6,6 +7,7 @@ export function SceneTree() {
   const pieces = useDocStore((s) => s.doc.pieces)
   const fasteners = useDocStore((s) => s.doc.fasteners)
   const selectedId = useDocStore((s) => s.selectedId)
+  const selectedFastenerId = useDocStore((s) => s.selectedFastenerId)
 
   const nameOf = (id: string) => pieces.find((p) => p.id === id)?.name ?? '?'
 
@@ -21,6 +23,17 @@ export function SceneTree() {
         >
           <span className="tree-name">{p.name}</span>
           <button
+            aria-label={`${p.anchored ? 'unfix' : 'fix'} ${p.name}`}
+            title={p.anchored ? 'Fixed in place — click to release' : 'Fix in place (F)'}
+            className={p.anchored ? 'pin pinned' : 'pin'}
+            onClick={(e) => {
+              e.stopPropagation()
+              store.getState().updatePiece(p.id, { anchored: !p.anchored })
+            }}
+          >
+            📌
+          </button>
+          <button
             aria-label={`delete ${p.name}`}
             onClick={(e) => {
               e.stopPropagation()
@@ -32,13 +45,21 @@ export function SceneTree() {
         </div>
       ))}
       {fasteners.map((f) => (
-        <div key={f.id} className="tree-row fastener">
+        <div
+          key={f.id}
+          className={`tree-row fastener${f.id === selectedFastenerId ? ' active' : ''}`}
+          onClick={() => (isJointType(f.type) ? store.getState().selectFastener(f.id) : undefined)}
+          style={isJointType(f.type) ? { cursor: 'pointer' } : undefined}
+        >
           <span className="tree-name">
             {FASTENERS[f.type].label}: {nameOf(f.partA)} ↔ {nameOf(f.partB)}
           </span>
           <button
             aria-label={`delete fastener ${f.id}`}
-            onClick={() => store.getState().removeFastener(f.id)}
+            onClick={(e) => {
+              e.stopPropagation()
+              store.getState().removeFastener(f.id)
+            }}
           >
             ✕
           </button>

@@ -12,6 +12,7 @@ import { Scene } from '../render/Scene'
 import { EmptyState } from '../render/EmptyState'
 import { isEditableTarget, keyToAction } from './keyboard'
 import { loadDoc, saveDoc } from '../persistence/autosave'
+import { ensureAudio } from '../audio/impacts'
 import { downloadDocument, pickDocument } from '../persistence/file'
 import { exportGLTF, exportSTL } from '../export/exporters'
 import './app.css'
@@ -51,6 +52,14 @@ export function App() {
     }
   }, [store])
 
+  // Browsers gate audio behind a user gesture: arm the impact-sound engine on
+  // the first pointer press anywhere.
+  useEffect(() => {
+    const arm = () => ensureAudio()
+    window.addEventListener('pointerdown', arm, { once: true })
+    return () => window.removeEventListener('pointerdown', arm)
+  }, [])
+
   // Global keyboard shortcuts (ignored while typing in form fields).
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -67,10 +76,14 @@ export function App() {
         s.setFastenTool(null)
         s.cancelJoint()
         s.select(null)
+        s.selectFastener(null)
       } else if (action === 'undo') {
         s.undo()
       } else if (action === 'redo') {
         s.redo()
+      } else if (action === 'fix') {
+        const piece = s.doc.pieces.find((p) => p.id === s.selectedId)
+        if (piece) s.updatePiece(piece.id, { anchored: !piece.anchored })
       }
     }
     window.addEventListener('keydown', onKey)

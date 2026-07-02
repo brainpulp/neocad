@@ -87,6 +87,17 @@ body { font-family: system-ui, sans-serif; background: #f4f6f9; color: #22303f; 
 }
 .dim-unit { color: #66788c; font-size: 11px; }
 
+/* Live dimension readout during handle drags (Tinkercad's number bubble). */
+.dim-bubble {
+  background: #ffffff; color: #22303f; border: 1px solid #cfd9e4; font-size: 12px;
+  font-weight: 600; padding: 2px 8px; border-radius: 6px; white-space: nowrap;
+  box-shadow: 0 1px 4px rgba(24, 39, 58, 0.18); font-variant-numeric: tabular-nums;
+}
+
+.tree-row button.pin { opacity: 0.35; }
+.tree-row button.pin.pinned { opacity: 1; }
+.tree-row button.pin:hover { color: #1668e3; }
+
 /* Joint-tool snap badge (feature name next to the marker). */
 .feature-badge {
   background: #ffffff; color: #22303f; border: 1px solid #cfd9e4; font-size: 11px;

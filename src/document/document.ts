@@ -30,6 +30,13 @@ export function removeFastener(doc: Document, id: string): Document {
   return { ...doc, fasteners: doc.fasteners.filter((f) => f.id !== id) }
 }
 
+export function updateFastener(doc: Document, id: string, patch: Partial<Fastener>): Document {
+  return {
+    ...doc,
+    fasteners: doc.fasteners.map((f) => (f.id === id ? { ...f, ...patch } : f)),
+  }
+}
+
 export function addMaterial(doc: Document, material: Material): Document {
   return { ...doc, materials: [...doc.materials, material] }
 }

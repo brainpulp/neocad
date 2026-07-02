@@ -28,9 +28,9 @@ it('shows nothing-selected text when no piece is selected', () => {
   expect(screen.getByText(/Nothing selected/i)).toBeInTheDocument()
 })
 
-it('toggling Anchored updates the selected piece', () => {
+it('toggling Fixed-in-place updates the selected piece', () => {
   const { store } = renderWithSelected()
-  const cb = screen.getByLabelText(/Anchored/i) as HTMLInputElement
+  const cb = screen.getByLabelText(/Fixed in place/i) as HTMLInputElement
   expect(cb.checked).toBe(false)
   fireEvent.click(cb)
   expect(store.getState().doc.pieces[0].anchored).toBe(true)

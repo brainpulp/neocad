@@ -1,6 +1,5 @@
 import { JOINT_TYPES, type JointType } from '../document/types'
 import { FASTENERS } from '../document/catalog'
-import type { GizmoMode } from '../document/store'
 import { useDocStore, useStoreApi } from './storeContext'
 
 interface ToolbarProps {
@@ -10,19 +9,13 @@ interface ToolbarProps {
   onExportSTL?: () => void
 }
 
-// Scale lives on the Tinkercad-style corner/top handles, not in the gizmo modes.
-const GIZMO_MODES: { mode: GizmoMode; label: string }[] = [
-  { mode: 'translate', label: 'Move' },
-  { mode: 'rotate', label: 'Rotate' },
-]
-
 export function Toolbar({ onSave, onOpen, onExportGLTF, onExportSTL }: ToolbarProps) {
   const store = useStoreApi()
   const running = useDocStore((s) => s.running)
   const tool = useDocStore((s) => s.tool)
-  const gizmoMode = useDocStore((s) => s.gizmoMode)
   const jointType = useDocStore((s) => s.jointType)
   const jointA = useDocStore((s) => s.jointA)
+  const soundOn = useDocStore((s) => s.soundOn)
   const canUndo = useDocStore((s) => s.past.length > 0)
   const canRedo = useDocStore((s) => s.future.length > 0)
 
@@ -36,7 +29,7 @@ export function Toolbar({ onSave, onOpen, onExportGLTF, onExportSTL }: ToolbarPr
       <span className="sep" />
       <button
         className={tool === 'transform' ? 'active' : ''}
-        title={running ? 'Drag pieces across the canvas' : 'Move / rotate / scale with the gizmo'}
+        title={running ? 'Drag pieces across the canvas (Shift = lift)' : 'Move, rotate (rings) and resize (handles)'}
         onClick={() => store.getState().setTool('transform')}
       >
         ✥ Move
@@ -48,19 +41,6 @@ export function Toolbar({ onSave, onOpen, onExportGLTF, onExportSTL }: ToolbarPr
       >
         ⚙ Joint
       </button>
-      {tool === 'transform' && !running && (
-        <span className="segmented">
-          {GIZMO_MODES.map(({ mode, label }) => (
-            <button
-              key={mode}
-              className={gizmoMode === mode ? 'active' : ''}
-              onClick={() => store.getState().setGizmoMode(mode)}
-            >
-              {label}
-            </button>
-          ))}
-        </span>
-      )}
       {tool === 'joint' && (
         <>
           <span className="segmented">
@@ -81,6 +61,16 @@ export function Toolbar({ onSave, onOpen, onExportGLTF, onExportSTL }: ToolbarPr
       <span className="sep" />
       <button disabled={!canUndo} onClick={() => store.getState().undo()}>↶ Undo</button>
       <button disabled={!canRedo} onClick={() => store.getState().redo()}>↷ Redo</button>
+      <span className="sep" />
+      <button title="Zoom to fit everything" onClick={() => window.dispatchEvent(new Event('neocad:fit'))}>
+        ⛶ Fit
+      </button>
+      <button
+        title={soundOn ? 'Impact sounds on' : 'Impact sounds off'}
+        onClick={() => store.getState().setSoundOn(!soundOn)}
+      >
+        {soundOn ? '🔊' : '🔇'}
+      </button>
       <span className="sep" />
       <button onClick={onSave}>💾 Save</button>
       <button onClick={onOpen}>📂 Open</button>

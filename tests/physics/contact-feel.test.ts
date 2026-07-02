@@ -21,7 +21,7 @@ it('bounce is capped: a rubber ball dropped from 1m rebounds under half its drop
     world.step(1 / 60)
     world.syncToDocument(doc)
     const y = ball.state.transform.position[1]
-    if (!touched && y <= ball.dimensions.radius + 0.01) touched = true
+    if (!touched && y <= 0.05 + ball.dimensions.radius + 0.01) touched = true // slab top = 0.05
     if (touched) reboundPeak = Math.max(reboundPeak, y)
   }
   expect(touched).toBe(true)
@@ -32,13 +32,13 @@ it('bounce is capped: a rubber ball dropped from 1m rebounds under half its drop
 
 it('ground grips: a thrown block stops sliding instead of coasting away', () => {
   const doc = emptyDocument()
-  const block = makePiece('block', [0, 0.15, 0]) // resting on the ground
+  const block = makePiece('block', [0, 0.2, 0]) // resting on the workbench slab
   doc.pieces = [block]
   const world = new PhysicsWorld(Jolt, doc)
   // Fling it sideways with a quick kinematic drag, then release.
   world.beginGrab(block.id)
   for (let i = 0; i < 10; i++) {
-    world.moveGrab(block.id, [i * 0.03, 0.15, 0], 1 / 60) // ~1.8 m/s
+    world.moveGrab(block.id, [i * 0.03, 0.2, 0], 1 / 60) // ~1.8 m/s
     world.step(1 / 60)
   }
   world.endGrab(block.id)

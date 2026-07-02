@@ -56,7 +56,15 @@ export interface Piece {
 
 export interface Ground {
   gravity: Vec3
+  /**
+   * The workbench: a visible square slab where the action happens. Invisible
+   * walls at its edge keep physics from throwing pieces off into the distance;
+   * paused (user) moves are unaffected.
+   */
+  sandbox?: { size: number; thickness: number }
 }
+
+export const DEFAULT_SANDBOX = { size: 4, thickness: 0.05 }
 
 // Rigid fasteners compile to a Jolt fixed constraint and behave identically; they
 // ship as distinct names because their strengths diverge once the failure/FEA
@@ -117,6 +125,6 @@ export function emptyDocument(): Document {
     materials: structuredClone(DEFAULT_MATERIALS),
     pieces: [],
     fasteners: [],
-    ground: { gravity: [0, -9.81, 0] },
+    ground: { gravity: [0, -9.81, 0], sandbox: { ...DEFAULT_SANDBOX } },
   }
 }

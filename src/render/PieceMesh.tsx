@@ -70,8 +70,9 @@ export const PieceMesh = forwardRef<Mesh, Props>(function PieceMesh(
     </>
   )
 
-  // Outline rim thickness scales with the piece so pins and panels both read clearly.
-  const rim = Math.min(0.02, Math.max(0.004, maxExtent(piece) * 0.04))
+  // Outline rim thickness scales with the piece so pins and panels both read
+  // clearly — a fine line, not a halo.
+  const rim = Math.min(0.005, Math.max(0.0015, maxExtent(piece) * 0.008))
   const showOutline = selected || highlighted
 
   return (

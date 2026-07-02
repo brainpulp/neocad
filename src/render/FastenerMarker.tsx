@@ -1,7 +1,7 @@
 import { useFrame } from '@react-three/fiber'
 import { useRef } from 'react'
 import type { Mesh } from 'three'
-import type { Document, Fastener, Vec3 } from '../document/types'
+import { isJointType, type Document, type Fastener, type Vec3 } from '../document/types'
 import { localToWorld } from '../document/math'
 import { useStoreApi } from '../ui/storeContext'
 
@@ -35,7 +35,18 @@ export function FastenerMarker({ fastener }: { fastener: Fastener }) {
   })
 
   return (
-    <mesh ref={ref}>
+    <mesh
+      ref={ref}
+      onPointerDown={
+        isJointType(fastener.type)
+          ? (e) => {
+              // Clicking a joint marker opens its axis/limits editor (paused).
+              e.stopPropagation()
+              store.getState().selectFastener(fastener.id)
+            }
+          : undefined
+      }
+    >
       <sphereGeometry args={[0.035, 12, 8]} />
       <meshStandardMaterial color="#e8a13a" emissive="#7a4d00" emissiveIntensity={0.4} />
     </mesh>

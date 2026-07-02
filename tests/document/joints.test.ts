@@ -4,11 +4,10 @@ import { makePiece } from '../../src/document/catalog'
 import { localToWorld, localDirToWorld } from '../../src/document/math'
 
 describe('joint tool (A → type → B, feature-snapped)', () => {
-  it('defaults: transform tool, pivot joint, translate gizmo', () => {
+  it('defaults: transform tool, pivot joint', () => {
     const s = createDocStore()
     expect(s.getState().tool).toBe('transform')
     expect(s.getState().jointType).toBe('pivot')
-    expect(s.getState().gizmoMode).toBe('translate')
   })
 
   it('gear onto axle: the gear MOVES onto the axle axis and gets a cylindrical joint', () => {

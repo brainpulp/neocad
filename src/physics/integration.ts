@@ -36,11 +36,16 @@ function massOf(piece: Piece, materials: Material[]): number {
  * timestep (determinism, spec §12), and writes transforms back into State only.
  * Definition is never touched here.
  */
+/** Called when two bodies collide: materials of both sides + closing speed (m/s). */
+export type ImpactCallback = (materialA: string, materialB: string, speed: number) => void
+
 export class PhysicsWorld {
   private Jolt: JoltModule
   private ji: any
   private physicsSystem: any
   private bodyInterface: any
+  private contactListener: any = null
+  private bodyMaterials = new Map<number, string>() // BodyID number → material name
   private bodies = new Map<string, any>() // pieceId → Jolt BodyID
   private bodyObjs = new Map<string, any>() // pieceId → Jolt Body (needed to build constraints)
   // Fastened pairs must not collide with each other (a gear's collision shape is a
@@ -48,7 +53,7 @@ export class PhysicsWorld {
   private groupFilter: any
   private subGroups = new Map<string, number>() // pieceId → subgroup id
 
-  constructor(Jolt: JoltModule, doc: Document) {
+  constructor(Jolt: JoltModule, doc: Document, onImpact?: ImpactCallback) {
     this.Jolt = Jolt
     const settings = new Jolt.JoltSettings()
     setupCollisionFiltering(Jolt, settings)
@@ -60,9 +65,35 @@ export class PhysicsWorld {
     this.physicsSystem.SetGravity(new Jolt.Vec3(gx, gy, gz))
 
     this.groupFilter = new Jolt.GroupFilterTable(doc.pieces.length)
-    this.createGround()
+    this.createGround(doc)
     for (const piece of doc.pieces) this.createPieceBody(piece, doc.materials)
     for (const fastener of doc.fasteners) this.createFastener(fastener, doc)
+    if (onImpact) this.installContactListener(onImpact)
+  }
+
+  /** New-contact events → material-aware impact callback (drives sound FX). */
+  private installContactListener(onImpact: ImpactCallback): void {
+    const J = this.Jolt as any
+    const listener = new J.ContactListenerJS()
+    listener.OnContactValidate = () => J.ValidateResult_AcceptAllContactsForThisBodyPair
+    listener.OnContactAdded = (b1Ptr: number, b2Ptr: number) => {
+      const body1 = J.wrapPointer(b1Ptr, J.Body)
+      const body2 = J.wrapPointer(b2Ptr, J.Body)
+      const v1 = body1.GetLinearVelocity()
+      const v2 = body2.GetLinearVelocity()
+      const speed = Math.hypot(
+        v1.GetX() - v2.GetX(),
+        v1.GetY() - v2.GetY(),
+        v1.GetZ() - v2.GetZ(),
+      )
+      const matA = this.bodyMaterials.get(body1.GetID().GetIndexAndSequenceNumber()) ?? 'bench'
+      const matB = this.bodyMaterials.get(body2.GetID().GetIndexAndSequenceNumber()) ?? 'bench'
+      onImpact(matA, matB, speed)
+    }
+    listener.OnContactPersisted = () => {}
+    listener.OnContactRemoved = () => {}
+    this.physicsSystem.SetContactListener(listener)
+    this.contactListener = listener
   }
 
   // Fasteners → Jolt constraints. Rigid (weld/glue/bolt/nail) = FixedConstraint with
@@ -165,13 +196,12 @@ export class PhysicsWorld {
     this.physicsSystem.AddConstraint(settings.Create(bodyA, bodyB))
   }
 
-  private createGround(): void {
+  private addStaticBox(halfExtents: [number, number, number], center: [number, number, number]): void {
     const J = this.Jolt
-    // Large static box whose top surface sits at y=0.
-    const shape = new J.BoxShape(new J.Vec3(50, 0.5, 50), 0.0)
+    const shape = new J.BoxShape(new J.Vec3(...halfExtents), 0.0)
     const bcs = new J.BodyCreationSettings(
       shape,
-      new J.RVec3(0, -0.5, 0),
+      new J.RVec3(...center),
       new J.Quat(0, 0, 0, 1),
       J.EMotionType_Static,
       LAYER_NON_MOVING,
@@ -180,6 +210,25 @@ export class PhysicsWorld {
     bcs.mRestitution = 0
     const body = this.bodyInterface.CreateBody(bcs)
     this.bodyInterface.AddBody(body.GetID(), J.EActivation_DontActivate)
+  }
+
+  private createGround(doc: Document): void {
+    // Large static box whose top surface sits at y=0.
+    this.addStaticBox([50, 0.5, 50], [0, -0.5, 0])
+    const sb = doc.ground.sandbox
+    if (!sb) return
+    const half = sb.size / 2
+    const t = sb.thickness
+    // The workbench slab itself…
+    this.addStaticBox([half, t / 2, half], [0, t / 2, 0])
+    // …and tall invisible walls at its edge so physics can't fling pieces off
+    // the bench (paused user moves bypass physics entirely).
+    const wallH = 2.5
+    const wallT = 0.05
+    this.addStaticBox([wallT / 2, wallH / 2, half + wallT], [half + wallT / 2, wallH / 2, 0])
+    this.addStaticBox([wallT / 2, wallH / 2, half + wallT], [-half - wallT / 2, wallH / 2, 0])
+    this.addStaticBox([half + wallT, wallH / 2, wallT / 2], [0, wallH / 2, half + wallT / 2])
+    this.addStaticBox([half + wallT, wallH / 2, wallT / 2], [0, wallH / 2, -half - wallT / 2])
   }
 
   private createPieceBody(piece: Piece, materials: Material[]): void {
@@ -204,6 +253,7 @@ export class PhysicsWorld {
       bcs.mMassPropertiesOverride.mMass = massOf(piece, materials)
     }
     const body = this.bodyInterface.CreateBody(bcs)
+    this.bodyMaterials.set(body.GetID().GetIndexAndSequenceNumber(), piece.material)
     const sub = this.subGroups.size
     this.subGroups.set(piece.id, sub)
     const cg = body.GetCollisionGroup()
@@ -231,20 +281,40 @@ export class PhysicsWorld {
     return true
   }
 
-  /** Drive a grabbed piece toward a world position over dt (keeps its rotation). */
+  /**
+   * Drive a grabbed piece toward a world position over dt (keeps its rotation).
+   * Approach speed is capped so a fast pointer flick doesn't ram other pieces
+   * with near-infinite kinematic velocity ("everything explodes").
+   */
   moveGrab(pieceId: string, pos: Vec3, dt: number): void {
     const id = this.bodies.get(pieceId)
     if (!id) return
     const J = this.Jolt
+    const MAX_DRAG_SPEED = 3 // m/s — brisk but not a wrecking ball
+    const cur = this.bodyInterface.GetPosition(id)
+    const dx = pos[0] - cur.GetX()
+    const dy = pos[1] - cur.GetY()
+    const dz = pos[2] - cur.GetZ()
+    const dist = Math.hypot(dx, dy, dz)
+    const maxStep = MAX_DRAG_SPEED * dt
+    const f = dist > maxStep ? maxStep / dist : 1
+    const target = new J.RVec3(cur.GetX() + dx * f, cur.GetY() + dy * f, cur.GetZ() + dz * f)
     const rot = this.bodyInterface.GetRotation(id)
-    this.bodyInterface.MoveKinematic(id, new J.RVec3(pos[0], pos[1], pos[2]), rot, dt)
+    this.bodyInterface.MoveKinematic(id, target, rot, dt)
   }
 
-  /** Release a grabbed piece back to dynamic (it keeps its drag velocity — throwable). */
+  /** Release a grabbed piece back to dynamic; throw velocity is clamped gently. */
   endGrab(pieceId: string): void {
     const id = this.bodies.get(pieceId)
     if (!id) return
     const J = this.Jolt
+    const MAX_THROW_SPEED = 2.5
+    const v = this.bodyInterface.GetLinearVelocity(id)
+    const speed = Math.hypot(v.GetX(), v.GetY(), v.GetZ())
+    if (speed > MAX_THROW_SPEED) {
+      const k = MAX_THROW_SPEED / speed
+      this.bodyInterface.SetLinearVelocity(id, new J.Vec3(v.GetX() * k, v.GetY() * k, v.GetZ() * k))
+    }
     this.bodyInterface.SetMotionType(id, J.EMotionType_Dynamic, J.EActivation_Activate)
   }
 
@@ -261,6 +331,11 @@ export class PhysicsWorld {
   }
 
   dispose(): void {
+    if (this.contactListener && typeof (this.Jolt as any).destroy === 'function') {
+      this.physicsSystem?.SetContactListener(null)
+      ;(this.Jolt as any).destroy(this.contactListener)
+      this.contactListener = null
+    }
     if (this.ji && typeof (this.Jolt as any).destroy === 'function') {
       ;(this.Jolt as any).destroy(this.ji)
     }

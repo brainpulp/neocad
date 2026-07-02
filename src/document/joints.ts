@@ -67,7 +67,32 @@ export function planJoint(
   const fallback: Vec3 = length(gap) < 1e-4 ? [0, 1, 0] : normalize(gap)
   const stationaryAxis = mover === 'a' ? axisBWorld : axisAWorld
   const moverAxis = mover === 'a' ? axisAWorld : axisBWorld
-  const axisWorld = stationaryAxis ?? moverAxis ?? fallback
+  let axisWorld = stationaryAxis ?? moverAxis ?? fallback
+
+  // A linear joint along a face NORMAL just bounces in and out like a spring.
+  // Drawers slide IN the face plane: swap to the guide's longest in-plane axis.
+  const faceLinear = type === 'linear' && (featA.kind === 'face' || featB.kind === 'face')
+  if (faceLinear) {
+    const guide = featB.kind === 'face' ? pieceB : pieceA
+    const guideFeat = featB.kind === 'face' ? featB : featA
+    const n = guideFeat.axis ?? [0, 1, 0]
+    const dims = guide.dimensions
+    const candidates: [Vec3, number][] = [
+      [[1, 0, 0], dims.x ?? dims.radius * 2],
+      [[0, 1, 0], dims.y ?? dims.height ?? dims.radius * 2],
+      [[0, 0, 1], dims.z ?? dims.radius * 2],
+    ]
+    let best: Vec3 = [1, 0, 0]
+    let bestSize = -1
+    for (const [dir, size] of candidates) {
+      if (Math.abs(dot(dir, n)) > 0.9) continue // that's the normal itself
+      if (size > bestSize) {
+        bestSize = size
+        best = dir
+      }
+    }
+    axisWorld = localDirToWorld(guide.state.transform, best)
+  }
 
   let moverId: string | null = null
   let moverTransform: Transform | null = null
@@ -80,8 +105,10 @@ export function planJoint(
     const ownAxisWorld = mover === 'a' ? axisAWorld : axisBWorld
     // Rotate so the mover's feature axis lies along the joint axis (when it has one),
     // then translate so its feature point lands on the stationary feature point.
+    // Face-based linear joints skip the rotation — the mated faces stay flush
+    // and the piece just slides.
     const rotation =
-      ownAxisWorld && stationaryAxis
+      ownAxisWorld && stationaryAxis && !faceLinear
         ? quatMultiply(quatFromTo(ownAxisWorld, axisWorld), t.rotation)
         : t.rotation
     const target = mover === 'a' ? worldB : worldA

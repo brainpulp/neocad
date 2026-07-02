@@ -104,6 +104,7 @@ export function Properties() {
       <div className="properties">
         <div className="label">PROPERTIES</div>
         <p className="muted">Nothing selected</p>
+        <WorkbenchSettings />
       </div>
     )
   }
@@ -130,13 +131,13 @@ export function Properties() {
         </select>
       </label>
 
-      <label className="field checkbox">
+      <label className="field checkbox" title="A fixed piece is stationary — physics can't move it (F)">
         <input
           type="checkbox"
           checked={piece.anchored}
           onChange={(e) => update({ anchored: e.target.checked })}
         />
-        Anchored
+        📌 Fixed in place
       </label>
 
       <div className="label" style={{ marginTop: 12 }}>
@@ -146,5 +147,39 @@ export function Properties() {
         <DimRow key={`${piece.id}:${key}`} piece={piece} dimKey={key} />
       ))}
     </div>
+  )
+}
+
+/** Sandbox size, shown when nothing is selected. */
+function WorkbenchSettings() {
+  const store = useStoreApi()
+  const sandbox = useDocStore((s) => s.doc.ground.sandbox)
+  if (!sandbox) return null
+  return (
+    <>
+      <div className="label" style={{ marginTop: 12 }}>
+        WORKBENCH
+      </div>
+      <div className="dim-row">
+        <div className="dim-label">Size</div>
+        <input
+          type="range"
+          aria-label="Workbench size"
+          min={1}
+          max={12}
+          step={0.5}
+          value={sandbox.size}
+          onPointerDown={() => store.getState().beginTransient()}
+          onChange={(e) => store.getState().setSandboxSizeTransient(parseFloat(e.target.value))}
+          onPointerUp={() => store.getState().endTransient()}
+        />
+        <div className="dim-value">
+          <span className="dim-unit">{sandbox.size.toFixed(1)} m</span>
+        </div>
+      </div>
+      <p className="muted" style={{ fontSize: 11 }}>
+        Physics keeps pieces on the bench; paused moves can take them off.
+      </p>
+    </>
   )
 }

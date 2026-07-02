@@ -19,7 +19,6 @@ import { planJoint } from './joints'
 
 /** Interaction tools. 'transform' drags pieces (sim running) or shows a gizmo (paused). */
 export type Tool = 'transform' | 'joint'
-export type GizmoMode = 'translate' | 'rotate' | 'scale'
 
 export interface PendingJoin {
   /** The just-dropped piece. */
@@ -48,9 +47,15 @@ export interface DocState {
   /** Interaction tool. 'transform' is the default (drag / gizmo); 'joint' picks A → type → B. */
   tool: Tool
   setTool: (tool: Tool) => void
-  /** Gizmo mode while paused with the transform tool. */
-  gizmoMode: GizmoMode
-  setGizmoMode: (mode: GizmoMode) => void
+  /** Selected fastener (joint editing widget); mutually exclusive with piece selection. */
+  selectedFastenerId: string | null
+  selectFastener: (id: string | null) => void
+  /** Live joint edits (limit-handle drags): no undo spam; endTransient closes the gesture. */
+  updateFastenerTransient: (id: string, patch: Partial<import('./types').Fastener>) => void
+  /** Commit a fastener edit as one undo entry (e.g. axis re-pick). */
+  updateFastener: (id: string, patch: Partial<import('./types').Fastener>) => void
+  /** Resize the sandbox workbench (transient-friendly; commit via endTransient). */
+  setSandboxSizeTransient: (size: number) => void
   /** Piece currently being dragged across the canvas (disables orbit while set). */
   draggingId: string | null
   setDraggingId: (id: string | null) => void
@@ -92,6 +97,11 @@ export interface DocState {
   select: (id: string | null) => void
   /** Bumped whenever the physics world must be rebuilt from scratch (e.g. reset). */
   worldEpoch: number
+  /** Force a physics-world rebuild (e.g. after a transient joint-limit edit). */
+  bumpWorldEpoch: () => void
+  /** Impact sound effects on/off. */
+  soundOn: boolean
+  setSoundOn: (on: boolean) => void
   /** Reset every piece's live State back to its Definition and rebuild physics. */
   reset: () => void
   addPiece: (piece: Piece) => void
@@ -149,8 +159,25 @@ export function createDocStore(initial: Document = emptyDocument()) {
         jointTypeExplicit = false
         set({ tool, activeTool: null, fastenTool: null, pendingFastenA: null, jointA: null, jointHover: null })
       },
-      gizmoMode: 'translate',
-      setGizmoMode: (gizmoMode) => set({ gizmoMode }),
+      selectedFastenerId: null,
+      selectFastener: (selectedFastenerId) =>
+        set(selectedFastenerId ? { selectedFastenerId, selectedId: null } : { selectedFastenerId }),
+      updateFastenerTransient: (id, patch) =>
+        set((s) => ({ doc: ops.updateFastener(s.doc, id, patch) })),
+      updateFastener: (id, patch) => {
+        commit((doc) => ops.updateFastener(doc, id, patch))
+        set((s) => ({ worldEpoch: s.worldEpoch + 1 }))
+      },
+      setSandboxSizeTransient: (size) =>
+        set((s) => ({
+          doc: {
+            ...s.doc,
+            ground: {
+              ...s.doc.ground,
+              sandbox: { thickness: 0.05, ...s.doc.ground.sandbox, size },
+            },
+          },
+        })),
       draggingId: null,
       setDraggingId: (draggingId) => set({ draggingId }),
       jointType: 'pivot',
@@ -314,6 +341,9 @@ export function createDocStore(initial: Document = emptyDocument()) {
       heldPos: [0, 1.2, 0],
       setHeldPos: (heldPos) => set({ heldPos }),
       worldEpoch: 0,
+      bumpWorldEpoch: () => set((s) => ({ worldEpoch: s.worldEpoch + 1 })),
+      soundOn: true,
+      setSoundOn: (soundOn) => set({ soundOn }),
       reset: () =>
         set((s) => ({
           doc: {
@@ -326,7 +356,8 @@ export function createDocStore(initial: Document = emptyDocument()) {
           worldEpoch: s.worldEpoch + 1,
         })),
       selectedId: null,
-      select: (selectedId) => set({ selectedId }),
+      select: (selectedId) =>
+        set(selectedId ? { selectedId, selectedFastenerId: null } : { selectedId }),
       addPiece: (piece) => commit((doc) => ops.addPiece(doc, piece)),
       updatePiece: (id, patch) => commit((doc) => ops.updatePiece(doc, id, patch)),
       removePiece: (id) =>
@@ -346,6 +377,9 @@ export function createDocStore(initial: Document = emptyDocument()) {
         // Rebuild so the (paused) physics body adopts the new pose.
         set((s) => ({ worldEpoch: s.worldEpoch + 1 }))
       },
+      // Undo/redo rebuild the physics world (worldEpoch) so restored poses take
+      // effect — otherwise live bodies keep their positions and it looks like
+      // nothing happened.
       undo: () =>
         set((s) => {
           if (s.past.length === 0) return s
@@ -354,6 +388,7 @@ export function createDocStore(initial: Document = emptyDocument()) {
             doc: previous,
             past: s.past.slice(0, -1),
             future: [structuredClone(s.doc), ...s.future],
+            worldEpoch: s.worldEpoch + 1,
           }
         }),
       redo: () =>
@@ -364,6 +399,7 @@ export function createDocStore(initial: Document = emptyDocument()) {
             doc: nextDoc,
             past: [...s.past, structuredClone(s.doc)],
             future: s.future.slice(1),
+            worldEpoch: s.worldEpoch + 1,
           }
         }),
       beginTransient: () =>
