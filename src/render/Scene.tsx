@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef } from 'react'
-import { Canvas, useFrame } from '@react-three/fiber'
+import { Canvas, useFrame, useThree } from '@react-three/fiber'
 import { Grid, OrbitControls, TransformControls } from '@react-three/drei'
 import type { Mesh } from 'three'
 import type { OrbitControls as OrbitControlsImpl } from 'three-stdlib'
@@ -9,6 +9,8 @@ import { PieceMesh } from './PieceMesh'
 import { useDocStore, useStoreApi } from '../ui/storeContext'
 import { HeldPiece } from './HeldPiece'
 import { FastenerMarker } from './FastenerMarker'
+import { FeatureMarker } from './FeatureMarker'
+import { ResizeHandles } from './ResizeHandles'
 import { STOCK } from '../document/catalog'
 import type { Vec3 } from '../document/types'
 
@@ -48,9 +50,12 @@ function Sim({ Jolt }: { Jolt: JoltModule }) {
   const tool = useDocStore((s) => s.tool)
   const gizmoMode = useDocStore((s) => s.gizmoMode)
   const jointA = useDocStore((s) => s.jointA)
+  const jointHover = useDocStore((s) => s.jointHover)
   const worldRef = useRef<PhysicsWorld | null>(null)
   const meshes = useRef(new Map<string, Mesh>())
   const drag = useRef<DragState | null>(null)
+  // Pointer is over a resize handle: mute the gizmo so it can't steal the drag.
+  const [handleHover, setHandleHover] = useState(false)
 
   const key = `${structureKey(doc)}#${worldEpoch}`
 
@@ -166,6 +171,12 @@ function Sim({ Jolt }: { Jolt: JoltModule }) {
               s.setProximityTarget(piece.id)
               return
             }
+            // Joint tool: live snap preview of the feature under the pointer.
+            if (s.tool === 'joint') {
+              e.stopPropagation()
+              s.jointHoverAt(piece.id, [e.point.x, e.point.y, e.point.z])
+              return
+            }
             // Dragging: slide the piece along the horizontal plane it was grabbed on.
             const d = drag.current
             if (d && d.id === piece.id && e.ray.direction.y !== 0) {
@@ -223,6 +234,10 @@ function Sim({ Jolt }: { Jolt: JoltModule }) {
               endDrag()
             }
           }}
+          onPointerOut={() => {
+            const s = store.getState()
+            if (s.jointHover?.pieceId === piece.id) s.jointHoverAt(null)
+          }}
           ref={(m) => {
             if (m) meshes.current.set(piece.id, m)
             else meshes.current.delete(piece.id)
@@ -232,19 +247,38 @@ function Sim({ Jolt }: { Jolt: JoltModule }) {
       {doc.fasteners.map((f) => (
         <FastenerMarker key={f.id} fastener={f} />
       ))}
-      {/* Point A marker while placing a joint. */}
-      {jointA && (
-        <mesh position={jointA.point}>
-          <sphereGeometry args={[0.02, 16, 12]} />
-          <meshBasicMaterial color="#ff8a00" />
-        </mesh>
+      {/* Joint tool: snap preview under the pointer + the picked point A. */}
+      {jointHover && jointHover.pieceId !== jointA?.pieceId && (
+        <FeatureMarker anchor={jointHover} color="#2ecc71" />
       )}
-      {/* Paused + transform tool: Tinkercad-style gizmo on the selection. */}
+      {jointA && <FeatureMarker anchor={jointA} color="#ff8a00" />}
+      {/* Paused + transform tool: move/rotate gizmo + Tinkercad resize handles. */}
       {gizmoMesh && (
-        <TransformControls object={gizmoMesh} mode={gizmoMode} onMouseUp={commitGizmo} />
+        <TransformControls
+          object={gizmoMesh}
+          mode={gizmoMode}
+          enabled={!handleHover}
+          onMouseUp={commitGizmo}
+        />
+      )}
+      {gizmoMesh && selectedId && (
+        <ResizeHandles
+          piece={doc.pieces.find((p) => p.id === selectedId)!}
+          mesh={gizmoMesh}
+          onHoverChange={setHandleHover}
+        />
       )}
     </>
   )
+}
+
+// Dev-only hook so e2e scripts can project world→screen through the live camera.
+function DevCameraHook() {
+  const camera = useThree((s) => s.camera)
+  if (import.meta.env.DEV) {
+    ;(window as unknown as Record<string, unknown>).__camera = camera
+  }
+  return null
 }
 
 export function Scene() {
@@ -295,6 +329,7 @@ export function Scene() {
         infiniteGrid
         fadeDistance={30}
       />
+      <DevCameraHook />
       {ready && joltRef.current && <Sim Jolt={joltRef.current} />}
       <HeldPiece />
       <OrbitControls

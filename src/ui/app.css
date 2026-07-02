@@ -76,6 +76,28 @@ body { font-family: system-ui, sans-serif; background: #f4f6f9; color: #22303f; 
 .tree-row.active button { color: #d8e6ff; }
 .tree-row button:hover { color: #e0245e; }
 
+/* Dimension rows: label, slider, number — Tinkercad-style inspector. */
+.dim-row { display: grid; grid-template-columns: 1fr; gap: 2px; margin: 8px 0; font-size: 12px; }
+.dim-label { color: #45566b; }
+.dim-row input[type='range'] { width: 100%; accent-color: #1668e3; }
+.dim-value { display: flex; align-items: center; gap: 4px; }
+.dim-value input[type='number'] {
+  width: 72px; background: #fff; color: #22303f; border: 1px solid #cfd9e4;
+  border-radius: 4px; padding: 3px 6px; font-size: 12px;
+}
+.dim-unit { color: #66788c; font-size: 11px; }
+
+/* Joint-tool snap badge (feature name next to the marker). */
+.feature-badge {
+  background: #ffffff; color: #22303f; border: 1px solid #cfd9e4; font-size: 11px;
+  padding: 1px 6px; border-radius: 8px; white-space: nowrap; box-shadow: 0 1px 3px rgba(0,0,0,0.15);
+  transform: translateY(-16px);
+}
+
+.join-dialog-group button.suggested {
+  background: #1668e3; border-color: #1668e3; color: #fff; font-weight: 600;
+}
+
 .join-badge {
   background: #2ecc71; color: #06240f; font-weight: 600; font-size: 12px;
   padding: 2px 8px; border-radius: 10px; white-space: nowrap; box-shadow: 0 1px 4px rgba(0,0,0,0.25);

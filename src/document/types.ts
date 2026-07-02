@@ -83,6 +83,13 @@ export interface Fastener {
   anchorB?: Vec3
   /** Joint axis in partA's local frame (joints only). */
   axisA?: Vec3
+  /**
+   * Slide range along the axis for linear/cylindrical joints (meters, relative
+   * to the anchors' initial coincidence). Keeps a gear from sliding off the end
+   * of its axle — real shafts have ends.
+   */
+  slideMin?: number
+  slideMax?: number
 }
 
 export interface Document {

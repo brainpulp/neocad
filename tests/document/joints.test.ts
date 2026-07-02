@@ -1,9 +1,9 @@
 import { it, expect, describe } from 'vitest'
 import { createDocStore } from '../../src/document/store'
 import { makePiece } from '../../src/document/catalog'
-import { localToWorld } from '../../src/document/math'
+import { localToWorld, localDirToWorld } from '../../src/document/math'
 
-describe('joint tool (A → type → B)', () => {
+describe('joint tool (A → type → B, feature-snapped)', () => {
   it('defaults: transform tool, pivot joint, translate gizmo', () => {
     const s = createDocStore()
     expect(s.getState().tool).toBe('transform')
@@ -11,79 +11,108 @@ describe('joint tool (A → type → B)', () => {
     expect(s.getState().gizmoMode).toBe('translate')
   })
 
-  it('two clicks on different pieces create a joint with local anchors and axis', () => {
+  it('gear onto axle: the gear MOVES onto the axle axis and gets a cylindrical joint', () => {
     const s = createDocStore()
-    const a = makePiece('joist', [0, 1, 0])
-    const b = makePiece('joist', [1, 1, 0])
-    s.getState().addPiece(a)
-    s.getState().addPiece(b)
+    const gear = makePiece('gear', [0.5, 0.2, 0])
+    const axle = makePiece('axle', [0, 0.3, 0]) // vertical, height 0.6
+    axle.anchored = true
+    s.getState().addPiece(gear)
+    s.getState().addPiece(axle)
     s.getState().setTool('joint')
-    s.getState().setJointType('pivot')
-    s.getState().jointClick(a.id, [0.2, 1, 0])
-    expect(s.getState().jointA?.pieceId).toBe(a.id)
-    s.getState().jointClick(b.id, [0.8, 1, 0])
-    const f = s.getState().doc.fasteners[0]
-    expect(f).toBeDefined()
-    expect(f.type).toBe('pivot')
-    expect(f.partA).toBe(a.id)
-    expect(f.partB).toBe(b.id)
-    // Anchors stored piece-local; converting back through the piece's transform
-    // must reproduce the clicked world points.
-    const worldA = localToWorld(a.state.transform, f.anchorA!)
-    expect(worldA[0]).toBeCloseTo(0.2)
-    expect(worldA[1]).toBeCloseTo(1)
-    expect(localToWorld(b.state.transform, f.anchorB!)[0]).toBeCloseTo(0.8)
-    // Axis runs from A's point to B's point (world +x), expressed in A's frame.
-    expect(f.axisA![0]).toBeCloseTo(1)
-    expect(s.getState().jointA).toBeNull()
+    // Click the gear rim (snaps to bore), then the axle side at height 0.4.
+    s.getState().jointClick(gear.id, [0.6, 0.2, 0])
+    expect(s.getState().jointA?.feature.kind).toBe('bore')
+    // Bore pick suggests cylindrical without an explicit choice.
+    expect(s.getState().jointType).toBe('cylindrical')
+    s.getState().jointClick(axle.id, [0.015, 0.4, 0])
+    const st = s.getState()
+    const f = st.doc.fasteners[0]
+    expect(f.type).toBe('cylindrical')
+    expect(f.anchorA).toEqual([0, 0, 0]) // gear bore, gear-local
+    // Align-before-constrain: the gear's bore now sits ON the axle centerline.
+    const movedGear = st.doc.pieces.find((p) => p.id === gear.id)!
+    const boreWorld = localToWorld(movedGear.state.transform, f.anchorA!)
+    expect(boreWorld[0]).toBeCloseTo(0) // on the axle's x
+    expect(boreWorld[2]).toBeCloseTo(0) // and z
+    // The joint axis reproduces the axle's world axis from A-local storage.
+    const axisWorld = localDirToWorld(movedGear.state.transform, f.axisA!)
+    expect(Math.abs(axisWorld[1])).toBeCloseTo(1)
+    expect(st.jointA).toBeNull()
+    // Definition matches State for the moved piece (undoable single entry).
+    expect(movedGear.definition.transform.position).toEqual(movedGear.state.transform.position)
   })
 
-  it('clicking the same piece twice just moves point A; cancel clears it', () => {
+  it('one undo reverses BOTH the alignment move and the fastener', () => {
+    const s = createDocStore()
+    const gear = makePiece('gear', [0.5, 0.2, 0])
+    const axle = makePiece('axle', [0, 0.3, 0])
+    axle.anchored = true
+    s.getState().addPiece(gear)
+    s.getState().addPiece(axle)
+    s.getState().setTool('joint')
+    s.getState().jointClick(gear.id, [0.6, 0.2, 0])
+    s.getState().jointClick(axle.id, [0.015, 0.4, 0])
+    s.getState().undo()
+    const st = s.getState()
+    expect(st.doc.fasteners).toHaveLength(0)
+    expect(st.doc.pieces.find((p) => p.id === gear.id)!.state.transform.position[0]).toBeCloseTo(0.5)
+  })
+
+  it('an explicit type pick beats the suggestion', () => {
+    const s = createDocStore()
+    const gear = makePiece('gear', [0.5, 0.2, 0])
+    const axle = makePiece('axle', [0, 0.3, 0])
+    s.getState().addPiece(gear)
+    s.getState().addPiece(axle)
+    s.getState().setTool('joint')
+    s.getState().setJointType('pivot')
+    s.getState().jointClick(gear.id, [0.6, 0.2, 0])
+    expect(s.getState().jointType).toBe('pivot') // not overridden
+    s.getState().jointClick(axle.id, [0.015, 0.4, 0])
+    expect(s.getState().doc.fasteners[0].type).toBe('pivot')
+  })
+
+  it('clicking the same piece twice re-picks point A; cancel clears it', () => {
     const s = createDocStore()
     const a = makePiece('block', [0, 1, 0])
     s.getState().addPiece(a)
     s.getState().setTool('joint')
-    s.getState().jointClick(a.id, [0, 1, 0])
-    s.getState().jointClick(a.id, [0.1, 1, 0])
+    s.getState().jointClick(a.id, [0.15, 1, 0])
+    s.getState().jointClick(a.id, [0, 1.15, 0])
     expect(s.getState().doc.fasteners).toHaveLength(0)
-    expect(s.getState().jointA?.point[0]).toBeCloseTo(0.1)
+    expect(s.getState().jointA?.pieceId).toBe(a.id)
     s.getState().cancelJoint()
     expect(s.getState().jointA).toBeNull()
   })
 
-  it('coincident points fall back to a world-up axis', () => {
+  it('hover exposes the snapped feature for the preview marker', () => {
     const s = createDocStore()
-    const a = makePiece('gear', [0, 1, 0])
-    const b = makePiece('axle', [0, 1, 0])
-    s.getState().addPiece(a)
-    s.getState().addPiece(b)
+    const gear = makePiece('gear', [0, 0.2, 0])
+    s.getState().addPiece(gear)
     s.getState().setTool('joint')
-    s.getState().setJointType('cylindrical')
-    s.getState().jointClick(a.id, [0, 1, 0])
-    s.getState().jointClick(b.id, [0, 1, 0])
-    const f = s.getState().doc.fasteners[0]
-    expect(f.type).toBe('cylindrical')
-    expect(f.axisA).toEqual([0, 1, 0])
+    s.getState().jointHoverAt(gear.id, [0.11, 0.2, 0])
+    expect(s.getState().jointHover?.feature.kind).toBe('bore')
+    s.getState().jointHoverAt(null)
+    expect(s.getState().jointHover).toBeNull()
   })
 })
 
 describe('drop-join options (pendingJoin)', () => {
-  it('dropping onto a piece pauses the sim and asks instead of auto-welding', () => {
+  it('dropping onto a piece pauses the sim and asks, with a suggestion', () => {
     const s = createDocStore()
     const target = makePiece('panel', [0, 1, 0])
     s.getState().addPiece(target)
     s.getState().setActiveTool('rod')
     s.getState().setProximityTarget(target.id)
     expect(s.getState().running).toBe(true)
-    s.getState().commitHeldAt([0, 0.5, 0])
+    s.getState().commitHeldAt([0, 1.05, 0])
     expect(s.getState().doc.pieces).toHaveLength(2)
     expect(s.getState().doc.fasteners).toHaveLength(0)
     expect(s.getState().running).toBe(false)
     const pending = s.getState().pendingJoin
     expect(pending?.targetId).toBe(target.id)
-    // Choosing a fastener joins and resumes.
+    expect(pending?.suggested).toBeDefined()
     s.getState().resolveJoin('bolt')
-    expect(s.getState().doc.fasteners).toHaveLength(1)
     expect(s.getState().doc.fasteners[0].type).toBe('bolt')
     expect(s.getState().pendingJoin).toBeNull()
     expect(s.getState().running).toBe(true)
@@ -102,28 +131,47 @@ describe('drop-join options (pendingJoin)', () => {
     expect(s.getState().running).toBe(false) // was paused before the drop
   })
 
-  it('a pre-picked palette fastener still joins immediately without a dialog', () => {
+  it('dropping a gear onto an axle suggests cylindrical and joins on the axle axis', () => {
     const s = createDocStore()
-    const target = makePiece('panel', [0, 1, 0])
-    s.getState().addPiece(target)
-    s.getState().setFastenTool('weld')
-    s.getState().setActiveTool('rod')
-    // setActiveTool clears fastenTool (mutually exclusive modes) — re-pick like the UI does.
-    s.getState().setFastenTool('weld')
-    expect(s.getState().activeTool).toBeNull()
+    const axle = makePiece('axle', [0, 0.3, 0])
+    axle.anchored = true
+    s.getState().addPiece(axle)
+    s.getState().setActiveTool('gear')
+    s.getState().setProximityTarget(axle.id)
+    s.getState().commitHeldAt([0.01, 0.45, 0])
+    expect(s.getState().pendingJoin?.suggested).toBe('cylindrical')
+    s.getState().resolveJoin('cylindrical')
+    const st = s.getState()
+    const f = st.doc.fasteners[0]
+    expect(f.type).toBe('cylindrical')
+    // The dropped gear was pulled onto the axle centerline.
+    const gearPiece = st.doc.pieces.find((p) => p.id === f.partA)!
+    const boreWorld = localToWorld(gearPiece.state.transform, f.anchorA!)
+    expect(boreWorld[0]).toBeCloseTo(0)
+    expect(boreWorld[2]).toBeCloseTo(0)
+  })
+})
+
+describe('transient edits (slider gestures)', () => {
+  it('a whole gesture is one undo entry', () => {
+    const s = createDocStore()
+    const block = makePiece('block', [0, 1, 0])
+    s.getState().addPiece(block)
+    const pastBefore = s.getState().past.length
+    s.getState().beginTransient()
+    for (const v of [0.35, 0.4, 0.45, 0.5])
+      s.getState().updatePieceTransient(block.id, { dimensions: { ...block.dimensions, x: v } })
+    s.getState().endTransient()
+    expect(s.getState().doc.pieces[0].dimensions.x).toBe(0.5)
+    expect(s.getState().past.length).toBe(pastBefore + 1)
+    s.getState().undo()
+    expect(s.getState().doc.pieces[0].dimensions.x).toBe(0.3) // back to pre-gesture
   })
 
-  it('drop-created joint types get contact-point anchors and a vertical axis', () => {
+  it('endTransient without begin is a no-op', () => {
     const s = createDocStore()
-    const target = makePiece('panel', [0, 1, 0])
-    s.getState().addPiece(target)
-    s.getState().setActiveTool('gear')
-    s.getState().setProximityTarget(target.id)
-    s.getState().commitHeldAt([0.3, 1.05, 0])
-    s.getState().resolveJoin('pivot')
-    const f = s.getState().doc.fasteners[0]
-    expect(f.type).toBe('pivot')
-    expect(f.anchorA).toBeDefined()
-    expect(f.axisA).toEqual([0, 1, 0])
+    const pastBefore = s.getState().past.length
+    s.getState().endTransient()
+    expect(s.getState().past.length).toBe(pastBefore)
   })
 })

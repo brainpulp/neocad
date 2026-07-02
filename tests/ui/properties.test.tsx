@@ -43,10 +43,22 @@ it('changing material via the dropdown updates the piece', () => {
   expect(store.getState().doc.pieces[0].material).toBe('steel')
 })
 
-it('editing a dimension commits on blur', () => {
+it('typing a dimension (in cm) commits on blur', () => {
   const { store } = renderWithSelected()
-  const input = screen.getByLabelText('x') as HTMLInputElement
-  fireEvent.change(input, { target: { value: '0.5' } })
+  const input = screen.getByLabelText('Length value') as HTMLInputElement
+  fireEvent.change(input, { target: { value: '50' } }) // 50 cm
   fireEvent.blur(input)
-  expect(store.getState().doc.pieces[0].dimensions.x).toBe(0.5)
+  expect(store.getState().doc.pieces[0].dimensions.x).toBeCloseTo(0.5)
+})
+
+it('dragging a dimension slider updates live and lands one undo entry', () => {
+  const { store } = renderWithSelected()
+  const slider = screen.getByLabelText('Length') as HTMLInputElement
+  const pastBefore = store.getState().past.length
+  fireEvent.pointerDown(slider)
+  fireEvent.change(slider, { target: { value: '40' } })
+  fireEvent.change(slider, { target: { value: '60' } })
+  fireEvent.pointerUp(slider)
+  expect(store.getState().doc.pieces[0].dimensions.x).toBeCloseTo(0.6)
+  expect(store.getState().past.length).toBe(pastBefore + 1)
 })

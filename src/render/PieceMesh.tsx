@@ -14,6 +14,7 @@ interface Props {
   onPointerDown?: (e: ThreeEvent<PointerEvent>) => void
   onPointerMove?: (e: ThreeEvent<PointerEvent>) => void
   onPointerUp?: (e: ThreeEvent<PointerEvent>) => void
+  onPointerOut?: (e: ThreeEvent<PointerEvent>) => void
 }
 
 // Selection = orange outline; proximity join target = green outline. Shading is
@@ -42,7 +43,7 @@ function outlineScale(piece: Piece, t: number): [number, number, number] {
 
 /** Renders one piece. The mesh ref lets the physics loop drive its transform imperatively. */
 export const PieceMesh = forwardRef<Mesh, Props>(function PieceMesh(
-  { piece, materials, selected, highlighted, onPointerDown, onPointerMove, onPointerUp },
+  { piece, materials, selected, highlighted, onPointerDown, onPointerMove, onPointerUp, onPointerOut },
   ref,
 ) {
   const v = pieceVisual(piece, materials)
@@ -83,6 +84,7 @@ export const PieceMesh = forwardRef<Mesh, Props>(function PieceMesh(
       onPointerDown={onPointerDown}
       onPointerMove={onPointerMove}
       onPointerUp={onPointerUp}
+      onPointerOut={onPointerOut}
     >
       {geometryJsx}
       <meshStandardMaterial color={v.color} roughness={0.75} metalness={0.05} />

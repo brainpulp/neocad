@@ -13,7 +13,9 @@ import {
 } from './types'
 import * as ops from './document'
 import { makePiece, nextFastenerId } from './catalog'
-import { length, normalize, sub, worldDirToLocal, worldToLocal } from './math'
+import { worldToLocal } from './math'
+import { snapToFeature, suggestJoint, type JointFeature } from './features'
+import { planJoint } from './joints'
 
 /** Interaction tools. 'transform' drags pieces (sim running) or shows a gizmo (paused). */
 export type Tool = 'transform' | 'joint'
@@ -26,12 +28,14 @@ export interface PendingJoin {
   targetId: string
   /** World-space contact point of the drop. */
   point: Vec3
+  /** Attach option the feature pairing suggests (highlighted in the dialog). */
+  suggested: FastenerType
 }
 
 export interface JointAnchor {
   pieceId: string
-  /** World-space clicked point. */
-  point: Vec3
+  /** Snapped joint feature, piece-local (world pose derived from live State). */
+  feature: JointFeature
 }
 
 export interface DocState {
@@ -55,6 +59,10 @@ export interface DocState {
   setJointType: (t: JointType) => void
   /** First point picked in the joint tool's A → type → B flow. */
   jointA: JointAnchor | null
+  /** Feature the pointer is hovering with the joint tool (snap preview). */
+  jointHover: JointAnchor | null
+  /** Update the snap preview for a pointer position over a piece (null clears). */
+  jointHoverAt: (pieceId: string | null, point?: Vec3) => void
   /** Click a piece at a world point with the joint tool. First click = A, second = B. */
   jointClick: (pieceId: string, point: Vec3) => void
   cancelJoint: () => void
@@ -96,6 +104,14 @@ export interface DocState {
   movePieceTransform: (id: string, transform: Transform) => void
   undo: () => void
   redo: () => void
+  /**
+   * Transient edits (slider drags): update the doc live without spamming undo.
+   * beginTransient snapshots once; endTransient pushes that snapshot as ONE
+   * undo entry covering the whole gesture.
+   */
+  beginTransient: () => void
+  updatePieceTransient: (id: string, patch: Partial<Piece>) => void
+  endTransient: () => void
   removeFastener: (id: string) => void
   addMaterial: (material: Material) => void
   updateMaterial: (name: string, patch: Partial<Material>) => void
@@ -109,6 +125,10 @@ export function createDocStore(initial: Document = emptyDocument()) {
   // Sim state to restore after a drop dialog closes (the dialog pauses physics so
   // the dropped piece can't drift away while the user decides).
   let resumeAfterJoin = false
+  // Whether the user explicitly picked a joint type (suggestions stop overriding).
+  let jointTypeExplicit = false
+  // Undo snapshot for an in-flight transient gesture (slider drag).
+  let transientPast: Document | null = null
   return createStore<DocState>((set, get) => {
     // Apply a structural Definition edit, pushing the prior doc onto the undo stack.
     const commit = (next: (doc: Document) => Document) =>
@@ -125,53 +145,75 @@ export function createDocStore(initial: Document = emptyDocument()) {
       running: true,
       setRunning: (running) => set({ running }),
       tool: 'transform',
-      setTool: (tool) =>
-        set({ tool, activeTool: null, fastenTool: null, pendingFastenA: null, jointA: null }),
+      setTool: (tool) => {
+        jointTypeExplicit = false
+        set({ tool, activeTool: null, fastenTool: null, pendingFastenA: null, jointA: null, jointHover: null })
+      },
       gizmoMode: 'translate',
       setGizmoMode: (gizmoMode) => set({ gizmoMode }),
       draggingId: null,
       setDraggingId: (draggingId) => set({ draggingId }),
       jointType: 'pivot',
-      setJointType: (jointType) => set({ jointType }),
+      // The joint tool suggests a type from the snapped features; an explicit
+      // pick in the toolbar wins until the tool is re-selected.
+      setJointType: (jointType) => {
+        jointTypeExplicit = true
+        set({ jointType })
+      },
       jointA: null,
+      jointHover: null,
+      jointHoverAt: (pieceId, point) => {
+        if (!pieceId || !point) {
+          if (get().jointHover) set({ jointHover: null })
+          return
+        }
+        const piece = get().doc.pieces.find((p) => p.id === pieceId)
+        if (!piece) return
+        const feature = snapToFeature(piece, worldToLocal(piece.state.transform, point))
+        set({ jointHover: { pieceId, feature } })
+      },
       jointClick: (pieceId, point) => {
         const { tool, jointType, jointA, doc } = get()
         if (tool !== 'joint') return
-        if (!jointA) {
-          set({ jointA: { pieceId, point } })
-          return
-        }
-        if (jointA.pieceId === pieceId) {
-          // Re-picking on the same piece moves point A.
-          set({ jointA: { pieceId, point } })
+        const piece = doc.pieces.find((p) => p.id === pieceId)
+        if (!piece) return
+        const feature = snapToFeature(piece, worldToLocal(piece.state.transform, point))
+        if (!jointA || jointA.pieceId === pieceId) {
+          // First pick (or re-picking point A on the same piece).
+          const patch: Partial<DocState> = { jointA: { pieceId, feature } }
+          if (!jointTypeExplicit) {
+            const sug = suggestJoint(feature)
+            if (sug !== 'weld') patch.jointType = sug
+          }
+          set(patch)
           return
         }
         const pieceA = doc.pieces.find((p) => p.id === jointA.pieceId)
-        const pieceB = doc.pieces.find((p) => p.id === pieceId)
-        if (!pieceA || !pieceB) {
+        if (!pieceA) {
           set({ jointA: null })
           return
         }
-        // The joint axis runs through the two picked points; if they coincide
-        // (same spot clicked on both pieces) fall back to world-up.
-        const dir = sub(point, jointA.point)
-        const axisWorld = length(dir) < 1e-4 ? ([0, 1, 0] as Vec3) : normalize(dir)
-        const ta = pieceA.state.transform
-        const tb = pieceB.state.transform
-        commit((d) =>
-          ops.addFastener(d, {
-            id: nextFastenerId(),
-            type: jointType,
-            partA: jointA.pieceId,
-            partB: pieceId,
-            anchorA: worldToLocal(ta, jointA.point),
-            anchorB: worldToLocal(tb, point),
-            axisA: worldDirToLocal(ta, axisWorld),
-          }),
-        )
-        set({ jointA: null })
+        let type = jointType
+        if (!jointTypeExplicit) {
+          const sug = suggestJoint(jointA.feature, feature)
+          if (sug !== 'weld') type = sug
+        }
+        // Move the loose piece so the two features coincide (axes aligned),
+        // THEN constrain — the joint starts satisfied instead of yanking on Run.
+        const plan = planJoint(pieceA, jointA.feature, piece, feature, type, nextFastenerId())
+        commit((d) => {
+          let next = d
+          if (plan.moverId && plan.moverTransform) {
+            next = ops.updatePiece(next, plan.moverId, {
+              definition: { transform: structuredClone(plan.moverTransform) },
+              state: { transform: structuredClone(plan.moverTransform) },
+            })
+          }
+          return ops.addFastener(next, plan.fastener)
+        })
+        set((s) => ({ jointA: null, jointHover: null, jointType: type, worldEpoch: s.worldEpoch + 1 }))
       },
-      cancelJoint: () => set({ jointA: null }),
+      cancelJoint: () => set({ jointA: null, jointHover: null }),
       pendingJoin: null,
       resolveJoin: (type) => {
         const { pendingJoin, doc } = get()
@@ -179,20 +221,33 @@ export function createDocStore(initial: Document = emptyDocument()) {
         const a = doc.pieces.find((p) => p.id === pendingJoin.pieceId)
         const b = doc.pieces.find((p) => p.id === pendingJoin.targetId)
         if (type && a && b) {
-          const fastener: import('./types').Fastener = {
-            id: nextFastenerId(),
-            type,
-            partA: pendingJoin.pieceId,
-            partB: pendingJoin.targetId,
-          }
           if (isJointType(type)) {
-            // Drop-created joints anchor at the contact point with a vertical axis;
-            // the Joint tool is the precise way to place an axis.
-            fastener.anchorA = worldToLocal(a.state.transform, pendingJoin.point)
-            fastener.anchorB = worldToLocal(b.state.transform, pendingJoin.point)
-            fastener.axisA = worldDirToLocal(a.state.transform, [0, 1, 0])
+            // Drop-created joints snap to features too: a gear dropped on an
+            // axle slides onto the axle's centerline, not a guessed point.
+            const featA = snapToFeature(a, worldToLocal(a.state.transform, pendingJoin.point))
+            const featB = snapToFeature(b, worldToLocal(b.state.transform, pendingJoin.point))
+            const plan = planJoint(a, featA, b, featB, type, nextFastenerId())
+            commit((d) => {
+              let next = d
+              if (plan.moverId && plan.moverTransform) {
+                next = ops.updatePiece(next, plan.moverId, {
+                  definition: { transform: structuredClone(plan.moverTransform) },
+                  state: { transform: structuredClone(plan.moverTransform) },
+                })
+              }
+              return ops.addFastener(next, plan.fastener)
+            })
+            set((s) => ({ worldEpoch: s.worldEpoch + 1 }))
+          } else {
+            commit((d) =>
+              ops.addFastener(d, {
+                id: nextFastenerId(),
+                type,
+                partA: pendingJoin.pieceId,
+                partB: pendingJoin.targetId,
+              }),
+            )
           }
-          commit((d) => ops.addFastener(d, fastener))
         }
         set({ pendingJoin: null, running: resumeAfterJoin })
         resumeAfterJoin = false
@@ -221,12 +276,18 @@ export function createDocStore(initial: Document = emptyDocument()) {
         if (proximityTarget) {
           // Dropped onto another piece with no fastener pre-picked: pause physics
           // (so the piece holds still) and ask how — or whether — to attach.
+          // The snapped feature pairing picks the dialog's suggested option.
           resumeAfterJoin = running
+          const target = get().doc.pieces.find((p) => p.id === proximityTarget)
+          const featA = snapToFeature(piece, worldToLocal(piece.state.transform, position))
+          const suggested = target
+            ? suggestJoint(featA, snapToFeature(target, worldToLocal(target.state.transform, position)))
+            : 'weld'
           set({
             activeTool: null,
             proximityTarget: null,
             running: false,
-            pendingJoin: { pieceId: piece.id, targetId: proximityTarget, point: position },
+            pendingJoin: { pieceId: piece.id, targetId: proximityTarget, point: position, suggested },
           })
           return
         }
@@ -304,6 +365,16 @@ export function createDocStore(initial: Document = emptyDocument()) {
             past: [...s.past, structuredClone(s.doc)],
             future: s.future.slice(1),
           }
+        }),
+      beginTransient: () =>
+        set((s) => (transientPast ? {} : ((transientPast = structuredClone(s.doc)), {}))),
+      updatePieceTransient: (id, patch) => set((s) => ({ doc: ops.updatePiece(s.doc, id, patch) })),
+      endTransient: () =>
+        set((s) => {
+          if (!transientPast) return {}
+          const snapshot = transientPast
+          transientPast = null
+          return { past: [...s.past, snapshot], future: [] }
         }),
       removeFastener: (id) => commit((doc) => ops.removeFastener(doc, id)),
       addMaterial: (material) => commit((doc) => ops.addMaterial(doc, material)),

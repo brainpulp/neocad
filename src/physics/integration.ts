@@ -43,6 +43,10 @@ export class PhysicsWorld {
   private bodyInterface: any
   private bodies = new Map<string, any>() // pieceId → Jolt BodyID
   private bodyObjs = new Map<string, any>() // pieceId → Jolt Body (needed to build constraints)
+  // Fastened pairs must not collide with each other (a gear's collision shape is a
+  // solid cylinder — the axle through it would explode the contact solver).
+  private groupFilter: any
+  private subGroups = new Map<string, number>() // pieceId → subgroup id
 
   constructor(Jolt: JoltModule, doc: Document) {
     this.Jolt = Jolt
@@ -55,6 +59,7 @@ export class PhysicsWorld {
     const [gx, gy, gz] = doc.ground.gravity
     this.physicsSystem.SetGravity(new Jolt.Vec3(gx, gy, gz))
 
+    this.groupFilter = new Jolt.GroupFilterTable(doc.pieces.length)
     this.createGround()
     for (const piece of doc.pieces) this.createPieceBody(piece, doc.materials)
     for (const fastener of doc.fasteners) this.createFastener(fastener, doc)
@@ -71,6 +76,12 @@ export class PhysicsWorld {
     if (!bodyA || !bodyB) return
     const J = this.Jolt
     const kind = FASTENERS[fastener.type].constraint
+
+    // Directly-fastened pieces don't contact-collide; the constraint owns their
+    // relative motion (otherwise overlap at the join fights the solver).
+    const subA = this.subGroups.get(fastener.partA)
+    const subB = this.subGroups.get(fastener.partB)
+    if (subA != null && subB != null) this.groupFilter.DisableCollision(subA, subB)
 
     if (kind === 'fixed') {
       const settings = new J.FixedConstraintSettings()
@@ -107,6 +118,12 @@ export class PhysicsWorld {
       return
     }
 
+    // Document slide limits describe motion of A's anchor along the axis; Jolt
+    // measures body 2 relative to body 1, so the interval negates and swaps.
+    const hasSlide = fastener.slideMin != null && fastener.slideMax != null
+    const joltMin = hasSlide ? -fastener.slideMax! : 0
+    const joltMax = hasSlide ? -fastener.slideMin! : 0
+
     if (kind === 'slider') {
       const settings = new J.SliderConstraintSettings()
       settings.mSpace = J.EConstraintSpace_WorldSpace
@@ -116,6 +133,10 @@ export class PhysicsWorld {
       settings.mSliderAxis2 = vAxis
       settings.mNormalAxis1 = vNormal
       settings.mNormalAxis2 = vNormal
+      if (hasSlide) {
+        settings.mLimitsMin = joltMin
+        settings.mLimitsMax = joltMax
+      }
       this.physicsSystem.AddConstraint(settings.Create(bodyA, bodyB))
       return
     }
@@ -135,7 +156,11 @@ export class PhysicsWorld {
     settings.MakeFixedAxis(J.SixDOFConstraintSettings_EAxis_TranslationZ)
     settings.MakeFixedAxis(J.SixDOFConstraintSettings_EAxis_RotationY)
     settings.MakeFixedAxis(J.SixDOFConstraintSettings_EAxis_RotationZ)
-    settings.MakeFreeAxis(J.SixDOFConstraintSettings_EAxis_TranslationX)
+    if (hasSlide) {
+      settings.SetLimitedAxis(J.SixDOFConstraintSettings_EAxis_TranslationX, joltMin, joltMax)
+    } else {
+      settings.MakeFreeAxis(J.SixDOFConstraintSettings_EAxis_TranslationX)
+    }
     settings.MakeFreeAxis(J.SixDOFConstraintSettings_EAxis_RotationX)
     this.physicsSystem.AddConstraint(settings.Create(bodyA, bodyB))
   }
@@ -179,6 +204,12 @@ export class PhysicsWorld {
       bcs.mMassPropertiesOverride.mMass = massOf(piece, materials)
     }
     const body = this.bodyInterface.CreateBody(bcs)
+    const sub = this.subGroups.size
+    this.subGroups.set(piece.id, sub)
+    const cg = body.GetCollisionGroup()
+    cg.SetGroupFilter(this.groupFilter)
+    cg.SetGroupID(0)
+    cg.SetSubGroupID(sub)
     this.bodyInterface.AddBody(body.GetID(), isStatic ? J.EActivation_DontActivate : J.EActivation_Activate)
     this.bodies.set(piece.id, body.GetID())
     this.bodyObjs.set(piece.id, body)

@@ -41,6 +41,17 @@ Plans: `docs/superpowers/plans/` · Backlog: `docs/BACKLOG.md`
 - **M2.5 (builder UX quick wins) — DONE & verified.** Delete pieces/fasteners, scene tree
   (select + delete), keyboard shortcuts (Delete/Esc/Ctrl+Z/Y), empty-state hint, fastener
   count in status bar. See `docs/superpowers/plans/M2.5-verification-notes.md`.
+- **M-BuilderUX2 (feature joints, resize handles, slider inspector) — DONE & browser-verified.**
+  Joints snap to part FEATURES (bore/centerline/ends/edges/face centers — see
+  `document/features.ts`), suggest their type from the pairing (bore→cylindrical,
+  edge→pivot, face+face→linear), and ALIGN the loose piece so anchors coincide before
+  constraining (`document/joints.ts` planJoint — no yank on Run). Linear/cylindrical
+  joints get slide END STOPS from the guide piece's extent (a gear can't fall off its
+  axle). Fastened pairs don't contact-collide (Jolt GroupFilterTable). Tinkercad-style
+  white resize handles (base corners = plan resize, top = height, base-fixed) live
+  alongside the Move/Rotate gizmo when paused; whole-gesture = one undo (transient API).
+  Inspector uses labeled cm sliders (Length/Width/Height/Radius/Thickness/Teeth).
+  Dev-only `window.__neocadStore` + `window.__camera` power Playwright e2e checks.
 - **M-BuilderUX (drag, gizmo, joints, mechanical stock) — DONE, needs hands-on feel pass.**
   Tinkercad-style presentation (white bg, soft hemisphere+key lighting, light grid, orbit
   clamped above ground); selection = orange inverted-hull outline (shading untouched);
@@ -93,6 +104,11 @@ static build → GitHub Pages.
   world at compile time using current State, so rebuilds stay consistent after motion.
 - **Gizmo commits must bump `worldEpoch`** (`movePieceTransform`) or the paused Jolt body
   keeps the old pose and Run snaps the piece back.
+- **Joint clicks snap to features; the CLICKED point is not the anchor.** Mechanical
+  parts have real bore holes — a ray through the hole hits nothing (e2e scripts must
+  aim at the disc, not the center).
+- **Directly-fastened pairs don't collide** (GroupFilterTable) — required because
+  mechanical stock collides as solid cylinders.
 
 - **Physics is ambient.** `running` defaults true; Pause freezes stepping.
 - **State sync mutates pieces in place** every frame and must NOT go through undo/redo —
@@ -106,7 +122,7 @@ static build → GitHub Pages.
 ## Commands
 
 - `npm run dev` — dev server (Vite).
-- `npm test` — Vitest (78 tests; includes deterministic physics scenarios).
+- `npm test` — Vitest (96 tests; includes deterministic physics scenarios).
 - `npm run build` — production build → `dist/`.
 - Deploy: push to `main` triggers `.github/workflows/deploy.yml` (GitHub Pages).
   Enable Pages → "GitHub Actions" in repo settings once.

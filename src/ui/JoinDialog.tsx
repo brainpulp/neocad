@@ -26,7 +26,12 @@ export function JoinDialog() {
       <div className="join-dialog-group">
         <span className="join-dialog-label">Rigid</span>
         {RIGID_FASTENER_TYPES.map((t) => (
-          <button key={t} title={FASTENERS[t].hint} onClick={() => resolve(t)}>
+          <button
+            key={t}
+            className={pendingJoin.suggested === t ? 'suggested' : ''}
+            title={FASTENERS[t].hint}
+            onClick={() => resolve(t)}
+          >
             {FASTENERS[t].label}
           </button>
         ))}
@@ -34,7 +39,12 @@ export function JoinDialog() {
       <div className="join-dialog-group">
         <span className="join-dialog-label">Moving</span>
         {JOINT_TYPES.map((t) => (
-          <button key={t} title={FASTENERS[t].hint} onClick={() => resolve(t)}>
+          <button
+            key={t}
+            className={pendingJoin.suggested === t ? 'suggested' : ''}
+            title={FASTENERS[t].hint}
+            onClick={() => resolve(t)}
+          >
             {FASTENERS[t].label}
           </button>
         ))}

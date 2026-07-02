@@ -10,10 +10,10 @@ interface ToolbarProps {
   onExportSTL?: () => void
 }
 
+// Scale lives on the Tinkercad-style corner/top handles, not in the gizmo modes.
 const GIZMO_MODES: { mode: GizmoMode; label: string }[] = [
   { mode: 'translate', label: 'Move' },
   { mode: 'rotate', label: 'Rotate' },
-  { mode: 'scale', label: 'Scale' },
 ]
 
 export function Toolbar({ onSave, onOpen, onExportGLTF, onExportSTL }: ToolbarProps) {

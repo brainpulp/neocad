@@ -24,6 +24,47 @@ export function perpendicular(v: Vec3): Vec3 {
   return normalize([y * ref[2] - z * ref[1], z * ref[0] - x * ref[2], x * ref[1] - y * ref[0]])
 }
 
+export function distance(a: Vec3, b: Vec3): number {
+  return length(sub(a, b))
+}
+
+export function cross(a: Vec3, b: Vec3): Vec3 {
+  return [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]]
+}
+
+export function dot(a: Vec3, b: Vec3): number {
+  return a[0] * b[0] + a[1] * b[1] + a[2] * b[2]
+}
+
+/** Quaternion product a * b (apply b first, then a). */
+export function quatMultiply(a: Quat, b: Quat): Quat {
+  const [ax, ay, az, aw] = a
+  const [bx, by, bz, bw] = b
+  return [
+    aw * bx + ax * bw + ay * bz - az * by,
+    aw * by - ax * bz + ay * bw + az * bx,
+    aw * bz + ax * by - ay * bx + az * bw,
+    aw * bw - ax * bx - ay * by - az * bz,
+  ]
+}
+
+/** Shortest-arc rotation taking unit vector `from` onto unit vector `to`. */
+export function quatFromTo(from: Vec3, to: Vec3): Quat {
+  const f = normalize(from)
+  const t = normalize(to)
+  const d = dot(f, t)
+  if (d > 1 - 1e-9) return [0, 0, 0, 1]
+  if (d < -1 + 1e-9) {
+    // Antiparallel: rotate 180° around any perpendicular.
+    const [px, py, pz] = perpendicular(f)
+    return [px, py, pz, 0]
+  }
+  const c = cross(f, t)
+  const w = 1 + d
+  const l = Math.hypot(c[0], c[1], c[2], w)
+  return [c[0] / l, c[1] / l, c[2] / l, w / l]
+}
+
 export function quatRotate(q: Quat, v: Vec3): Vec3 {
   const [qx, qy, qz, qw] = q
   const [vx, vy, vz] = v

@@ -19,6 +19,11 @@ import './app.css'
 export function App() {
   const store = useMemo(() => createDocStore(), [])
 
+  // Dev-only hook so e2e scripts can read/drive the document store.
+  if (import.meta.env.DEV) {
+    ;(window as unknown as Record<string, unknown>).__neocadStore = store
+  }
+
   // Restore the last working document on launch.
   useEffect(() => {
     let cancelled = false
