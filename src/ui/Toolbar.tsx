@@ -16,6 +16,7 @@ export function Toolbar({ onSave, onOpen, onExportGLTF, onExportSTL }: ToolbarPr
   const tool = useDocStore((s) => s.tool)
   const jointType = useDocStore((s) => s.jointType)
   const jointA = useDocStore((s) => s.jointA)
+  const ropeStarted = useDocStore((s) => s.ropeStart != null)
   const soundOn = useDocStore((s) => s.soundOn)
   const canUndo = useDocStore((s) => s.past.length > 0)
   const canRedo = useDocStore((s) => s.future.length > 0)
@@ -48,6 +49,18 @@ export function Toolbar({ onSave, onOpen, onExportGLTF, onExportSTL }: ToolbarPr
       >
         ⚙ Joint
       </button>
+      <button
+        className={tool === 'rope' ? 'active' : ''}
+        title="String a rope: click the first end (a piece ties it there), then the second"
+        onClick={() => store.getState().setTool('rope')}
+      >
+        🪢 Rope
+      </button>
+      {tool === 'rope' && (
+        <span className="hint">
+          {ropeStarted ? 'now click the other end' : 'click the first end (pieces tie the rope to them)'}
+        </span>
+      )}
       {tool === 'joint' && (
         <>
           <span className="segmented">

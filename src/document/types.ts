@@ -108,12 +108,43 @@ export interface Fastener {
   spring?: { frequency: number; damping: number; restLength: number }
 }
 
+/** A rope end tied to a piece (anchor in that piece's local frame). */
+export interface RopeAttachment {
+  pieceId: string
+  anchor: Vec3
+}
+
+/**
+ * A rope: simulated as a Jolt soft body (particle chain). Rest geometry +
+ * parameters live here; the live particle positions are evaluation state and
+ * are never persisted (Reset regenerates the rope from this definition).
+ */
+export interface Rope {
+  id: string
+  name: string
+  /** World rest endpoints (used when an end isn't attached). */
+  start: Vec3
+  end: Vec3
+  segments: number
+  radius: number
+  /** Rest-length multiplier: 1 = taut line, >1 hangs slack. */
+  slack: number
+  /** 0..1 — how hard the rope resists stretching. */
+  stiffness: number
+  /** Closed loop (belt) instead of an open strand. */
+  looped: boolean
+  attachStart?: RopeAttachment | null
+  attachEnd?: RopeAttachment | null
+  material: string
+}
+
 export interface Document {
   version: number
   metadata: { name: string }
   materials: Material[]
   pieces: Piece[]
   fasteners: Fastener[]
+  ropes: Rope[]
   ground: Ground
   camera?: unknown
 }
@@ -159,6 +190,7 @@ export const DEFAULT_MATERIALS: Material[] = [
   { name: 'marble', density: 2700, friction: 0.5, restitution: 0.08, color: '#d9d7d2' },
   { name: 'ice', density: 917, friction: 0.03, restitution: 0.05, color: '#cfe8f5' },
   { name: 'cardboard', density: 250, friction: 0.6, restitution: 0.15, color: '#b98f5c' },
+  { name: 'hemp', density: 900, friction: 0.6, restitution: 0.1, color: '#b09468' },
 ]
 
 export function emptyDocument(): Document {
@@ -168,6 +200,7 @@ export function emptyDocument(): Document {
     materials: structuredClone(DEFAULT_MATERIALS),
     pieces: [],
     fasteners: [],
+    ropes: [],
     ground: { gravity: [0, -9.81, 0], sandbox: { ...DEFAULT_SANDBOX } },
   }
 }

@@ -19,7 +19,7 @@ import { snapToFeature, suggestJoint, type JointFeature } from './features'
 import { planJoint } from './joints'
 
 /** Interaction tools. 'transform' drags pieces (sim running) or shows a gizmo (paused). */
-export type Tool = 'transform' | 'joint'
+export type Tool = 'transform' | 'joint' | 'rope'
 
 /** Test-force generators + slingshot options. Session state, never persisted. */
 export interface EnvSettings {
@@ -132,6 +132,14 @@ export interface DocState {
   duplicatePiece: (id: string) => Piece | null
   /** Drop a prebuilt mechanism into the scene (one undo entry). */
   insertMechanism: (id: string) => void
+  /** First endpoint picked with the rope tool. */
+  ropeStart: { point: Vec3; attach: import('./types').RopeAttachment | null } | null
+  /** Rope tool click: first sets the start, second creates the rope. */
+  ropeClick: (point: Vec3, attach: import('./types').RopeAttachment | null) => void
+  selectedRopeId: string | null
+  selectRope: (id: string | null) => void
+  updateRope: (id: string, patch: Partial<import('./types').Rope>) => void
+  removeRope: (id: string) => void
   /** Put the given pieces back at their rest placement (state ← definition). */
   resetPieces: (ids: string[]) => void
   /** Reset only pieces knocked far from their rest placement; the rest stay settled. */
@@ -170,6 +178,7 @@ export function createDocStore(initial: Document = emptyDocument()) {
   let jointTypeExplicit = false
   // Undo snapshot for an in-flight transient gesture (slider drag).
   let transientPast: Document | null = null
+  let ropeCounter = 0
   return createStore<DocState>((set, get) => {
     // Apply a structural Definition edit, pushing the prior doc onto the undo stack.
     const commit = (next: (doc: Document) => Document) =>
@@ -188,7 +197,15 @@ export function createDocStore(initial: Document = emptyDocument()) {
       tool: 'transform',
       setTool: (tool) => {
         jointTypeExplicit = false
-        set({ tool, activeTool: null, fastenTool: null, pendingFastenA: null, jointA: null, jointHover: null })
+        set({
+          tool,
+          activeTool: null,
+          fastenTool: null,
+          pendingFastenA: null,
+          jointA: null,
+          jointHover: null,
+          ropeStart: null,
+        })
       },
       selectedFastenerId: null,
       selectFastener: (selectedFastenerId) =>
@@ -421,6 +438,52 @@ export function createDocStore(initial: Document = emptyDocument()) {
         set({ selectedId: clone.id })
         return clone
       },
+      ropeStart: null,
+      ropeClick: (point, attach) => {
+        const { ropeStart } = get()
+        if (!ropeStart) {
+          set({ ropeStart: { point, attach } })
+          return
+        }
+        const dist = Math.hypot(
+          point[0] - ropeStart.point[0],
+          point[1] - ropeStart.point[1],
+          point[2] - ropeStart.point[2],
+        )
+        if (dist < 0.02) return // same spot; keep waiting for a real endpoint
+        ropeCounter += 1
+        const rope: import('./types').Rope = {
+          id: `rope_${ropeCounter}`,
+          name: 'Rope',
+          start: [...ropeStart.point],
+          end: [...point],
+          segments: Math.min(48, Math.max(8, Math.round(dist / 0.06))),
+          radius: 0.012,
+          slack: 1.15,
+          stiffness: 0.9,
+          looped: false,
+          attachStart: ropeStart.attach,
+          attachEnd: attach,
+          material: 'hemp',
+        }
+        commit((doc) => ops.addRope(doc, rope))
+        set({ ropeStart: null, tool: 'transform', selectedRopeId: rope.id })
+      },
+      selectedRopeId: null,
+      selectRope: (selectedRopeId) =>
+        set(
+          selectedRopeId
+            ? { selectedRopeId, selectedId: null, selectedFastenerId: null }
+            : { selectedRopeId },
+        ),
+      updateRope: (id, patch) => commit((doc) => ops.updateRope(doc, id, patch)),
+      removeRope: (id) =>
+        set((s) => ({
+          doc: ops.removeRope(s.doc, id),
+          past: [...s.past, structuredClone(s.doc)],
+          future: [],
+          selectedRopeId: s.selectedRopeId === id ? null : s.selectedRopeId,
+        })),
       insertMechanism: (id) => {
         const def = MECHANISMS.find((m) => m.id === id)
         if (!def) return

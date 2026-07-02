@@ -41,6 +41,18 @@ Plans: `docs/superpowers/plans/` · Backlog: `docs/BACKLOG.md`
 - **M2.5 (builder UX quick wins) — DONE & verified.** Delete pieces/fasteners, scene tree
   (select + delete), keyboard shortcuts (Delete/Esc/Ctrl+Z/Y), empty-state hint, fastener
   count in status bar. See `docs/superpowers/plans/M2.5-verification-notes.md`.
+- **M-Ropes (soft bodies, stage 1) — DONE & browser-verified.** Ropes are Jolt SOFT
+  BODIES (particle chain + edge constraints, skip-one edges resist kinks) — the first
+  non-rigid element. `Document.ropes[]` stores rest params only (length/slack/
+  stiffness/segments/radius/looped/attachments); live particle state is evaluation
+  state, never persisted. 🪢 Rope tool: click end A → end B (clicking a piece TIES
+  the rope there, piece-local anchor). Pinned ends follow their pieces kinematically;
+  Jolt pins are one-way, so `updateRopeAttachments` mirrors end-edge strain as force
+  onto dynamic pieces — a rope genuinely HOLDS a hanging weight (unit-tested).
+  GOTCHA: soft-body vertex positions are RELATIVE to the body's drifting origin —
+  always add `body.GetPosition()`. Looped ropes = flat two-strand belts (pulley-ready).
+  Render: per-segment cylinder chain driven imperatively. Inspector: thickness/slack/
+  stiffness/segments/looped/delete; scene-tree rows. `hemp` material added.
 - **M-BuilderUX5 (motors, springs, mechanisms, materials) — DONE & browser-verified.**
   FIXED the "joints act like springs" bug: the frame loop no longer steps/syncs a
   STALE physics world (build-key gate in Scene.tsx) — align-on-create now sticks while
@@ -161,7 +173,7 @@ static build → GitHub Pages.
 ## Commands
 
 - `npm run dev` — dev server (Vite).
-- `npm test` — Vitest (111 tests; includes deterministic physics scenarios).
+- `npm test` — Vitest (114 tests; includes deterministic physics scenarios).
 - `npm run build` — production build → `dist/`.
 - Deploy: push to `main` triggers `.github/workflows/deploy.yml` (GitHub Pages).
   Enable Pages → "GitHub Actions" in repo settings once.

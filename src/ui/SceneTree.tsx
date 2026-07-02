@@ -8,6 +8,8 @@ export function SceneTree() {
   const fasteners = useDocStore((s) => s.doc.fasteners)
   const selectedId = useDocStore((s) => s.selectedId)
   const selectedFastenerId = useDocStore((s) => s.selectedFastenerId)
+  const ropes = useDocStore((s) => s.doc.ropes ?? [])
+  const selectedRopeId = useDocStore((s) => s.selectedRopeId)
 
   const nameOf = (id: string) => pieces.find((p) => p.id === id)?.name ?? '?'
 
@@ -38,6 +40,24 @@ export function SceneTree() {
             onClick={(e) => {
               e.stopPropagation()
               store.getState().removePiece(p.id)
+            }}
+          >
+            ✕
+          </button>
+        </div>
+      ))}
+      {ropes.map((r) => (
+        <div
+          key={r.id}
+          className={`tree-row${r.id === selectedRopeId ? ' active' : ''}`}
+          onClick={() => store.getState().selectRope(r.id)}
+        >
+          <span className="tree-name">🪢 {r.name}</span>
+          <button
+            aria-label={`delete rope ${r.id}`}
+            onClick={(e) => {
+              e.stopPropagation()
+              store.getState().removeRope(r.id)
             }}
           >
             ✕

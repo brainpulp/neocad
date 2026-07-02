@@ -9,7 +9,7 @@ import {
 import { makeShape } from './shapes'
 import { FASTENERS, STOCK } from '../document/catalog'
 import { localDirToWorld, localToWorld, perpendicular } from '../document/math'
-import type { Document, Fastener, Material, Piece, Vec3 } from '../document/types'
+import type { Document, Fastener, Material, Piece, Rope, Vec3 } from '../document/types'
 
 const FALLBACK_DENSITY = 1000
 // Pieces should feel like workshop stock, not superballs: material restitution is
@@ -97,7 +97,177 @@ export class PhysicsWorld {
     this.createGround(doc)
     for (const piece of doc.pieces) this.createPieceBody(piece, doc.materials)
     for (const fastener of doc.fasteners) this.createFastener(fastener, doc)
+    for (const rope of doc.ropes ?? []) this.createRope(rope, doc)
     if (onImpact) this.installContactListener(onImpact)
+  }
+
+  // ---- Soft-body ropes ----
+  private ropeBodies: {
+    rope: Rope
+    body: any
+    /** Vertex count (segments+1, or segments for loops). */
+    count: number
+  }[] = []
+
+  private createRope(rope: Rope, doc: Document): void {
+    const J = this.Jolt
+    const shared = new J.SoftBodySharedSettings()
+    shared.mVertexRadius = rope.radius
+
+    const startPiece = rope.attachStart
+      ? doc.pieces.find((p) => p.id === rope.attachStart!.pieceId)
+      : undefined
+    const endPiece = rope.attachEnd
+      ? doc.pieces.find((p) => p.id === rope.attachEnd!.pieceId)
+      : undefined
+    const start = startPiece
+      ? localToWorld(startPiece.state.transform, rope.attachStart!.anchor)
+      : rope.start
+    const end = endPiece ? localToWorld(endPiece.state.transform, rope.attachEnd!.anchor) : rope.end
+
+    const count = rope.looped ? Math.max(8, rope.segments) : rope.segments + 1
+    const dist = Math.hypot(end[0] - start[0], end[1] - start[1], end[2] - start[2])
+    const restLength = Math.max(0.05, dist * rope.slack)
+    const mat = doc.materials.find((m) => m.name === rope.material)
+    const density = mat?.density ?? 900
+    const mass = Math.max(0.01, density * Math.PI * rope.radius ** 2 * restLength)
+    const invMass = count / mass
+
+    // Vertices in world space (the soft body sits at the origin).
+    for (let i = 0; i < count; i++) {
+      const v = new J.SoftBodySharedSettingsVertex()
+      if (rope.looped) {
+        // A flat loop: two strands between the endpoints, offset vertically —
+        // ready to wrap around pulleys like a belt.
+        const half = count / 2
+        const t = i < half ? i / (half - 1) : (count - 1 - i) / (count - half)
+        const off = i < half ? rope.radius * 2 : -rope.radius * 6
+        v.mPosition = new J.Float3(
+          start[0] + (end[0] - start[0]) * t,
+          start[1] + (end[1] - start[1]) * t + off,
+          start[2] + (end[2] - start[2]) * t,
+        )
+      } else {
+        const t = i / (count - 1)
+        // Seed a slight sag so slack rope settles downward, not sideways.
+        const sag = rope.slack > 1.001 ? Math.sin(Math.PI * t) * dist * (rope.slack - 1) * 0.5 : 0
+        v.mPosition = new J.Float3(
+          start[0] + (end[0] - start[0]) * t,
+          start[1] + (end[1] - start[1]) * t - sag,
+          start[2] + (end[2] - start[2]) * t,
+        )
+      }
+      // Pinned ends get infinite mass (invMass 0); they follow their attachment
+      // kinematically. Must be set BEFORE push_back — emscripten arrays copy.
+      const pinned =
+        !rope.looped &&
+        ((i === 0 && rope.attachStart) || (i === count - 1 && rope.attachEnd))
+      v.mInvMass = pinned ? 0 : invMass
+      shared.mVertices.push_back(v)
+    }
+
+    // Stretch constraints between neighbours (+ skip-one edges to resist kinks).
+    const compliance = 1e-6 + (1 - rope.stiffness) * 2e-3
+    const link = (a: number, b: number, c: number) => {
+      shared.mEdgeConstraints.push_back(new J.SoftBodySharedSettingsEdge(a, b, c))
+    }
+    for (let i = 0; i < count - 1; i++) link(i, i + 1, compliance)
+    for (let i = 0; i < count - 2; i++) link(i, i + 2, compliance * 12)
+    if (rope.looped) {
+      link(count - 1, 0, compliance)
+      link(count - 2, 0, compliance * 12)
+      link(count - 1, 1, compliance * 12)
+    }
+    shared.CalculateEdgeLengths()
+    shared.Optimize()
+
+    const sbcs = new J.SoftBodyCreationSettings(
+      shared,
+      new J.RVec3(0, 0, 0),
+      new J.Quat(0, 0, 0, 1),
+      LAYER_MOVING,
+    )
+    sbcs.mNumIterations = 8
+    sbcs.mFriction = mat?.friction ?? 0.6
+    sbcs.mRestitution = 0.05
+    const body = this.bodyInterface.CreateSoftBody(sbcs)
+    this.bodyInterface.AddBody(body.GetID(), J.EActivation_Activate)
+    this.ropeBodies.push({ rope, body, count })
+  }
+
+  /**
+   * Per-step rope coupling: pinned ends follow their attached pieces, and the
+   * end-edge tension is mirrored onto dynamic pieces so a rope can genuinely
+   * HOLD something up (Jolt pins are one-way; this closes the loop).
+   */
+  updateRopeAttachments(doc: Document): void {
+    const J = this.Jolt
+    for (const { rope, body, count } of this.ropeBodies) {
+      if (rope.looped) continue
+      const mp = J.castObject(body.GetMotionProperties(), J.SoftBodyMotionProperties)
+      // Vertex positions are RELATIVE to the soft body's (drifting) origin.
+      const bp = body.GetPosition()
+      const bx = bp.GetX()
+      const by = bp.GetY()
+      const bz = bp.GetZ()
+      const ends: [number, number, Rope['attachStart']][] = [
+        [0, 1, rope.attachStart],
+        [count - 1, count - 2, rope.attachEnd],
+      ]
+      for (const [endIdx, neighborIdx, attach] of ends) {
+        if (!attach) continue
+        const piece = doc.pieces.find((p) => p.id === attach.pieceId)
+        if (!piece) continue
+        const w = localToWorld(piece.state.transform, attach.anchor)
+        const v = mp.GetVertex(endIdx)
+        v.mPosition = new J.Vec3(w[0] - bx, w[1] - by, w[2] - bz)
+        v.mVelocity = new J.Vec3(0, 0, 0)
+        if (piece.anchored) continue
+        // Tension mirror: if the first edge is stretched, pull the piece
+        // toward the rope with a strain-proportional force.
+        const n = mp.GetVertex(neighborIdx).mPosition
+        const dx = n.GetX() + bx - w[0]
+        const dy = n.GetY() + by - w[1]
+        const dz = n.GetZ() + bz - w[2]
+        const len = Math.hypot(dx, dy, dz)
+        const rest = (Math.max(0.05, // matches createRope's restLength
+          Math.hypot(rope.end[0] - rope.start[0], rope.end[1] - rope.start[1], rope.end[2] - rope.start[2]) *
+            rope.slack,
+        ) / Math.max(1, count - 1))
+        const strain = (len - rest) / rest
+        if (strain <= 0 || len < 1e-6) continue
+        const k = 400 * rope.stiffness * (rope.radius / 0.012) ** 2 // N per unit strain
+        const f = Math.min(800, strain * k)
+        const id = this.bodies.get(piece.id)
+        if (!id) continue
+        this.bodyInterface.AddForce(
+          id,
+          new J.Vec3((dx / len) * f, (dy / len) * f, (dz / len) * f),
+          new J.RVec3(w[0], w[1], w[2]),
+          J.EActivation_Activate,
+        )
+      }
+    }
+  }
+
+  /** Live rope vertex positions for rendering, keyed by rope id. */
+  syncRopes(): Map<string, number[]> {
+    const J = this.Jolt
+    const out = new Map<string, number[]>()
+    for (const { rope, body, count } of this.ropeBodies) {
+      const mp = J.castObject(body.GetMotionProperties(), J.SoftBodyMotionProperties)
+      const bp = body.GetPosition() // vertex positions are body-relative
+      const bx = bp.GetX()
+      const by = bp.GetY()
+      const bz = bp.GetZ()
+      const pts: number[] = []
+      for (let i = 0; i < count; i++) {
+        const p = mp.GetVertex(i).mPosition
+        pts.push(p.GetX() + bx, p.GetY() + by, p.GetZ() + bz)
+      }
+      out.set(rope.id, pts)
+    }
+    return out
   }
 
   /** New-contact events → material-aware impact callback (drives sound FX). */
@@ -559,5 +729,6 @@ export class PhysicsWorld {
     this.ji = null
     this.bodies.clear()
     this.bodyObjs.clear()
+    this.ropeBodies = []
   }
 }

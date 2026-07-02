@@ -13,13 +13,14 @@ import { FeatureMarker } from './FeatureMarker'
 import { ResizeHandles } from './ResizeHandles'
 import { RotateArcs } from './RotateArcs'
 import { JointEditor } from './JointEditor'
-import { localDirToWorld, localToWorld } from '../document/math'
+import { localDirToWorld, localToWorld, worldToLocal } from '../document/math'
 import { isJointType, type Vec3 } from '../document/types'
 import { maxExtent } from './geometry'
 import { playImpact } from '../audio/impacts'
 
 const FIXED_DT = 1 / 60
 const UP = new Vector3(0, 1, 0)
+const ROPE_DIR = new Vector3()
 
 /**
  * Stable key describing the physics-relevant structure; the world rebuilds when it
@@ -30,8 +31,16 @@ function structureKey(doc: import('../document/types').Document): string {
     .map((p) => `${p.id}:${p.anchored ? 1 : 0}:${p.material}:${Object.values(p.dimensions).join(',')}`)
     .join('|')
   const fasteners = doc.fasteners.map((f) => f.id).join('|')
+  const ropes = (doc.ropes ?? [])
+    .map(
+      (r) =>
+        `${r.id}:${r.segments},${r.radius},${r.slack},${r.stiffness},${r.looped ? 1 : 0},${
+          r.attachStart?.pieceId ?? ''
+        },${r.attachEnd?.pieceId ?? ''}`,
+    )
+    .join('|')
   const sb = doc.ground.sandbox
-  return `${pieces}#${fasteners}#sb:${sb ? `${sb.size},${sb.thickness}` : 'none'}`
+  return `${pieces}#${fasteners}#r:${ropes}#sb:${sb ? `${sb.size},${sb.thickness}` : 'none'}`
 }
 
 /** Param along a line (origin, unit dir) closest to a pointer ray. */
@@ -117,6 +126,8 @@ function Sim({ Jolt }: { Jolt: JoltModule }) {
   const tool = useDocStore((s) => s.tool)
   const jointA = useDocStore((s) => s.jointA)
   const jointHover = useDocStore((s) => s.jointHover)
+  const selectedRopeId = useDocStore((s) => s.selectedRopeId)
+  const ropeStart = useDocStore((s) => s.ropeStart)
   const camera = useThree((s) => s.camera)
   const worldRef = useRef<PhysicsWorld | null>(null)
   const meshes = useRef(new Map<string, Mesh>())
@@ -214,6 +225,7 @@ function Sim({ Jolt }: { Jolt: JoltModule }) {
   const simTime = useRef(0)
   const projectileMeshes = useRef<(Mesh | null)[]>([])
   const shakeOffset = useRef(new Vector3())
+  const ropeGroups = useRef(new Map<string, Group>())
 
   useFrame(() => {
     const world = worldRef.current
@@ -223,6 +235,7 @@ function Sim({ Jolt }: { Jolt: JoltModule }) {
     if (state.running) {
       if (drag.current) world.moveGrab(drag.current.id, drag.current.target, FIXED_DT)
       simTime.current += FIXED_DT
+      world.updateRopeAttachments(state.doc)
       const env = state.env
       world.applyEnvironment(
         simTime.current,
@@ -273,6 +286,31 @@ function Sim({ Jolt }: { Jolt: JoltModule }) {
       }
     }
     camera.position.add(prevShake)
+    // Ropes: drive each rope's cylinder chain from the live particle positions.
+    const ropePoints = world.syncRopes()
+    ropeGroups.current.forEach((g, ropeId) => {
+      const pts = ropePoints.get(ropeId)
+      if (!g || !pts) return
+      const n = pts.length / 3
+      g.children.forEach((link, i) => {
+        const j = (i + 1) % n
+        if (!g.userData.looped && j === 0) return
+        const ax = pts[i * 3]
+        const ay = pts[i * 3 + 1]
+        const az = pts[i * 3 + 2]
+        const bx = pts[j * 3]
+        const by = pts[j * 3 + 1]
+        const bz = pts[j * 3 + 2]
+        const dx = bx - ax
+        const dy = by - ay
+        const dz = bz - az
+        const len = Math.hypot(dx, dy, dz)
+        if (len < 1e-6) return
+        link.position.set((ax + bx) / 2, (ay + by) / 2, (az + bz) / 2)
+        link.quaternion.setFromUnitVectors(UP, ROPE_DIR.set(dx / len, dy / len, dz / len))
+        link.scale.set(1, len * 1.08, 1) // slight overlap hides the joints
+      })
+    })
     // Drive meshes from State imperatively (no per-frame React re-render).
     for (const piece of state.doc.pieces) {
       if (gizmoActive && piece.id === state.selectedId) continue
@@ -523,6 +561,15 @@ function Sim({ Jolt }: { Jolt: JoltModule }) {
               s.jointClick(piece.id, [e.point.x, e.point.y, e.point.z])
               return
             }
+            if (s.tool === 'rope') {
+              // Clicking a piece ties the rope end to it at the clicked spot.
+              e.stopPropagation()
+              s.ropeClick([e.point.x, e.point.y, e.point.z], {
+                pieceId: piece.id,
+                anchor: worldToLocal(piece.state.transform, [e.point.x, e.point.y, e.point.z]),
+              })
+              return
+            }
             if (s.fastenTool) {
               e.stopPropagation()
               s.fastenClick(piece.id)
@@ -607,6 +654,59 @@ function Sim({ Jolt }: { Jolt: JoltModule }) {
         ))}
       </group>
       <WindArrows />
+      {/* Ropes: cylinder chains driven from the soft-body particles. */}
+      {(doc.ropes ?? []).map((rope) => {
+        const count = rope.looped ? Math.max(8, rope.segments) : rope.segments + 1
+        const links = rope.looped ? count : count - 1
+        const color =
+          selectedRopeId === rope.id
+            ? '#ff8a00'
+            : doc.materials.find((m) => m.name === rope.material)?.color ?? '#b09468'
+        return (
+          <group
+            key={`${rope.id}:${links}`}
+            ref={(g) => {
+              if (g) {
+                g.userData.looped = rope.looped
+                ropeGroups.current.set(rope.id, g)
+              } else {
+                ropeGroups.current.delete(rope.id)
+              }
+            }}
+            onPointerDown={(e) => {
+              e.stopPropagation()
+              store.getState().selectRope(rope.id)
+            }}
+          >
+            {Array.from({ length: links }).map((_, i) => (
+              <mesh key={i} castShadow>
+                <cylinderGeometry args={[rope.radius, rope.radius, 1, 6]} />
+                <meshStandardMaterial color={color} roughness={1} metalness={0} />
+              </mesh>
+            ))}
+          </group>
+        )
+      })}
+      {/* Rope tool: ground catcher + first-endpoint marker. */}
+      {tool === 'rope' && (
+        <mesh
+          rotation={[-Math.PI / 2, 0, 0]}
+          position={[0, 0.051, 0]}
+          onPointerDown={(e) => {
+            e.stopPropagation()
+            store.getState().ropeClick([e.point.x, e.point.y, e.point.z], null)
+          }}
+        >
+          <planeGeometry args={[200, 200]} />
+          <meshBasicMaterial transparent opacity={0} depthWrite={false} />
+        </mesh>
+      )}
+      {ropeStart && (
+        <mesh position={ropeStart.point} renderOrder={999}>
+          <sphereGeometry args={[0.02, 12, 8]} />
+          <meshBasicMaterial color="#b09468" depthTest={false} />
+        </mesh>
+      )}
       {/* Joint tool: snap preview under the pointer + the picked point A. */}
       {jointHover && jointHover.pieceId !== jointA?.pieceId && (
         <FeatureMarker anchor={jointHover} color="#2ecc71" />
@@ -741,6 +841,7 @@ export function Scene() {
       onPointerMissed={() => {
         store.getState().select(null)
         store.getState().selectFastener(null)
+        store.getState().selectRope(null)
         store.getState().cancelJoint()
       }}
     >

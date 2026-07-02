@@ -101,9 +101,13 @@ export function Properties() {
   const selectedFastener = useDocStore(
     (s) => s.doc.fasteners.find((f) => f.id === s.selectedFastenerId) ?? null,
   )
+  const selectedRope = useDocStore(
+    (s) => (s.doc.ropes ?? []).find((r) => r.id === s.selectedRopeId) ?? null,
+  )
   const materials = useDocStore((s) => s.doc.materials)
 
   if (!piece && selectedFastener) return <JointProperties fastenerId={selectedFastener.id} />
+  if (!piece && selectedRope) return <RopeProperties ropeId={selectedRope.id} />
 
   if (!piece) {
     return (
@@ -375,6 +379,64 @@ function JointProperties({ fastenerId }: { fastenerId: string }) {
         Tip: while paused, drag the blue handles in the 3D view for coarse limits;
         drag a jointed piece to align its motion.
       </p>
+    </div>
+  )
+}
+
+/** Inspector for the selected rope. */
+function RopeProperties({ ropeId }: { ropeId: string }) {
+  const store = useStoreApi()
+  const rope = useDocStore((s) => (s.doc.ropes ?? []).find((r) => r.id === ropeId) ?? null)
+  if (!rope) return null
+  const upd = (patch: Partial<typeof rope>) => store.getState().updateRope(rope.id, patch)
+  const row = (
+    label: string,
+    min: number,
+    max: number,
+    step: number,
+    value: number,
+    apply: (v: number) => void,
+    suffix?: string,
+  ) => (
+    <div className="dim-row">
+      <div className="dim-label">{label}</div>
+      <input
+        type="range"
+        aria-label={label}
+        min={min}
+        max={max}
+        step={step}
+        value={value}
+        onChange={(e) => apply(parseFloat(e.target.value))}
+      />
+      {suffix && <span className="dim-unit">{suffix}</span>}
+    </div>
+  )
+  return (
+    <div className="properties">
+      <div className="label">ROPE</div>
+      {row('Thickness', 0.5, 4, 0.25, rope.radius * 100, (v) => upd({ radius: v / 100 }), `${(rope.radius * 100).toFixed(2)} cm`)}
+      {row('Slack', 1, 2, 0.05, rope.slack, (v) => upd({ slack: v }), `×${rope.slack.toFixed(2)}`)}
+      {row('Stiffness', 0.1, 1, 0.05, rope.stiffness, (v) => upd({ stiffness: v }))}
+      {row('Segments', 8, 48, 1, rope.segments, (v) => upd({ segments: Math.round(v) }), `${rope.segments}`)}
+      <label className="field checkbox" title="Close the rope into a loop (belt)">
+        <input type="checkbox" checked={rope.looped} onChange={(e) => upd({ looped: e.target.checked })} />
+        ➰ Looped (belt)
+      </label>
+      <p className="muted" style={{ fontSize: 11 }}>
+        Ends: {rope.attachStart ? 'tied' : 'free'} / {rope.attachEnd ? 'tied' : 'free'}.
+        Tie ends by clicking pieces while stringing.
+      </p>
+      <div className="btn-row">
+        <button
+          onClick={() => {
+            store.getState().removeRope(rope.id)
+            store.getState().selectRope(null)
+          }}
+        >
+          🗑 Delete rope
+        </button>
+      </div>
     </div>
   )
 }

@@ -1,4 +1,4 @@
-import type { Document, Fastener, Material, Piece } from './types'
+import type { Document, Fastener, Material, Piece, Rope } from './types'
 
 /** Pure, immutable operations on a Document's Definition. */
 
@@ -19,7 +19,25 @@ export function removePiece(doc: Document, id: string): Document {
     pieces: doc.pieces.filter((p) => p.id !== id),
     // Dangling fasteners referencing a removed piece must go too.
     fasteners: doc.fasteners.filter((f) => f.partA !== id && f.partB !== id),
+    // Ropes tied to the removed piece just come loose.
+    ropes: (doc.ropes ?? []).map((r) => ({
+      ...r,
+      attachStart: r.attachStart?.pieceId === id ? null : r.attachStart,
+      attachEnd: r.attachEnd?.pieceId === id ? null : r.attachEnd,
+    })),
   }
+}
+
+export function addRope(doc: Document, rope: Rope): Document {
+  return { ...doc, ropes: [...(doc.ropes ?? []), rope] }
+}
+
+export function updateRope(doc: Document, id: string, patch: Partial<Rope>): Document {
+  return { ...doc, ropes: (doc.ropes ?? []).map((r) => (r.id === id ? { ...r, ...patch } : r)) }
+}
+
+export function removeRope(doc: Document, id: string): Document {
+  return { ...doc, ropes: (doc.ropes ?? []).filter((r) => r.id !== id) }
 }
 
 export function addFastener(doc: Document, fastener: Fastener): Document {

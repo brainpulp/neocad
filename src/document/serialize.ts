@@ -13,6 +13,7 @@ function migrate(raw: Record<string, unknown>): Document {
   if (doc.version == null) doc.version = 1
   // future: while (doc.version < CURRENT_VERSION) { ...step up...; doc.version++ }
   if (!doc.fasteners) doc.fasteners = [] // added in M2
+  if (!doc.ropes) doc.ropes = [] // soft-body ropes, added post-M2
   // Sandbox workbench added post-M2; older docs get the default.
   const ground = doc.ground as { gravity: unknown; sandbox?: unknown } | undefined
   if (ground && !ground.sandbox) ground.sandbox = { size: 4, thickness: 0.05 }
