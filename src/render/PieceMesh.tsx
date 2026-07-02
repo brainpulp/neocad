@@ -1,9 +1,10 @@
-import { forwardRef, useEffect, useMemo } from 'react'
-import { BackSide, type BufferGeometry, type Mesh } from 'three'
-import type { ThreeEvent } from '@react-three/fiber'
-import { STOCK } from '../document/catalog'
+import { forwardRef, useEffect, useMemo, useRef } from 'react'
+import { BackSide, Vector3, type BufferGeometry, type Mesh } from 'three'
+import { useFrame, type ThreeEvent } from '@react-three/fiber'
+import { Html } from '@react-three/drei'
+import { STOCK, formatMass, pieceMass } from '../document/catalog'
 import { maxExtent, pieceVisual } from './geometry'
-import { buildVisual } from './mechanical'
+import { buildVisual, wedgeGeometry } from './mechanical'
 import { textureFor } from './textures'
 import type { Material, Piece } from '../document/types'
 
@@ -22,6 +23,7 @@ interface Props {
 // never altered — the outline is the whole signal.
 const SELECT_COLOR = '#ff8a00'
 const HIGHLIGHT_COLOR = '#2ecc71'
+const OUTLINE_TMP = new Vector3()
 
 /**
  * Per-axis scale that expands the piece by a uniform world-space rim `t` on every
@@ -31,6 +33,7 @@ const HIGHLIGHT_COLOR = '#2ecc71'
 function outlineScale(piece: Piece, t: number): [number, number, number] {
   const d = piece.dimensions
   switch (STOCK[piece.stockType].primitive) {
+    case 'wedge':
     case 'box':
       return [(d.x + 2 * t) / d.x, (d.y + 2 * t) / d.y, (d.z + 2 * t) / d.z]
     case 'cylinder':
@@ -49,13 +52,18 @@ export const PieceMesh = forwardRef<Mesh, Props>(function PieceMesh(
 ) {
   const v = pieceVisual(piece, materials)
 
-  // Mechanical stock renders a custom silhouette (teeth, groove, lobe); rebuilt
-  // only when its dimensions change, disposed when replaced.
+  // Mechanical stock renders a custom silhouette (teeth, groove, lobe) and the
+  // wedge a triangular prism; rebuilt only when dimensions change, disposed when replaced.
   const dimsKey = Object.values(piece.dimensions).join(',')
   const customGeo = useMemo<BufferGeometry | null>(
-    () => (v.visual ? buildVisual(v.visual, piece.dimensions) : null),
+    () =>
+      v.visual
+        ? buildVisual(v.visual, piece.dimensions)
+        : v.kind === 'wedge'
+          ? wedgeGeometry(piece.dimensions.x, piece.dimensions.y, piece.dimensions.z)
+          : null,
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [v.visual, dimsKey],
+    [v.visual, v.kind, dimsKey],
   )
   useEffect(() => () => customGeo?.dispose(), [customGeo])
 
@@ -71,10 +79,19 @@ export const PieceMesh = forwardRef<Mesh, Props>(function PieceMesh(
     </>
   )
 
-  // Outline rim thickness scales with the piece so pins and panels both read
-  // clearly — a fine line, not a halo.
+  // Outline rim: screen-constant (~2px) so a ball and a long dowel read with the
+  // same line weight at any zoom. Updated per frame from camera distance.
   const rim = Math.min(0.005, Math.max(0.0015, maxExtent(piece) * 0.008))
   const showOutline = selected || highlighted
+  const outlineRef = useRef<Mesh>(null)
+  useFrame(({ camera }) => {
+    const o = outlineRef.current
+    if (!o?.parent) return
+    o.parent.getWorldPosition(OUTLINE_TMP)
+    const t = Math.min(0.03, Math.max(0.002, camera.position.distanceTo(OUTLINE_TMP) * 0.0035))
+    const [sx, sy, sz] = outlineScale(piece, t)
+    o.scale.set(sx, sy, sz)
+  })
 
   return (
     <mesh
@@ -97,10 +114,22 @@ export const PieceMesh = forwardRef<Mesh, Props>(function PieceMesh(
       />
       {showOutline && (
         // Inverted-hull outline: same geometry, expanded, back faces only.
-        <mesh scale={outlineScale(piece, rim)} raycast={() => null}>
+        <mesh ref={outlineRef} scale={outlineScale(piece, rim)} raycast={() => null}>
           {customGeo ? <primitive object={customGeo} attach="geometry" /> : geometryJsx}
           <meshBasicMaterial color={selected ? SELECT_COLOR : HIGHLIGHT_COLOR} side={BackSide} />
         </mesh>
+      )}
+      {selected && (
+        // Weight chip: real mass floats above the selected piece so relative
+        // heft is visible without opening the inspector.
+        <Html
+          position={[0, maxExtent(piece) / 2 + 0.06, 0]}
+          center
+          style={{ pointerEvents: 'none' }}
+          zIndexRange={[100, 0]}
+        >
+          <div className="weight-chip">⚖ {formatMass(pieceMass(piece, materials))}</div>
+        </Html>
       )}
     </mesh>
   )

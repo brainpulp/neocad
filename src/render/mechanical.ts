@@ -105,6 +105,58 @@ export function pulleyGeometry(radius: number, thickness: number): THREE.BufferG
   return geo
 }
 
+/**
+ * Right-triangular prism matching the physics hull (shapes.ts): base rectangle
+ * at y = -y/2, apex edge along z at x = -x/2, y = +y/2. Non-indexed so the
+ * flat faces shade crisply; box-projected UVs so material textures apply.
+ */
+export function wedgeGeometry(dx: number, dy: number, dz: number): THREE.BufferGeometry {
+  const hx = dx / 2
+  const hy = dy / 2
+  const hz = dz / 2
+  const A = [-hx, -hy, -hz]
+  const B = [hx, -hy, -hz]
+  const C = [hx, -hy, hz]
+  const D = [-hx, -hy, hz]
+  const E = [-hx, hy, -hz]
+  const F = [-hx, hy, hz]
+  // Wound so every face's normal points outward.
+  const tris = [
+    [A, B, C], [A, C, D], // bottom (-y)
+    [A, D, F], [A, F, E], // back (-x)
+    [B, E, F], [B, F, C], // slope (+x+y)
+    [A, E, B], // end (-z)
+    [D, C, F], // end (+z)
+  ]
+  const positions = new Float32Array(tris.length * 9)
+  const uvs = new Float32Array(tris.length * 6)
+  tris.forEach((tri, i) => {
+    // Face normal decides the UV projection plane (box mapping).
+    const [u, v] = ((): [number, number] => {
+      const [p, q, r] = tri
+      const e1 = [q[0] - p[0], q[1] - p[1], q[2] - p[2]]
+      const e2 = [r[0] - p[0], r[1] - p[1], r[2] - p[2]]
+      const n = [
+        e1[1] * e2[2] - e1[2] * e2[1],
+        e1[2] * e2[0] - e1[0] * e2[2],
+        e1[0] * e2[1] - e1[1] * e2[0],
+      ].map(Math.abs)
+      if (n[1] >= n[0] && n[1] >= n[2]) return [0, 2] // y-facing → xz
+      if (n[0] >= n[2]) return [2, 1] // x-facing → zy
+      return [0, 1] // z-facing → xy
+    })()
+    tri.forEach((p, j) => {
+      positions.set(p, i * 9 + j * 3)
+      uvs.set([p[u] + 0.5, p[v] + 0.5], i * 6 + j * 2)
+    })
+  })
+  const geo = new THREE.BufferGeometry()
+  geo.setAttribute('position', new THREE.BufferAttribute(positions, 3))
+  geo.setAttribute('uv', new THREE.BufferAttribute(uvs, 2))
+  geo.computeVertexNormals()
+  return geo
+}
+
 export function buildVisual(kind: VisualKind, d: Record<string, number>): THREE.BufferGeometry {
   switch (kind) {
     case 'gear':

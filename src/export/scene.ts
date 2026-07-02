@@ -8,6 +8,7 @@ import {
   type BufferGeometry,
 } from 'three'
 import { geometryFor } from '../render/geometry'
+import { wedgeGeometry } from '../render/mechanical'
 import { STOCK } from '../document/catalog'
 import type { Document, Piece } from '../document/types'
 
@@ -22,6 +23,8 @@ function geometryObject(piece: Piece): BufferGeometry {
       return new CylinderGeometry(...(g.args as [number, number, number, number]))
     case 'sphere':
       return new SphereGeometry(...(g.args as [number, number, number]))
+    case 'wedge':
+      return wedgeGeometry(...(g.args as [number, number, number]))
   }
 }
 

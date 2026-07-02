@@ -8,7 +8,7 @@ const STOCK_TYPES = Object.keys(STOCK) as StockType[]
 // Placeholder icons (we'll iterate toward proper glyphs).
 const STOCK_ICONS: Record<StockType, string> = {
   rod: '📏', tube: '🥤', dowel: '🪄', slat: '🥖', joist: '🪵', panel: '🟫',
-  block: '🧱', ball: '⚽', gear: '⚙️', pinion: '🔩', ratchet: '🦷', cam: '🥚',
+  block: '🧱', ball: '⚽', wedge: '◢', gear: '⚙️', pinion: '🔩', ratchet: '🦷', cam: '🥚',
   pulley: '🛞', axle: '🖊', pin: '📍',
 }
 const FASTENER_ICONS: Record<string, string> = {

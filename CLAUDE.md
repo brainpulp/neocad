@@ -31,6 +31,29 @@ Plans: `docs/superpowers/plans/` · Backlog: `docs/BACKLOG.md`
 
 ## Status
 
+- **M-Quality1 (bug-fix batch from user critique) — DONE & browser-verified.**
+  ROTATION ARCS REMOVED entirely (user: "lose them completely") — rotation is
+  Alt-drag for now; a better single-axis UX is under discussion, do NOT rebuild
+  gizmos without agreement. WEDGE stock (ConvexHull physics, custom prism
+  geometry in `render/mechanical.ts` `wedgeGeometry`, slope/apex features).
+  Selection outline is SCREEN-CONSTANT (~2px via per-frame camera-distance rim
+  in PieceMesh useFrame) — balls and dowels read the same. WEIGHT display:
+  `pieceMass`/`formatMass` (catalog.ts), inspector row + floating chip on the
+  selected piece. BLOWER tool (🌬): hold LMB while running → force cone along
+  the cursor ray (`applyBlower`, gentle 1/(1+0.02t²) falloff because the nozzle
+  is the camera 4–8 m out), strength slider in EnvPanel, faint cone visual.
+  DEPENETRATION: `clampAboveSlab` sweeps pieces out of the workbench slab on
+  movePieceTransform + endTransient commits (resize-into-stage bug). FLUSH
+  TWIST-SNAP in planJoint: after primary axis alignment the mover's roll about
+  the joint axis snaps to the stationary piece's nearest projected axis (≤45°)
+  so edge joints engage parallel. ALL fastener types (weld/glue/…) selectable
+  from tree + markers, not just joints. Joint inspector: pivot swing limits
+  (degrees→Jolt hinge mLimits), cylindrical canSpin/canSlide toggles (remap to
+  hinge/slider/fixed at compile). Contact hardening: Baumgarte 0.18 + per-joint
+  velocity/position iteration overrides. Audio: ensureAudio returns the
+  resume() promise (playBeep awaits it — the old sync check raced and silently
+  no-oped), arming also on keydown (spacebar slingshot can be the first
+  gesture). Shadow gap fixed: 4096 map + ±5 m shadow frustum + normalBias.
 - **M1 (playful building) — DONE & verified.** Place stock from a palette into a live
   Jolt world, held-piece placement (inert until released), play/pause/reset, materials,
   IndexedDB autosave + file save/open. See `docs/superpowers/plans/M1-verification-notes.md`.

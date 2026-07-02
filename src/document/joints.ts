@@ -1,21 +1,24 @@
 import { STOCK } from './catalog'
 import type { JointFeature } from './features'
 import {
+  cross,
   dot,
   localDirToWorld,
   localToWorld,
   normalize,
+  quatFromAxisAngle,
   quatFromTo,
   quatMultiply,
   quatRotate,
+  scale,
   sub,
   worldDirToLocal,
   length,
 } from './math'
-import type { Fastener, JointType, Piece, Transform, Vec3 } from './types'
+import type { Fastener, JointType, Piece, Quat, Transform, Vec3 } from './types'
 
 /** Half-extent of a piece along a piece-local direction (box support function). */
-function halfExtentAlong(piece: Piece, dirLocal: Vec3): number {
+export function halfExtentAlong(piece: Piece, dirLocal: Vec3): number {
   const d = piece.dimensions
   const [x, y, z] = dirLocal
   switch (STOCK[piece.stockType].primitive) {
@@ -25,6 +28,8 @@ function halfExtentAlong(piece: Piece, dirLocal: Vec3): number {
       return Math.abs(y) * (d.height / 2) + Math.hypot(x, z) * d.radius
     case 'sphere':
       return d.radius
+    case 'wedge':
+      return (Math.abs(x) * d.x + Math.abs(y) * d.y + Math.abs(z) * d.z) / 2
   }
 }
 
@@ -54,6 +59,54 @@ export function swapJointEnds(f: Fastener, pieceA: Piece, pieceB: Piece): Partia
     slideMin: f.slideMax != null ? -f.slideMax : undefined,
     slideMax: f.slideMin != null ? -f.slideMin : undefined,
   }
+}
+
+/**
+ * Twist correction about `axis`: aligning the primary axis still leaves the
+ * mover free to be rolled arbitrarily about it, so an edge-to-edge join can
+ * engage visibly twisted. Snap the roll so the mover's principal axes line up
+ * with the stationary piece's nearest axes (projected into the plane ⊥ axis) —
+ * mated pieces engage flush and parallel. Snap-to-nearest (≤45°) so a
+ * deliberately angled piece isn't flipped to a different quadrant.
+ */
+function twistSnap(moverRot: Quat, stationaryRot: Quat, axis: Vec3): Quat {
+  const AXES: Vec3[] = [
+    [1, 0, 0],
+    [0, 1, 0],
+    [0, 0, 1],
+  ]
+  // Mover reference: its principal axis most perpendicular to the joint axis.
+  let ref: Vec3 | null = null
+  let refLen = 0.35 // nearly parallel to the axis = unusable as a roll reference
+  for (const u of AXES) {
+    const w = quatRotate(moverRot, u)
+    const p = sub(w, scale(axis, dot(w, axis)))
+    const l = length(p)
+    if (l > refLen) {
+      refLen = l
+      ref = normalize(p)
+    }
+  }
+  if (!ref) return moverRot
+  // Target: the stationary piece's projected axis (either sign) closest to it.
+  let best: Vec3 | null = null
+  let bestDot = -Infinity
+  for (const u of AXES) {
+    const w = quatRotate(stationaryRot, u)
+    const p = sub(w, scale(axis, dot(w, axis)))
+    if (length(p) < 0.35) continue
+    for (const s of [1, -1]) {
+      const cand = normalize(scale(p, s))
+      const d = dot(cand, ref)
+      if (d > bestDot) {
+        bestDot = d
+        best = cand
+      }
+    }
+  }
+  if (!best || bestDot > 0.9999) return moverRot
+  const angle = Math.atan2(dot(cross(ref, best), axis), dot(ref, best))
+  return quatMultiply(quatFromAxisAngle(axis, angle), moverRot)
 }
 
 export interface JointPlan {
@@ -154,9 +207,14 @@ export function planJoint(
     // then translate so its feature point lands on the stationary feature point.
     // Face-based linear joints skip the rotation — the mated faces stay flush
     // and the piece just slides.
+    const stationaryRot = (mover === 'a' ? pieceB : pieceA).state.transform.rotation
     const rotation =
       ownAxisWorld && stationaryAxis && !faceLinear
-        ? quatMultiply(quatFromTo(ownAxisWorld, axisWorld), t.rotation)
+        ? twistSnap(
+            quatMultiply(quatFromTo(ownAxisWorld, axisWorld), t.rotation),
+            stationaryRot,
+            axisWorld,
+          )
         : t.rotation
     const target = mover === 'a' ? worldB : worldA
     const position = sub(target, quatRotate(rotation, feat.point))

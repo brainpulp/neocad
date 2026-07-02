@@ -17,6 +17,7 @@ interface HandleDef {
 function handleDefs(piece: Piece): HandleDef[] {
   const d = piece.dimensions
   switch (STOCK[piece.stockType].primitive) {
+    case 'wedge':
     case 'box': {
       const x = d.x / 2
       const y = d.y / 2
@@ -142,7 +143,8 @@ export function ResizeHandles({ piece, mesh, onHoverChange }: Props) {
   const lineZ = useRef<Group>(null)
   const lineY = useRef<Group>(null)
   const defs = handleDefs(piece)
-  const prim = STOCK[piece.stockType].primitive
+  const rawPrim = STOCK[piece.stockType].primitive
+  const prim = rawPrim === 'wedge' ? 'box' : rawPrim // wedge resizes box-like
   const d = piece.dimensions
   const fullHeight = prim === 'box' ? d.y : prim === 'cylinder' ? d.height : d.radius * 2
 

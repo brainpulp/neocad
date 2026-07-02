@@ -4,7 +4,7 @@ import { Vector3, type Mesh } from 'three'
 
 const UP_TMP = new Vector3(0, 1, 0)
 const DIR_TMP = new Vector3()
-import { isJointType, type Document, type Fastener, type Vec3 } from '../document/types'
+import type { Document, Fastener, Vec3 } from '../document/types'
 import { localToWorld } from '../document/math'
 import { useStoreApi } from '../ui/storeContext'
 
@@ -64,15 +64,12 @@ export function FastenerMarker({ fastener }: { fastener: Fastener }) {
   return (
     <mesh
       ref={ref}
-      onPointerDown={
-        isJointType(fastener.type)
-          ? (e) => {
-              // Clicking a joint marker opens its axis/limits editor (paused).
-              e.stopPropagation()
-              store.getState().selectFastener(fastener.id)
-            }
-          : undefined
-      }
+      onPointerDown={(e) => {
+        // Clicking any fastener marker opens its inspector (joints also get
+        // the on-screen axis/limits editor while paused).
+        e.stopPropagation()
+        store.getState().selectFastener(fastener.id)
+      }}
     >
       <sphereGeometry args={[0.035, 12, 8]} />
       <meshStandardMaterial color="#e8a13a" emissive="#7a4d00" emissiveIntensity={0.4} />

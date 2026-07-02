@@ -73,6 +73,18 @@ export function EnvPanel() {
           />
         </div>
       )}
+      <div className="dim-row" title="Force of the 🌬 Blow tool's air jet">
+        <div className="dim-label">Blower power</div>
+        <input
+          type="range"
+          aria-label="Blower power"
+          min={10}
+          max={400}
+          step={10}
+          value={env.blowStrength}
+          onChange={(e) => set({ blowStrength: parseFloat(e.target.value) })}
+        />
+      </div>
       <div className="label" style={{ marginTop: 8 }}>
         SLINGSHOT <span className="muted" style={{ letterSpacing: 0 }}>(Space while running)</span>
       </div>

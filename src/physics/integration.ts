@@ -33,6 +33,8 @@ function volumeOf(piece: Piece): number {
       return Math.PI * d.radius * d.radius * d.height
     case 'sphere':
       return (4 / 3) * Math.PI * d.radius ** 3
+    case 'wedge':
+      return (d.x * d.y * d.z) / 2
   }
 }
 
@@ -45,6 +47,8 @@ function maxHalfHeight(piece: Piece): number {
       return Math.max(d.height, d.radius * 2) / 2
     case 'sphere':
       return d.radius
+    case 'wedge':
+      return Math.max(d.x, d.y, d.z) / 2
   }
 }
 
@@ -90,7 +94,7 @@ export class PhysicsWorld {
     // Gentler penetration recovery: overlapping pieces separate with a nudge,
     // not a detonation (default Baumgarte 0.2 is tuned for games, not benches).
     const ps = this.physicsSystem.GetPhysicsSettings()
-    ps.mBaumgarte = 0.12
+    ps.mBaumgarte = 0.18
     this.physicsSystem.SetPhysicsSettings(ps)
 
     this.groupFilter = new Jolt.GroupFilterTable(doc.pieces.length)
@@ -305,7 +309,15 @@ export class PhysicsWorld {
     const bodyB = this.bodyObjs.get(fastener.partB)
     if (!bodyA || !bodyB) return
     const J = this.Jolt
-    const kind = FASTENERS[fastener.type].constraint
+    let kind = FASTENERS[fastener.type].constraint
+    // Cylindrical DOFs are individually switchable in the joint inspector.
+    if (kind === 'cylindrical') {
+      const spin = fastener.canSpin ?? true
+      const slide = fastener.canSlide ?? true
+      if (spin && !slide) kind = 'hinge'
+      else if (!spin && slide) kind = 'slider'
+      else if (!spin && !slide) kind = 'fixed'
+    }
 
     // Fastened pieces whose shapes OVERLAP at the join (a gear around its axle)
     // must not contact-collide — the constraint owns their relative motion and
@@ -349,6 +361,8 @@ export class PhysicsWorld {
 
     if (kind === 'hinge') {
       const settings = new J.HingeConstraintSettings()
+      settings.mNumVelocityStepsOverride = 12
+      settings.mNumPositionStepsOverride = 4
       settings.mSpace = J.EConstraintSpace_WorldSpace
       settings.mPoint1 = rvA
       settings.mPoint2 = rvB
@@ -356,6 +370,11 @@ export class PhysicsWorld {
       settings.mHingeAxis2 = vAxis
       settings.mNormalAxis1 = vNormal
       settings.mNormalAxis2 = vNormal
+      if (fastener.angleMin != null && fastener.angleMax != null) {
+        // Swing limits (e.g. a gate that only opens 90 deg).
+        settings.mLimitsMin = fastener.angleMin
+        settings.mLimitsMax = fastener.angleMax
+      }
       const constraint = settings.Create(bodyA, bodyB)
       this.physicsSystem.AddConstraint(constraint)
       const motor = fastener.motor
@@ -381,6 +400,8 @@ export class PhysicsWorld {
 
     if (kind === 'slider') {
       const settings = new J.SliderConstraintSettings()
+      settings.mNumVelocityStepsOverride = 12
+      settings.mNumPositionStepsOverride = 4
       settings.mSpace = J.EConstraintSpace_WorldSpace
       settings.mPoint1 = rvA
       settings.mPoint2 = rvB
@@ -434,6 +455,8 @@ export class PhysicsWorld {
     // dedicated constraint, so use a 6-DOF with the joint axis as constraint-X
     // and free translation-X + rotation-X.
     const settings = new J.SixDOFConstraintSettings()
+    settings.mNumVelocityStepsOverride = 12
+    settings.mNumPositionStepsOverride = 4
     settings.mSpace = J.EConstraintSpace_WorldSpace
     settings.mPosition1 = rvA
     settings.mPosition2 = rvB
@@ -617,11 +640,12 @@ export class PhysicsWorld {
       const mass = massOf(piece, materials)
       // Wind pushes on area; quake accelerates the frame (∝ mass).
       const d = piece.dimensions
+      const prim = STOCK[piece.stockType].primitive
       const area = Math.min(
         1.5,
-        STOCK[piece.stockType].primitive === 'box'
+        prim === 'box' || prim === 'wedge'
           ? Math.max(d.x * d.y, d.y * d.z, d.x * d.z)
-          : STOCK[piece.stockType].primitive === 'cylinder'
+          : prim === 'cylinder'
             ? d.radius * 2 * d.height
             : Math.PI * d.radius * d.radius,
       )
@@ -631,6 +655,42 @@ export class PhysicsWorld {
       const [px, py, pz] = piece.state.transform.position
       const lift = wind ? maxHalfHeight(piece) * 0.5 : 0
       this.bodyInterface.AddForce(id, force, new J.RVec3(px, py + lift, pz), J.EActivation_Activate)
+    }
+  }
+
+  /**
+   * Blower tool: a concentrated cone of wind along the cursor ray. Force fades
+   * with angle off the axis and with distance, and pushes above each piece's
+   * midline (like ambient wind) so a focused blast can tip things over.
+   */
+  applyBlower(origin: Vec3, dir: Vec3, strength: number, pieces: Piece[]): void {
+    const J = this.Jolt
+    const CONE_TAN = 0.35 // ~19° half-angle
+    for (const piece of pieces) {
+      if (piece.anchored) continue
+      const id = this.bodies.get(piece.id)
+      if (!id) continue
+      const [px, py, pz] = piece.state.transform.position
+      const rx = px - origin[0]
+      const ry = py - origin[1]
+      const rz = pz - origin[2]
+      const t = rx * dir[0] + ry * dir[1] + rz * dir[2]
+      if (t <= 0.05) continue // behind the nozzle
+      const radial = Math.hypot(rx - dir[0] * t, ry - dir[1] * t, rz - dir[2] * t)
+      // The piece's own size widens the effective cone so grazing hits count.
+      const reach = t * CONE_TAN + maxHalfHeight(piece)
+      if (radial > reach) continue
+      // Gentle distance fade: the nozzle is usually the CAMERA, 4–8 m out, so a
+      // steep t² falloff would make the tool feel dead at normal zoom.
+      const falloff = (1 - radial / reach) / (1 + 0.02 * t * t)
+      const f = strength * falloff
+      const lift = maxHalfHeight(piece) * 0.5
+      this.bodyInterface.AddForce(
+        id,
+        new J.Vec3(dir[0] * f, dir[1] * f, dir[2] * f),
+        new J.RVec3(px, py + lift, pz),
+        J.EActivation_Activate,
+      )
     }
   }
 

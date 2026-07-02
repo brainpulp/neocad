@@ -56,6 +56,26 @@ export function candidateFeatures(piece: Piece, local: Vec3): JointFeature[] {
       }
       return feats
     }
+    case 'wedge': {
+      // Ramp: bottom face, the slope face, and the apex edge (a natural hinge line).
+      const x = d.x / 2
+      const y = d.y / 2
+      const z = d.z / 2
+      const lz = clamp(local[2], -z, z)
+      const slopeNormal: Vec3 = ((): Vec3 => {
+        const n: Vec3 = [d.y, d.x, 0]
+        const l = Math.hypot(n[0], n[1])
+        return [n[0] / l, n[1] / l, 0]
+      })()
+      return [
+        { kind: 'center', label: 'Center', point: [0, 0, 0], axis: null },
+        { kind: 'face', label: 'Bottom', point: [0, -y, 0], axis: [0, 1, 0] },
+        { kind: 'face', label: 'Slope', point: [0, 0, 0], axis: slopeNormal },
+        { kind: 'edge', label: 'Apex edge', point: [-x, y, lz], axis: [0, 0, 1] },
+        { kind: 'edge', label: 'Base edge', point: [x, -y, lz], axis: [0, 0, 1] },
+        { kind: 'edge', label: 'Base edge', point: [-x, -y, lz], axis: [0, 0, 1] },
+      ]
+    }
     case 'box': {
       const x = d.x / 2
       const y = d.y / 2

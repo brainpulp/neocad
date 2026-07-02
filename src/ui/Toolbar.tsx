@@ -56,6 +56,18 @@ export function Toolbar({ onSave, onOpen, onExportGLTF, onExportSTL }: ToolbarPr
       >
         🪢 Rope
       </button>
+      <button
+        className={tool === 'blower' ? 'active' : ''}
+        title="Blower: hold the mouse button while the sim runs to blow a jet of air at the cursor"
+        onClick={() => store.getState().setTool('blower')}
+      >
+        🌬 Blow
+      </button>
+      {tool === 'blower' && (
+        <span className="hint">
+          {running ? 'hold the mouse button to blow where you point' : 'press ▶ Run, then hold to blow'}
+        </span>
+      )}
       {tool === 'rope' && (
         <span className="hint">
           {ropeStarted ? 'now click the other end' : 'click the first end (pieces tie the rope to them)'}

@@ -1,5 +1,4 @@
 import { FASTENERS } from '../document/catalog'
-import { isJointType } from '../document/types'
 import { useDocStore, useStoreApi } from './storeContext'
 
 export function SceneTree() {
@@ -68,8 +67,8 @@ export function SceneTree() {
         <div
           key={f.id}
           className={`tree-row fastener${f.id === selectedFastenerId ? ' active' : ''}`}
-          onClick={() => (isJointType(f.type) ? store.getState().selectFastener(f.id) : undefined)}
-          style={isJointType(f.type) ? { cursor: 'pointer' } : undefined}
+          onClick={() => store.getState().selectFastener(f.id)}
+          style={{ cursor: 'pointer' }}
         >
           <span className="tree-name">
             {FASTENERS[f.type].label}: {nameOf(f.partA)} ↔ {nameOf(f.partB)}

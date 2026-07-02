@@ -32,24 +32,30 @@ let lastPlay = 0
 let voices = 0
 
 /** Create/resume the AudioContext — call from a user gesture (autoplay policy). */
-export function ensureAudio(): void {
+export function ensureAudio(): Promise<void> {
   if (!ctx) {
     try {
       ctx = new AudioContext()
     } catch {
-      return
+      return Promise.resolve()
     }
     const len = Math.floor(ctx.sampleRate * 0.1)
     noiseBuffer = ctx.createBuffer(1, len, ctx.sampleRate)
     const data = noiseBuffer.getChannelData(0)
     for (let i = 0; i < len; i++) data[i] = Math.random() * 2 - 1
   }
-  if (ctx.state === 'suspended') void ctx.resume()
+  // resume() is async — callers that want to play RIGHT NOW must await it,
+  // or the "is it running yet" check races the promise and silently no-ops.
+  if (ctx.state === 'suspended') return ctx.resume().catch(() => {})
+  return Promise.resolve()
 }
 
 /** Short confirmation beep (🔊 toggle) so users can verify audio output works. */
 export function playBeep(): void {
-  ensureAudio()
+  void ensureAudio().then(beepNow)
+}
+
+function beepNow(): void {
   if (!ctx || ctx.state !== 'running') return
   const t0 = ctx.currentTime
   const osc = ctx.createOscillator()

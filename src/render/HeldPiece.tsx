@@ -1,7 +1,9 @@
 import type { ThreeEvent } from '@react-three/fiber'
 import { Html } from '@react-three/drei'
+import { useMemo } from 'react'
 import { FASTENERS, STOCK } from '../document/catalog'
 import { geometryFor } from './geometry'
+import { wedgeGeometry } from './mechanical'
 import { snapToGrid } from './snap'
 import { useDocStore, useStoreApi } from '../ui/storeContext'
 
@@ -9,8 +11,14 @@ import { useDocStore, useStoreApi } from '../ui/storeContext'
 export const DROP_HEIGHT = 1.2
 
 function GeometryFor({ kind, args }: { kind: string; args: number[] }) {
+  const wedge = useMemo(
+    () => (kind === 'wedge' ? wedgeGeometry(args[0], args[1], args[2]) : null),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [kind, args.join(',')],
+  )
   if (kind === 'box') return <boxGeometry args={args as [number, number, number]} />
   if (kind === 'cylinder') return <cylinderGeometry args={args as [number, number, number, number]} />
+  if (wedge) return <primitive object={wedge} attach="geometry" />
   return <sphereGeometry args={args as [number, number, number]} />
 }
 

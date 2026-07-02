@@ -24,6 +24,10 @@ export function perpendicular(v: Vec3): Vec3 {
   return normalize([y * ref[2] - z * ref[1], z * ref[0] - x * ref[2], x * ref[1] - y * ref[0]])
 }
 
+export function scale(v: Vec3, s: number): Vec3 {
+  return [v[0] * s, v[1] * s, v[2] * s]
+}
+
 export function distance(a: Vec3, b: Vec3): number {
   return length(sub(a, b))
 }
@@ -63,6 +67,13 @@ export function quatFromTo(from: Vec3, to: Vec3): Quat {
   const w = 1 + d
   const l = Math.hypot(c[0], c[1], c[2], w)
   return [c[0] / l, c[1] / l, c[2] / l, w / l]
+}
+
+/** Rotation of `angle` radians about unit `axis`. */
+export function quatFromAxisAngle(axis: Vec3, angle: number): Quat {
+  const [x, y, z] = normalize(axis)
+  const s = Math.sin(angle / 2)
+  return [x * s, y * s, z * s, Math.cos(angle / 2)]
 }
 
 export function quatRotate(q: Quat, v: Vec3): Vec3 {

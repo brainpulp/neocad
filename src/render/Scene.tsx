@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Canvas, useFrame, useThree } from '@react-three/fiber'
 import { GizmoHelper, GizmoViewcube, Grid, OrbitControls } from '@react-three/drei'
-import { Group, IcosahedronGeometry, Quaternion, Vector3, type BufferGeometry, type Mesh } from 'three'
+import { DoubleSide, Group, IcosahedronGeometry, Quaternion, Vector3, type BufferGeometry, type Mesh } from 'three'
 import type { OrbitControls as OrbitControlsImpl } from 'three-stdlib'
 import { initJolt, type JoltModule } from '../physics/jolt'
 import { PhysicsWorld } from '../physics/integration'
@@ -11,7 +11,6 @@ import { HeldPiece } from './HeldPiece'
 import { FastenerMarker } from './FastenerMarker'
 import { FeatureMarker } from './FeatureMarker'
 import { ResizeHandles } from './ResizeHandles'
-import { RotateArcs } from './RotateArcs'
 import { JointEditor } from './JointEditor'
 import { localDirToWorld, localToWorld, worldToLocal } from '../document/math'
 import { isJointType, type Vec3 } from '../document/types'
@@ -21,6 +20,7 @@ import { playImpact } from '../audio/impacts'
 const FIXED_DT = 1 / 60
 const UP = new Vector3(0, 1, 0)
 const ROPE_DIR = new Vector3()
+const BLOW_DIR = new Vector3()
 
 /**
  * Stable key describing the physics-relevant structure; the world rebuilds when it
@@ -227,6 +227,27 @@ function Sim({ Jolt }: { Jolt: JoltModule }) {
   const shakeOffset = useRef(new Vector3())
   const ropeGroups = useRef(new Map<string, Group>())
 
+  // Blower tool: hold LMB to blow a cone of wind along the cursor ray.
+  const blow = useRef<{ origin: Vector3; dir: Vector3; point: Vector3 } | null>(null)
+  const blowCone = useRef<Mesh>(null)
+  const startBlow = (e: import('@react-three/fiber').ThreeEvent<PointerEvent>) => {
+    blow.current = { origin: e.ray.origin.clone(), dir: e.ray.direction.clone(), point: e.point.clone() }
+    store.getState().setDraggingId('__blower') // disables orbit while blowing
+    ;(e.target as Element).setPointerCapture(e.pointerId)
+  }
+  const moveBlow = (e: import('@react-three/fiber').ThreeEvent<PointerEvent>) => {
+    const b = blow.current
+    if (!b) return
+    b.origin.copy(e.ray.origin)
+    b.dir.copy(e.ray.direction)
+    b.point.copy(e.point)
+  }
+  const endBlow = () => {
+    if (!blow.current) return
+    blow.current = null
+    if (store.getState().draggingId === '__blower') store.getState().setDraggingId(null)
+  }
+
   useFrame(() => {
     const world = worldRef.current
     if (!world) return
@@ -246,6 +267,15 @@ function Sim({ Jolt }: { Jolt: JoltModule }) {
         state.doc.pieces,
         state.doc.materials,
       )
+      if (blow.current && state.tool === 'blower') {
+        const b = blow.current
+        world.applyBlower(
+          [b.origin.x, b.origin.y, b.origin.z],
+          [b.dir.x, b.dir.y, b.dir.z],
+          env.blowStrength,
+          state.doc.pieces,
+        )
+      }
       world.step(FIXED_DT)
       world.syncToDocument(state.doc)
     }
@@ -286,6 +316,17 @@ function Sim({ Jolt }: { Jolt: JoltModule }) {
       }
     }
     camera.position.add(prevShake)
+    // Blower cone: a faint air jet widening toward where the cursor points.
+    const bc = blowCone.current
+    if (bc) {
+      const b = blow.current
+      bc.visible = !!b && state.running && state.tool === 'blower'
+      if (b && bc.visible) {
+        BLOW_DIR.copy(b.dir).normalize()
+        bc.quaternion.setFromUnitVectors(UP, BLOW_DIR.clone().negate())
+        bc.position.copy(b.point).addScaledVector(BLOW_DIR, -0.8)
+      }
+    }
     // Ropes: drive each rope's cylinder chain from the live particle positions.
     const ropePoints = world.syncRopes()
     ropeGroups.current.forEach((g, ropeId) => {
@@ -509,6 +550,13 @@ function Sim({ Jolt }: { Jolt: JoltModule }) {
               s.jointHoverAt(piece.id, [e.point.x, e.point.y, e.point.z])
               return
             }
+            if (s.tool === 'blower') {
+              if (blow.current) {
+                e.stopPropagation()
+                moveBlow(e)
+              }
+              return
+            }
             if (pausedDrag.current) {
               movePausedDrag(e)
               return
@@ -570,6 +618,11 @@ function Sim({ Jolt }: { Jolt: JoltModule }) {
               })
               return
             }
+            if (s.tool === 'blower') {
+              e.stopPropagation()
+              startBlow(e)
+              return
+            }
             if (s.fastenTool) {
               e.stopPropagation()
               s.fastenClick(piece.id)
@@ -622,6 +675,10 @@ function Sim({ Jolt }: { Jolt: JoltModule }) {
             if (pausedDrag.current) {
               ;(e.target as Element).releasePointerCapture(e.pointerId)
               endPausedDrag()
+            }
+            if (blow.current) {
+              ;(e.target as Element).releasePointerCapture(e.pointerId)
+              endBlow()
             }
           }}
           onPointerOut={() => {
@@ -687,6 +744,33 @@ function Sim({ Jolt }: { Jolt: JoltModule }) {
           </group>
         )
       })}
+      {/* Blower tool: full-ground catcher + faint air-jet cone while blowing. */}
+      {tool === 'blower' && (
+        <mesh
+          rotation={[-Math.PI / 2, 0, 0]}
+          position={[0, 0.045, 0]}
+          onPointerDown={(e) => {
+            e.stopPropagation()
+            startBlow(e)
+          }}
+          onPointerMove={(e) => {
+            if (blow.current) moveBlow(e)
+          }}
+          onPointerUp={(e) => {
+            if (blow.current) {
+              ;(e.target as Element).releasePointerCapture(e.pointerId)
+              endBlow()
+            }
+          }}
+        >
+          <planeGeometry args={[200, 200]} />
+          <meshBasicMaterial transparent opacity={0} depthWrite={false} />
+        </mesh>
+      )}
+      <mesh ref={blowCone} visible={false} raycast={() => null}>
+        <coneGeometry args={[0.5, 1.6, 20, 1, true]} />
+        <meshBasicMaterial color="#4aa3ff" transparent opacity={0.14} depthWrite={false} side={DoubleSide} />
+      </mesh>
       {/* Rope tool: ground catcher + first-endpoint marker. */}
       {tool === 'rope' && (
         <mesh
@@ -712,15 +796,10 @@ function Sim({ Jolt }: { Jolt: JoltModule }) {
         <FeatureMarker anchor={jointHover} color="#2ecc71" />
       )}
       {jointA && <FeatureMarker anchor={jointA} color="#ff8a00" />}
-      {/* Paused + transform tool: everything mounts on the bounding-box shell —
-          corner/top squares resize, lift cone raises, arc handles rotate.
-          Nothing overlaps, nothing fights. */}
-      {gizmoMesh && selectedPiece && (
-        <>
-          <ResizeHandles piece={selectedPiece} mesh={gizmoMesh} />
-          <RotateArcs piece={selectedPiece} mesh={gizmoMesh} />
-        </>
-      )}
+      {/* Paused + transform tool: handles mount on the bounding-box shell —
+          corner/top squares resize, lift cone raises. Rotation is Alt-drag
+          (arc gizmos removed by design). */}
+      {gizmoMesh && selectedPiece && <ResizeHandles piece={selectedPiece} mesh={gizmoMesh} />}
       <JointEditor />
     </>
   )
@@ -853,13 +932,16 @@ export function Scene() {
         position={[6, 10, 4]}
         intensity={1.15}
         castShadow
-        shadow-mapSize-width={2048}
-        shadow-mapSize-height={2048}
-        shadow-camera-left={-10}
-        shadow-camera-right={10}
-        shadow-camera-top={10}
-        shadow-camera-bottom={-10}
-        shadow-bias={-0.0002}
+        // Tight frustum + high-res map: ~2.5mm/texel so contact shadows actually
+        // touch small pieces (a wide span left a visible gap under objects).
+        shadow-mapSize-width={4096}
+        shadow-mapSize-height={4096}
+        shadow-camera-left={-5}
+        shadow-camera-right={5}
+        shadow-camera-top={5}
+        shadow-camera-bottom={-5}
+        shadow-bias={-0.0001}
+        shadow-normalBias={0.01}
       />
       <directionalLight position={[-6, 5, -6]} intensity={0.3} />
       {/* Shadow catcher just under the workbench so shadows read on white. */}

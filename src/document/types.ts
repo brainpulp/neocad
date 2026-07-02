@@ -38,6 +38,7 @@ export type StockType =
   | 'pulley'
   | 'cam'
   | 'ratchet'
+  | 'wedge'
 
 export interface Piece {
   id: string
@@ -106,6 +107,12 @@ export interface Fastener {
   motor?: { enabled: boolean; velocity: number; maxForce: number }
   /** Spring joints: stiffness (Hz), damping ratio, and rest length (m). */
   spring?: { frequency: number; damping: number; restLength: number }
+  /** Pivot swing limits (radians), e.g. a gate that only opens 90°. */
+  angleMin?: number
+  angleMax?: number
+  /** Cylindrical joints: each freedom can be switched off in the inspector. */
+  canSpin?: boolean
+  canSlide?: boolean
 }
 
 /** A rope end tied to a piece (anchor in that piece's local frame). */

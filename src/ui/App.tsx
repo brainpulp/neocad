@@ -57,9 +57,15 @@ export function App() {
   // on every pointer press — a single attempt can lose the race with stricter
   // autoplay policies, and resume() is a no-op once running.
   useEffect(() => {
-    const arm = () => ensureAudio()
+    const arm = () => void ensureAudio()
+    // Keydown too: the spacebar slingshot may be the FIRST gesture that should
+    // make noise, and it never goes through pointerdown.
     window.addEventListener('pointerdown', arm)
-    return () => window.removeEventListener('pointerdown', arm)
+    window.addEventListener('keydown', arm)
+    return () => {
+      window.removeEventListener('pointerdown', arm)
+      window.removeEventListener('keydown', arm)
+    }
   }, [])
 
   // Global keyboard shortcuts (ignored while typing in form fields).

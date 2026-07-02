@@ -1,4 +1,4 @@
-import { FASTENERS, STOCK } from '../document/catalog'
+import { FASTENERS, STOCK, formatMass, pieceMass } from '../document/catalog'
 import { flipJointAxis, swapJointEnds } from '../document/joints'
 import { isJointType, type Piece } from '../document/types'
 import { useDocStore, useStoreApi } from './storeContext'
@@ -141,6 +141,15 @@ export function Properties() {
         </select>
       </label>
 
+      <div className="dim-row" title="Material density × volume — what physics simulates">
+        <div className="dim-label">Weight</div>
+        <div className="dim-value">
+          <span className="dim-unit" data-testid="piece-weight">
+            ⚖ {formatMass(pieceMass(piece, materials))}
+          </span>
+        </div>
+      </div>
+
       <div className="btn-row">
         <button
           title="Return this piece to its rest placement"
@@ -241,6 +250,63 @@ function JointProperties({ fastenerId }: { fastenerId: string }) {
               </div>
             </div>
           ))}
+        </>
+      )}
+      {f.type === 'pivot' && (
+        <>
+          <div className="label" style={{ marginTop: 10 }}>
+            SWING LIMITS
+          </div>
+          {(['angleMin', 'angleMax'] as const).map((key) => (
+            <div className="dim-row" key={`${f.id}:${key}:${f[key]}`}>
+              <div className="dim-label">{key === 'angleMin' ? 'From' : 'To'}</div>
+              <div className="dim-value">
+                <input
+                  type="number"
+                  aria-label={key}
+                  step={5}
+                  placeholder="free"
+                  defaultValue={f[key] != null ? Math.round((f[key]! * 180) / Math.PI) : ''}
+                  onBlur={(e) => {
+                    const v = parseFloat(e.target.value)
+                    store.getState().updateFastener(f.id, {
+                      [key]: Number.isFinite(v) ? (v * Math.PI) / 180 : undefined,
+                    })
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') (e.target as HTMLInputElement).blur()
+                  }}
+                />
+                <span className="dim-unit">°</span>
+              </div>
+            </div>
+          ))}
+          <p className="muted" style={{ fontSize: 11, margin: '2px 0' }}>
+            Empty = swings freely. 0° is the pose when the joint was made.
+          </p>
+        </>
+      )}
+      {f.type === 'cylindrical' && (
+        <>
+          <div className="label" style={{ marginTop: 10 }}>
+            MOTION
+          </div>
+          <label className="field checkbox" title="Allow rotation about the axis">
+            <input
+              type="checkbox"
+              checked={f.canSpin ?? true}
+              onChange={(e) => store.getState().updateFastener(f.id, { canSpin: e.target.checked })}
+            />
+            ↻ Can spin
+          </label>
+          <label className="field checkbox" title="Allow sliding along the axis">
+            <input
+              type="checkbox"
+              checked={f.canSlide ?? true}
+              onChange={(e) => store.getState().updateFastener(f.id, { canSlide: e.target.checked })}
+            />
+            ⇕ Can slide
+          </label>
         </>
       )}
       {(f.type === 'pivot' || f.type === 'linear') && (

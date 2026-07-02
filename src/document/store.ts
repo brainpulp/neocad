@@ -14,12 +14,12 @@ import {
 import * as ops from './document'
 import { makePiece, nextFastenerId } from './catalog'
 import { MECHANISMS } from './mechanisms'
-import { worldToLocal } from './math'
+import { worldDirToLocal, worldToLocal } from './math'
 import { snapToFeature, suggestJoint, type JointFeature } from './features'
-import { planJoint } from './joints'
+import { halfExtentAlong, planJoint } from './joints'
 
 /** Interaction tools. 'transform' drags pieces (sim running) or shows a gizmo (paused). */
-export type Tool = 'transform' | 'joint' | 'rope'
+export type Tool = 'transform' | 'joint' | 'rope' | 'blower'
 
 /** Test-force generators + slingshot options. Session state, never persisted. */
 export interface EnvSettings {
@@ -36,6 +36,8 @@ export interface EnvSettings {
   /** Slingshot rock speed (m/s) and radius (m); Space fires while running. */
   rockSpeed: number
   rockRadius: number
+  /** Blower tool force (N) at the cone center. */
+  blowStrength: number
 }
 
 export interface PendingJoin {
@@ -166,6 +168,43 @@ export interface DocState {
   updateMaterial: (name: string, patch: Partial<Material>) => void
   /** Replace the whole document (Open / autosave restore). Clears history. */
   loadDoc: (doc: Document) => void
+}
+
+/**
+ * Lift any piece whose lowest point ended up inside the workbench slab (or below
+ * the ground) back onto the surface. Runs when paused edit gestures commit, so a
+ * resize/move can't leave a piece interpenetrating — Run would fling or trap it.
+ */
+export function clampAboveSlab(doc: Document): Document {
+  const sb = doc.ground.sandbox
+  let changed = false
+  const pieces = doc.pieces.map((p) => {
+    const lift = (t: Transform): Transform | null => {
+      const down = worldDirToLocal({ position: [0, 0, 0], rotation: t.rotation }, [0, 1, 0])
+      const half = halfExtentAlong(p, down)
+      const onSlab =
+        sb != null &&
+        Math.abs(t.position[0]) <= sb.size / 2 &&
+        Math.abs(t.position[2]) <= sb.size / 2
+      const floor = onSlab ? sb.thickness : 0
+      const delta = floor - (t.position[1] - half)
+      if (delta <= 1e-4) return null
+      return {
+        position: [t.position[0], t.position[1] + delta, t.position[2]],
+        rotation: t.rotation,
+      }
+    }
+    const def = lift(p.definition.transform)
+    const st = lift(p.state.transform)
+    if (!def && !st) return p
+    changed = true
+    return {
+      ...p,
+      definition: def ? { transform: def } : p.definition,
+      state: st ? { ...p.state, transform: st } : p.state,
+    }
+  })
+  return changed ? { ...doc, pieces } : doc
 }
 
 export type DocStore = ReturnType<typeof createDocStore>
@@ -408,6 +447,7 @@ export function createDocStore(initial: Document = emptyDocument()) {
         quakeMagnitude: 3,
         rockSpeed: 8,
         rockRadius: 0.06,
+        blowStrength: 80,
       },
       setEnv: (patch) => set((s) => ({ env: { ...s.env, ...patch } })),
       reset: () =>
@@ -539,10 +579,13 @@ export function createDocStore(initial: Document = emptyDocument()) {
         })),
       movePieceTransform: (id, transform) => {
         commit((doc) =>
-          ops.updatePiece(doc, id, {
-            definition: { transform: structuredClone(transform) },
-            state: { transform: structuredClone(transform) },
-          }),
+          // Depenetrate from the slab so the committed pose is physically valid.
+          clampAboveSlab(
+            ops.updatePiece(doc, id, {
+              definition: { transform: structuredClone(transform) },
+              state: { transform: structuredClone(transform) },
+            }),
+          ),
         )
         // Rebuild so the (paused) physics body adopts the new pose.
         set((s) => ({ worldEpoch: s.worldEpoch + 1 }))
@@ -580,7 +623,15 @@ export function createDocStore(initial: Document = emptyDocument()) {
           if (!transientPast) return {}
           const snapshot = transientPast
           transientPast = null
-          return { past: [...s.past, snapshot], future: [] }
+          // A resize (or shrinking sandbox) can leave pieces inside the slab;
+          // sweep them back onto the surface as part of the same gesture.
+          const clamped = clampAboveSlab(s.doc)
+          return {
+            doc: clamped,
+            past: [...s.past, snapshot],
+            future: [],
+            ...(clamped !== s.doc ? { worldEpoch: s.worldEpoch + 1 } : {}),
+          }
         }),
       removeFastener: (id) => commit((doc) => ops.removeFastener(doc, id)),
       addMaterial: (material) => commit((doc) => ops.addMaterial(doc, material)),

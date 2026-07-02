@@ -2,7 +2,7 @@ import { STOCK, type Primitive, type VisualKind } from '../document/catalog'
 import type { Material, Piece } from '../document/types'
 
 export interface Geometry {
-  kind: 'box' | 'cylinder' | 'sphere'
+  kind: 'box' | 'cylinder' | 'sphere' | 'wedge'
   /** Geometry constructor args, in Three.js order. */
   args: number[]
 }
@@ -25,6 +25,8 @@ export function maxExtent(piece: Piece): number {
       return Math.max(d.radius * 2, d.height)
     case 'sphere':
       return d.radius * 2
+    case 'wedge':
+      return Math.max(d.x, d.y, d.z)
   }
 }
 
@@ -40,6 +42,8 @@ export function geometryFor(primitive: Primitive, d: Record<string, number>): Ge
       return { kind: 'cylinder', args: [d.radius, d.radius, d.height, 24] }
     case 'sphere':
       return { kind: 'sphere', args: [d.radius, 24, 16] }
+    case 'wedge':
+      return { kind: 'wedge', args: [d.x, d.y, d.z] }
   }
 }
 
