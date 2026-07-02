@@ -13,6 +13,7 @@ import {
 } from './types'
 import * as ops from './document'
 import { makePiece, nextFastenerId } from './catalog'
+import { MECHANISMS } from './mechanisms'
 import { worldToLocal } from './math'
 import { snapToFeature, suggestJoint, type JointFeature } from './features'
 import { planJoint } from './joints'
@@ -25,6 +26,8 @@ export interface EnvSettings {
   windOn: boolean
   /** N per m² of piece silhouette. */
   windStrength: number
+  /** ×6 wind multiplier — demolition weather. */
+  hurricane: boolean
   /** Radians, compass direction the wind blows toward. */
   windAngle: number
   quakeOn: boolean
@@ -127,6 +130,8 @@ export interface DocState {
   removePiece: (id: string) => void
   /** Clone a piece in place (Alt-drag duplicate). Returns the clone, already committed. */
   duplicatePiece: (id: string) => Piece | null
+  /** Drop a prebuilt mechanism into the scene (one undo entry). */
+  insertMechanism: (id: string) => void
   /** Put the given pieces back at their rest placement (state ← definition). */
   resetPieces: (ids: string[]) => void
   /** Reset only pieces knocked far from their rest placement; the rest stay settled. */
@@ -380,6 +385,7 @@ export function createDocStore(initial: Document = emptyDocument()) {
       env: {
         windOn: false,
         windStrength: 6,
+        hurricane: false,
         windAngle: 0,
         quakeOn: false,
         quakeMagnitude: 3,
@@ -414,6 +420,16 @@ export function createDocStore(initial: Document = emptyDocument()) {
         commit((doc) => ops.addPiece(doc, clone))
         set({ selectedId: clone.id })
         return clone
+      },
+      insertMechanism: (id) => {
+        const def = MECHANISMS.find((m) => m.id === id)
+        if (!def) return
+        const { pieces, fasteners } = def.build()
+        commit((doc) => ({
+          ...doc,
+          pieces: [...doc.pieces, ...pieces],
+          fasteners: [...doc.fasteners, ...fasteners],
+        }))
       },
       resetPieces: (ids) =>
         set((s) => ({

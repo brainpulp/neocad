@@ -47,6 +47,21 @@ export function ensureAudio(): void {
   if (ctx.state === 'suspended') void ctx.resume()
 }
 
+/** Short confirmation beep (🔊 toggle) so users can verify audio output works. */
+export function playBeep(): void {
+  ensureAudio()
+  if (!ctx || ctx.state !== 'running') return
+  const t0 = ctx.currentTime
+  const osc = ctx.createOscillator()
+  const g = ctx.createGain()
+  osc.frequency.value = 880
+  g.gain.setValueAtTime(0.2, t0)
+  g.gain.exponentialRampToValueAtTime(0.001, t0 + 0.15)
+  osc.connect(g).connect(ctx.destination)
+  osc.start(t0)
+  osc.stop(t0 + 0.16)
+}
+
 /**
  * Play one impact. `speed` is the relative normal velocity (m/s); quiet taps
  * are skipped, hard hits saturate. Throttled so contact storms don't stack.
@@ -61,7 +76,7 @@ export function playImpact(material: string, speed: number): void {
   voices++
   const p = PROFILES[material] ?? PROFILES.bench
   const t0 = ctx.currentTime
-  const gain = Math.pow(strength, 1.4) * 0.35
+  const gain = Math.pow(strength, 1.4) * 0.6
   const detune = 1 + (Math.random() - 0.5) * 0.12
 
   const out = ctx.createGain()

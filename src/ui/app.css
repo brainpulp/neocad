@@ -46,6 +46,10 @@ body { font-family: system-ui, sans-serif; background: #f4f6f9; color: #22303f; 
 .palette button.active { background: #1668e3; border-color: #1668e3; color: #fff; }
 
 .label { font-size: 11px; letter-spacing: 0.08em; color: #66788c; margin-bottom: 6px; }
+.palette-section { margin-bottom: 8px; }
+.palette-section summary { cursor: pointer; user-select: none; padding: 2px 0; }
+.palette-section summary::marker { color: #9fb0c2; }
+.palette .icon { display: inline-block; width: 18px; text-align: center; margin-right: 2px; }
 .muted { opacity: 0.6; }
 
 .field { display: flex; flex-direction: column; gap: 2px; font-size: 12px; margin: 6px 0; }

@@ -45,6 +45,14 @@ export function EnvPanel() {
               onChange={(e) => set({ windAngle: (parseFloat(e.target.value) * Math.PI) / 180 })}
             />
           </div>
+          <label className="field checkbox" title="×6 wind — demolition weather">
+            <input
+              type="checkbox"
+              checked={env.hurricane}
+              onChange={(e) => set({ hurricane: e.target.checked })}
+            />
+            🌀 Hurricane mode
+          </label>
         </>
       )}
       <label className="field checkbox">

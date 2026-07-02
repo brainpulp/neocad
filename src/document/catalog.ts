@@ -6,8 +6,8 @@ export type Primitive = 'box' | 'cylinder' | 'sphere'
 export type VisualKind = 'gear' | 'pulley' | 'cam' | 'ratchet'
 
 // Rigid fasteners map to 'fixed'; joints map to articulated constraints.
-// M3 adds ball | rope and motors.
-export type ConstraintKind = 'fixed' | 'hinge' | 'slider' | 'cylindrical'
+// M3 adds ball | rope.
+export type ConstraintKind = 'fixed' | 'hinge' | 'slider' | 'cylindrical' | 'distance'
 
 export interface FastenerDef {
   label: string
@@ -25,6 +25,7 @@ export const FASTENERS: Record<FastenerType, FastenerDef> = {
   pivot: { label: 'Pivot', constraint: 'hinge', hint: 'spins around the axis' },
   cylindrical: { label: 'Cylindrical', constraint: 'cylindrical', hint: 'spins + slides along the axis' },
   linear: { label: 'Linear', constraint: 'slider', hint: 'slides along the axis' },
+  spring: { label: 'Spring', constraint: 'distance', hint: 'elastic tether — stiffness & damping' },
 }
 
 export const RIGID_FASTENER_TYPES: FastenerType[] = ['weld', 'glue', 'bolt', 'nail']

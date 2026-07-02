@@ -87,6 +87,25 @@ export function planJoint(
   const axisAWorld = featA.axis ? localDirToWorld(ta, featA.axis) : null
   const axisBWorld = featB.axis ? localDirToWorld(tb, featB.axis) : null
 
+  // A spring tethers the two points exactly where they are — nothing moves,
+  // the current separation becomes the rest length.
+  if (type === 'spring') {
+    return {
+      moverId: null,
+      moverTransform: null,
+      fastener: {
+        id: fastenerId,
+        type,
+        partA: pieceA.id,
+        partB: pieceB.id,
+        anchorA: featA.point,
+        anchorB: featB.point,
+        axisA: worldDirToLocal(ta, normalize(sub(worldB, worldA))),
+        spring: { frequency: 3, damping: 0.2, restLength: length(sub(worldB, worldA)) },
+      },
+    }
+  }
+
   const mover: 'a' | 'b' | null = !pieceA.anchored ? 'a' : !pieceB.anchored ? 'b' : null
 
   // The joint axis: prefer the stationary piece's feature axis (slide the gear

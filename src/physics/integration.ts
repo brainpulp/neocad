@@ -137,11 +137,23 @@ export class PhysicsWorld {
     const J = this.Jolt
     const kind = FASTENERS[fastener.type].constraint
 
-    // Directly-fastened pieces don't contact-collide; the constraint owns their
-    // relative motion (otherwise overlap at the join fights the solver).
-    const subA = this.subGroups.get(fastener.partA)
-    const subB = this.subGroups.get(fastener.partB)
-    if (subA != null && subB != null) this.groupFilter.DisableCollision(subA, subB)
+    // Fastened pieces whose shapes OVERLAP at the join (a gear around its axle)
+    // must not contact-collide — the constraint owns their relative motion and
+    // contacts would fight it. Pieces that merely touch (a door on its post)
+    // keep colliding so they can't swing through each other.
+    const pa = doc.pieces.find((p) => p.id === fastener.partA)
+    const pb = doc.pieces.find((p) => p.id === fastener.partB)
+    if (pa && pb) {
+      const da = pa.state.transform.position
+      const db = pb.state.transform.position
+      const dist = Math.hypot(da[0] - db[0], da[1] - db[1], da[2] - db[2])
+      const overlapping = dist < (maxHalfHeight(pa) + maxHalfHeight(pb)) * 0.6
+      if (overlapping) {
+        const subA = this.subGroups.get(fastener.partA)
+        const subB = this.subGroups.get(fastener.partB)
+        if (subA != null && subB != null) this.groupFilter.DisableCollision(subA, subB)
+      }
+    }
 
     if (kind === 'fixed') {
       const settings = new J.FixedConstraintSettings()
@@ -174,7 +186,20 @@ export class PhysicsWorld {
       settings.mHingeAxis2 = vAxis
       settings.mNormalAxis1 = vNormal
       settings.mNormalAxis2 = vNormal
-      this.physicsSystem.AddConstraint(settings.Create(bodyA, bodyB))
+      const constraint = settings.Create(bodyA, bodyB)
+      this.physicsSystem.AddConstraint(constraint)
+      const motor = fastener.motor
+      if (motor?.enabled) {
+        const hinge = J.castObject(constraint, J.HingeConstraint)
+        const ms = hinge.GetMotorSettings()
+        ms.mMaxTorqueLimit = motor.maxForce
+        ms.mMinTorqueLimit = -motor.maxForce
+        hinge.SetMotorState(J.EMotorState_Velocity)
+        hinge.SetTargetAngularVelocity(motor.velocity)
+        // A driven joint must keep its bodies awake.
+        this.bodyInterface.ActivateBody(bodyA.GetID())
+        this.bodyInterface.ActivateBody(bodyB.GetID())
+      }
       return
     }
 
@@ -197,6 +222,40 @@ export class PhysicsWorld {
         settings.mLimitsMin = joltMin
         settings.mLimitsMax = joltMax
       }
+      const constraint = settings.Create(bodyA, bodyB)
+      this.physicsSystem.AddConstraint(constraint)
+      const motor = fastener.motor
+      if (motor?.enabled) {
+        const slider = J.castObject(constraint, J.SliderConstraint)
+        const ms = slider.GetMotorSettings()
+        ms.mMaxForceLimit = motor.maxForce
+        ms.mMinForceLimit = -motor.maxForce
+        slider.SetMotorState(J.EMotorState_Velocity)
+        // Document velocity describes part A's motion; Jolt drives body2 vs
+        // body1, so the sign flips (same convention as the slide limits).
+        slider.SetTargetVelocity(-motor.velocity)
+        this.bodyInterface.ActivateBody(bodyA.GetID())
+        this.bodyInterface.ActivateBody(bodyB.GetID())
+      }
+      return
+    }
+
+    if (kind === 'distance') {
+      // Spring: an elastic tether between the two anchors.
+      const settings = new J.DistanceConstraintSettings()
+      settings.mSpace = J.EConstraintSpace_WorldSpace
+      settings.mPoint1 = rvA
+      settings.mPoint2 = rvB
+      const rest = fastener.spring?.restLength ?? Math.hypot(
+        worldB[0] - worldA[0],
+        worldB[1] - worldA[1],
+        worldB[2] - worldA[2],
+      )
+      settings.mMinDistance = Math.max(0.01, rest)
+      settings.mMaxDistance = Math.max(0.01, rest)
+      const ss = settings.mLimitsSpringSettings
+      ss.mFrequency = fastener.spring?.frequency ?? 3
+      ss.mDamping = fastener.spring?.damping ?? 0.2
       this.physicsSystem.AddConstraint(settings.Create(bodyA, bodyB))
       return
     }
@@ -440,8 +499,8 @@ export class PhysicsWorld {
     this.projectiles.splice(index, 1)
   }
 
-  /** Live projectile positions+radius for rendering; expires old/fallen rocks. */
-  syncProjectiles(): { x: number; y: number; z: number; r: number }[] {
+  /** Live projectile poses+radius for rendering; expires old/fallen rocks. */
+  syncProjectiles(): { x: number; y: number; z: number; r: number; q: [number, number, number, number] }[] {
     const now = performance.now()
     for (let i = this.projectiles.length - 1; i >= 0; i--) {
       const p = this.projectiles[i]
@@ -450,7 +509,14 @@ export class PhysicsWorld {
     }
     return this.projectiles.map((p) => {
       const pos = this.bodyInterface.GetPosition(p.bodyId)
-      return { x: pos.GetX(), y: pos.GetY(), z: pos.GetZ(), r: p.radius }
+      const rot = this.bodyInterface.GetRotation(p.bodyId)
+      return {
+        x: pos.GetX(),
+        y: pos.GetY(),
+        z: pos.GetZ(),
+        r: p.radius,
+        q: [rot.GetX(), rot.GetY(), rot.GetZ(), rot.GetW()],
+      }
     })
   }
 

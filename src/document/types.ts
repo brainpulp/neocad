@@ -71,11 +71,12 @@ export const DEFAULT_SANDBOX = { size: 4, thickness: 0.05 }
 // evaluator arrives (spec §6b).
 export type RigidFastenerType = 'weld' | 'glue' | 'bolt' | 'nail'
 // Articulated joints, placed point-A → type → point-B with the Joint tool.
-// pivot = rotates around the axis; linear = slides along it; cylindrical = both.
-export type JointType = 'pivot' | 'cylindrical' | 'linear'
+// pivot = rotates around the axis; linear = slides along it; cylindrical = both;
+// spring = elastic tether between the two points (stiffness + damping).
+export type JointType = 'pivot' | 'cylindrical' | 'linear' | 'spring'
 export type FastenerType = RigidFastenerType | JointType
 
-export const JOINT_TYPES: JointType[] = ['pivot', 'cylindrical', 'linear']
+export const JOINT_TYPES: JointType[] = ['pivot', 'cylindrical', 'linear', 'spring']
 export function isJointType(t: FastenerType): t is JointType {
   return (JOINT_TYPES as FastenerType[]).includes(t)
 }
@@ -98,6 +99,13 @@ export interface Fastener {
    */
   slideMin?: number
   slideMax?: number
+  /**
+   * Drive the joint: pivots get a rotational motor (velocity in rad/s, torque
+   * limit in N·m), linear joints a linear one (velocity m/s, force N).
+   */
+  motor?: { enabled: boolean; velocity: number; maxForce: number }
+  /** Spring joints: stiffness (Hz), damping ratio, and rest length (m). */
+  spring?: { frequency: number; damping: number; restLength: number }
 }
 
 export interface Document {
@@ -110,12 +118,47 @@ export interface Document {
   camera?: unknown
 }
 
+// The workshop material library: honest densities (kg/m³), friction and
+// restitution. Rigid-body only for now — glass/ceramic are rigid but flagged
+// brittle for the future failure evaluator (spec §6c).
 export const DEFAULT_MATERIALS: Material[] = [
+  // Woods
+  { name: 'pine', density: 450, friction: 0.5, restitution: 0.2, color: '#c9a36a' },
+  { name: 'oak', density: 720, friction: 0.5, restitution: 0.18, color: '#a87d47' },
+  { name: 'walnut', density: 650, friction: 0.48, restitution: 0.18, color: '#6b4a2f' },
+  { name: 'plywood', density: 550, friction: 0.5, restitution: 0.2, color: '#d3b184' },
+  { name: 'mdf', density: 750, friction: 0.55, restitution: 0.15, color: '#c8ab7e' },
+  { name: 'bamboo', density: 700, friction: 0.45, restitution: 0.25, color: '#d6c087' },
+  { name: 'cork', density: 240, friction: 0.7, restitution: 0.3, color: '#c99e63' },
+  { name: 'wood', density: 500, friction: 0.5, restitution: 0.2, color: '#b3854a' },
+  // Rubbers
+  { name: 'rubber-soft', density: 950, friction: 1.0, restitution: 0.85, color: '#3a3a3e' },
+  { name: 'rubber-hard', density: 1200, friction: 0.85, restitution: 0.6, color: '#2b2b2b' },
+  { name: 'rubber-tire', density: 1100, friction: 0.95, restitution: 0.7, color: '#1e1e22' },
+  { name: 'rubber', density: 1100, friction: 0.9, restitution: 0.8, color: '#2b2b2b' },
+  // Plastics
+  { name: 'plastic-abs', density: 1050, friction: 0.35, restitution: 0.3, color: '#e8b23a' },
+  { name: 'plastic-acrylic', density: 1180, friction: 0.3, restitution: 0.25, color: '#7fd0e8' },
+  { name: 'plastic-nylon', density: 1140, friction: 0.25, restitution: 0.3, color: '#e8e4da' },
+  { name: 'plastic', density: 1200, friction: 0.3, restitution: 0.3, color: '#3b82c4' },
+  { name: 'foam', density: 60, friction: 0.8, restitution: 0.4, color: '#eef0d8' },
+  // Metals
   { name: 'steel', density: 7850, friction: 0.4, restitution: 0.1, color: '#8a8f98' },
   { name: 'aluminum', density: 2700, friction: 0.4, restitution: 0.1, color: '#c9cdd3' },
-  { name: 'wood', density: 500, friction: 0.5, restitution: 0.2, color: '#b3854a' },
-  { name: 'plastic', density: 1200, friction: 0.3, restitution: 0.3, color: '#3b82c4' },
-  { name: 'rubber', density: 1100, friction: 0.9, restitution: 0.8, color: '#2b2b2b' },
+  { name: 'brass', density: 8500, friction: 0.35, restitution: 0.1, color: '#c9a53e' },
+  { name: 'copper', density: 8960, friction: 0.35, restitution: 0.1, color: '#c07347' },
+  { name: 'cast-iron', density: 7200, friction: 0.45, restitution: 0.08, color: '#4c4f54' },
+  { name: 'titanium', density: 4500, friction: 0.38, restitution: 0.1, color: '#a6adb8' },
+  { name: 'lead', density: 11340, friction: 0.5, restitution: 0.03, color: '#5a5f6a' },
+  // Mineral & brittle (rigid for now; the failure evaluator makes these breakable)
+  { name: 'glass', density: 2500, friction: 0.5, restitution: 0.05, color: '#bcd8e2', youngsModulus: 70e9, yieldStrength: 33e6 },
+  { name: 'ceramic', density: 2400, friction: 0.6, restitution: 0.05, color: '#e8e3dc', youngsModulus: 300e9, yieldStrength: 25e6 },
+  { name: 'concrete', density: 2400, friction: 0.8, restitution: 0.05, color: '#9b9c96' },
+  { name: 'brick', density: 1900, friction: 0.75, restitution: 0.05, color: '#a85a42' },
+  { name: 'granite', density: 2700, friction: 0.65, restitution: 0.08, color: '#75777c' },
+  { name: 'marble', density: 2700, friction: 0.5, restitution: 0.08, color: '#d9d7d2' },
+  { name: 'ice', density: 917, friction: 0.03, restitution: 0.05, color: '#cfe8f5' },
+  { name: 'cardboard', density: 250, friction: 0.6, restitution: 0.15, color: '#b98f5c' },
 ]
 
 export function emptyDocument(): Document {

@@ -53,11 +53,12 @@ export function App() {
     }
   }, [store])
 
-  // Browsers gate audio behind a user gesture: arm the impact-sound engine on
-  // the first pointer press anywhere.
+  // Browsers gate audio behind a user gesture: (re-)arm the impact-sound engine
+  // on every pointer press — a single attempt can lose the race with stricter
+  // autoplay policies, and resume() is a no-op once running.
   useEffect(() => {
     const arm = () => ensureAudio()
-    window.addEventListener('pointerdown', arm, { once: true })
+    window.addEventListener('pointerdown', arm)
     return () => window.removeEventListener('pointerdown', arm)
   }, [])
 

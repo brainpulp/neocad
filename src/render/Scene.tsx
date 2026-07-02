@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Canvas, useFrame, useThree } from '@react-three/fiber'
 import { GizmoHelper, GizmoViewcube, Grid, OrbitControls } from '@react-three/drei'
-import { Quaternion, Vector3, type Mesh } from 'three'
+import { Group, IcosahedronGeometry, Quaternion, Vector3, type BufferGeometry, type Mesh } from 'three'
 import type { OrbitControls as OrbitControlsImpl } from 'three-stdlib'
 import { initJolt, type JoltModule } from '../physics/jolt'
 import { PhysicsWorld } from '../physics/integration'
@@ -41,6 +41,34 @@ function lineParam(origin: Vector3, dir: Vector3, rayOrigin: Vector3, rayDir: Ve
   if (Math.abs(denom) < 1e-6) return null
   const w = origin.clone().sub(rayOrigin)
   return (b * rayDir.dot(w) - dir.dot(w)) / denom
+}
+
+// Ten pre-jittered rock shapes the slingshot cycles through. Vertex offsets are
+// hashed from position so shared vertices deform identically (no cracks).
+let rockGeos: BufferGeometry[] | null = null
+function rockGeometries(): BufferGeometry[] {
+  if (rockGeos) return rockGeos
+  rockGeos = []
+  for (let i = 0; i < 10; i++) {
+    const geo = new IcosahedronGeometry(1, 1)
+    const pos = geo.getAttribute('position')
+    for (let v = 0; v < pos.count; v++) {
+      const x = pos.getX(v)
+      const y = pos.getY(v)
+      const z = pos.getZ(v)
+      const h = Math.abs(Math.sin(x * 12.9898 + y * 78.233 + z * 37.719 + i * 3.7) * 43758.5453) % 1
+      const s = 0.72 + h * 0.55
+      pos.setXYZ(
+        v,
+        x * s * (0.85 + 0.25 * Math.abs(Math.sin(i * 1.3 + 1))),
+        y * s,
+        z * s * (0.85 + 0.25 * Math.abs(Math.cos(i * 0.7 + 2))),
+      )
+    }
+    geo.computeVertexNormals()
+    rockGeos.push(geo)
+  }
+  return rockGeos
 }
 
 interface DragState {
@@ -102,7 +130,22 @@ function Sim({ Jolt }: { Jolt: JoltModule }) {
     return right.lengthSq() < 1e-6 ? new Vector3(1, 0, 0) : right.normalize()
   }
 
-  // Slingshot: Space fires a rock from the camera while the sim runs.
+  // Slingshot: Space fires a rock from the camera TOWARD THE CURSOR while the
+  // sim runs. Pointer NDC is tracked on the canvas so aiming is just pointing.
+  const gl = useThree((s) => s.gl)
+  const pointerNdc = useRef<[number, number]>([0, 0])
+  useEffect(() => {
+    const el = gl.domElement
+    const onMove = (e: PointerEvent) => {
+      const rect = el.getBoundingClientRect()
+      pointerNdc.current = [
+        ((e.clientX - rect.left) / rect.width) * 2 - 1,
+        -(((e.clientY - rect.top) / rect.height) * 2 - 1),
+      ]
+    }
+    el.addEventListener('pointermove', onMove)
+    return () => el.removeEventListener('pointermove', onMove)
+  }, [gl])
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.code !== 'Space') return
@@ -111,8 +154,8 @@ function Sim({ Jolt }: { Jolt: JoltModule }) {
       const s = store.getState()
       if (!s.running) return
       e.preventDefault()
-      const dir = new Vector3()
-      camera.getWorldDirection(dir)
+      const [nx, ny] = pointerNdc.current
+      const dir = new Vector3(nx, ny, 0.5).unproject(camera).sub(camera.position).normalize()
       const o = camera.position.clone().addScaledVector(dir, 0.3)
       worldRef.current?.fireProjectile(
         [o.x, o.y, o.z],
@@ -125,12 +168,21 @@ function Sim({ Jolt }: { Jolt: JoltModule }) {
     return () => window.removeEventListener('keydown', onKey)
   }, [camera, store])
   const key = `${structureKey(doc)}#${worldEpoch}`
+  // The key the live world was built from. When the doc changes, the world is
+  // stale until the rebuild effect runs — the frame loop must NOT step or sync
+  // a stale world, or old body poses clobber freshly written aligned states
+  // (the "joints feel like springs" bug).
+  const builtKey = useRef('')
 
   // (Re)build the Jolt world whenever the structure changes. Full rebuild is fine
   // for M1 (small scenes); incremental add/remove is a later-milestone optimization.
   useEffect(() => {
     worldRef.current?.dispose()
     worldRef.current = new PhysicsWorld(Jolt, store.getState().doc, (matA, matB, speed) => {
+      if (import.meta.env.DEV) {
+        const w = window as unknown as Record<string, number>
+        w.__impactCount = (w.__impactCount ?? 0) + 1
+      }
       const s = store.getState()
       if (!s.soundOn || !s.running) return
       playImpact(matA, speed)
@@ -146,6 +198,7 @@ function Sim({ Jolt }: { Jolt: JoltModule }) {
       pausedDrag.current = null
       store.getState().setDraggingId(null)
     }
+    builtKey.current = key
     return () => {
       worldRef.current?.dispose()
       worldRef.current = null
@@ -160,10 +213,12 @@ function Sim({ Jolt }: { Jolt: JoltModule }) {
 
   const simTime = useRef(0)
   const projectileMeshes = useRef<(Mesh | null)[]>([])
+  const shakeOffset = useRef(new Vector3())
 
   useFrame(() => {
     const world = worldRef.current
     if (!world) return
+    if (builtKey.current !== key) return // stale world; rebuild is imminent
     const state = store.getState()
     if (state.running) {
       if (drag.current) world.moveGrab(drag.current.id, drag.current.target, FIXED_DT)
@@ -171,7 +226,9 @@ function Sim({ Jolt }: { Jolt: JoltModule }) {
       const env = state.env
       world.applyEnvironment(
         simTime.current,
-        env.windOn ? { strength: env.windStrength, angle: env.windAngle } : null,
+        env.windOn
+          ? { strength: env.windStrength * (env.hurricane ? 6 : 1), angle: env.windAngle }
+          : null,
         env.quakeOn ? { magnitude: env.quakeMagnitude } : null,
         state.doc.pieces,
         state.doc.materials,
@@ -187,11 +244,35 @@ function Sim({ Jolt }: { Jolt: JoltModule }) {
       if (rock) {
         m.visible = true
         m.position.set(rock.x, rock.y, rock.z)
+        m.quaternion.set(...rock.q) // tumble with the body
         m.scale.setScalar(rock.r)
       } else {
         m.visible = false
       }
     })
+    // Camera feel: earthquake judder + a gentle lateral sway in wind. Applied
+    // as a delta that's removed next frame so OrbitControls stays in charge.
+    const prevShake = shakeOffset.current
+    camera.position.sub(prevShake)
+    prevShake.set(0, 0, 0)
+    if (state.running) {
+      const env2 = state.env
+      if (env2.quakeOn) {
+        const a = env2.quakeMagnitude * 0.0045
+        prevShake.x += (Math.random() - 0.5) * a
+        prevShake.y += (Math.random() - 0.5) * a * 0.5
+        prevShake.z += (Math.random() - 0.5) * a
+      }
+      if (env2.windOn) {
+        const sway =
+          Math.sin(simTime.current * 0.9) *
+          env2.windStrength *
+          (env2.hurricane ? 6 : 1) *
+          0.0005
+        prevShake.addScaledVector(horizontalRight(), sway)
+      }
+    }
+    camera.position.add(prevShake)
     // Drive meshes from State imperatively (no per-frame React re-render).
     for (const piece of state.doc.pieces) {
       if (gizmoActive && piece.id === state.selectedId) continue
@@ -452,10 +533,11 @@ function Sim({ Jolt }: { Jolt: JoltModule }) {
               s.select(piece.id)
               return
             }
-            // Alt held BEFORE the click = drag away a duplicate (the original
-            // stays); Alt pressed AFTER the click rotates instead (see move).
+            // Alt held BEFORE the click = drag away a duplicate (paused only —
+            // while running Alt is reserved for rotate); Alt pressed AFTER the
+            // click rotates in place (see move).
             let target = piece
-            if (e.nativeEvent.altKey) {
+            if (e.nativeEvent.altKey && !s.running) {
               const clone = s.duplicatePiece(piece.id)
               if (clone) target = clone
             } else {
@@ -508,7 +590,7 @@ function Sim({ Jolt }: { Jolt: JoltModule }) {
       {doc.fasteners.map((f) => (
         <FastenerMarker key={f.id} fastener={f} />
       ))}
-      {/* Slingshot rock pool (driven imperatively from physics). */}
+      {/* Slingshot rock pool (driven imperatively from physics), 10 shapes cycling. */}
       <group>
         {Array.from({ length: 16 }).map((_, i) => (
           <mesh
@@ -519,11 +601,12 @@ function Sim({ Jolt }: { Jolt: JoltModule }) {
               projectileMeshes.current[i] = m
             }}
           >
-            <sphereGeometry args={[1, 14, 10]} />
-            <meshStandardMaterial color="#78828e" roughness={0.95} metalness={0.02} />
+            <primitive object={rockGeometries()[i % 10]} attach="geometry" />
+            <meshStandardMaterial color="#78828e" roughness={0.95} metalness={0.02} flatShading />
           </mesh>
         ))}
       </group>
+      <WindArrows />
       {/* Joint tool: snap preview under the pointer + the picked point A. */}
       {jointHover && jointHover.pieceId !== jointA?.pieceId && (
         <FeatureMarker anchor={jointHover} color="#2ecc71" />
@@ -540,6 +623,53 @@ function Sim({ Jolt }: { Jolt: JoltModule }) {
       )}
       <JointEditor />
     </>
+  )
+}
+
+// Drift lanes for the wind indicator arrows (local +x = downwind).
+const WIND_LANES = [
+  { z: -1.0, y: 0.45 },
+  { z: -0.4, y: 0.8 },
+  { z: 0.2, y: 0.55 },
+  { z: 0.8, y: 0.75 },
+  { z: 1.3, y: 0.5 },
+  { z: -1.5, y: 0.65 },
+]
+
+/** Subtle drifting arrows showing the wind's direction while it blows. */
+function WindArrows() {
+  const store = useStoreApi()
+  const group = useRef<Group>(null)
+  useFrame(({ clock }) => {
+    const g = group.current
+    if (!g) return
+    const env = store.getState().env
+    const on = env.windOn && store.getState().running
+    g.visible = on
+    if (!on) return
+    g.rotation.y = -env.windAngle // local +x → the blow direction
+    const t = clock.getElapsedTime() * (env.hurricane ? 2.2 : 1)
+    g.children.forEach((child, i) => {
+      const lane = WIND_LANES[i % WIND_LANES.length]
+      const phase = ((t * 0.9 + i * 0.6) % 3) - 1.5
+      child.position.set(phase, lane.y, lane.z)
+    })
+  })
+  return (
+    <group ref={group} visible={false}>
+      {WIND_LANES.map((_, i) => (
+        <group key={i}>
+          <mesh rotation={[0, 0, -Math.PI / 2]} raycast={() => null}>
+            <cylinderGeometry args={[0.006, 0.006, 0.22, 6]} />
+            <meshBasicMaterial color="#7ea6d8" transparent opacity={0.5} toneMapped={false} />
+          </mesh>
+          <mesh position={[0.15, 0, 0]} rotation={[0, 0, -Math.PI / 2]} raycast={() => null}>
+            <coneGeometry args={[0.025, 0.06, 8]} />
+            <meshBasicMaterial color="#7ea6d8" transparent opacity={0.5} toneMapped={false} />
+          </mesh>
+        </group>
+      ))}
+    </group>
   )
 }
 
@@ -643,8 +773,8 @@ export function Scene() {
         args={[sandbox?.size ?? 40, sandbox?.size ?? 40]}
         cellSize={0.1}
         sectionSize={0.5}
-        cellColor="#dde3ea"
-        sectionColor="#b6c2d0"
+        cellColor="#bcc7d4"
+        sectionColor="#8fa1b5"
         fadeDistance={40}
       />
       <DevCameraHook />

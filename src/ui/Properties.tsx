@@ -239,6 +239,128 @@ function JointProperties({ fastenerId }: { fastenerId: string }) {
           ))}
         </>
       )}
+      {(f.type === 'pivot' || f.type === 'linear') && (
+        <>
+          <div className="label" style={{ marginTop: 10 }}>
+            MOTOR
+          </div>
+          <label className="field checkbox">
+            <input
+              type="checkbox"
+              checked={f.motor?.enabled ?? false}
+              onChange={(e) =>
+                store.getState().updateFastener(f.id, {
+                  motor: {
+                    enabled: e.target.checked,
+                    velocity: f.motor?.velocity ?? (f.type === 'pivot' ? 3 : 0.3),
+                    maxForce: f.motor?.maxForce ?? 50,
+                  },
+                })
+              }
+            />
+            ⚡ Driven
+          </label>
+          {f.motor?.enabled && (
+            <>
+              <div className="dim-row">
+                <div className="dim-label">
+                  Speed {f.type === 'pivot' ? '(rad/s)' : '(m/s)'}
+                </div>
+                <input
+                  type="range"
+                  aria-label="Motor speed"
+                  min={f.type === 'pivot' ? -12 : -1.5}
+                  max={f.type === 'pivot' ? 12 : 1.5}
+                  step={f.type === 'pivot' ? 0.5 : 0.05}
+                  value={f.motor.velocity}
+                  onChange={(e) =>
+                    store.getState().updateFastener(f.id, {
+                      motor: { ...f.motor!, velocity: parseFloat(e.target.value) },
+                    })
+                  }
+                />
+                <span className="dim-unit">{f.motor.velocity.toFixed(2)}</span>
+              </div>
+              <div className="dim-row">
+                <div className="dim-label">Strength</div>
+                <input
+                  type="range"
+                  aria-label="Motor strength"
+                  min={1}
+                  max={500}
+                  step={1}
+                  value={f.motor.maxForce}
+                  onChange={(e) =>
+                    store.getState().updateFastener(f.id, {
+                      motor: { ...f.motor!, maxForce: parseFloat(e.target.value) },
+                    })
+                  }
+                />
+              </div>
+            </>
+          )}
+        </>
+      )}
+      {f.type === 'spring' && f.spring && (
+        <>
+          <div className="label" style={{ marginTop: 10 }}>
+            SPRING
+          </div>
+          <div className="dim-row">
+            <div className="dim-label">Stiffness</div>
+            <input
+              type="range"
+              aria-label="Spring stiffness"
+              min={0.5}
+              max={12}
+              step={0.5}
+              value={f.spring.frequency}
+              onChange={(e) =>
+                store.getState().updateFastener(f.id, {
+                  spring: { ...f.spring!, frequency: parseFloat(e.target.value) },
+                })
+              }
+            />
+            <span className="dim-unit">{f.spring.frequency.toFixed(1)} Hz</span>
+          </div>
+          <div className="dim-row">
+            <div className="dim-label">Damping</div>
+            <input
+              type="range"
+              aria-label="Spring damping"
+              min={0}
+              max={1}
+              step={0.05}
+              value={f.spring.damping}
+              onChange={(e) =>
+                store.getState().updateFastener(f.id, {
+                  spring: { ...f.spring!, damping: parseFloat(e.target.value) },
+                })
+              }
+            />
+          </div>
+          <div className="dim-row">
+            <div className="dim-label">Rest length</div>
+            <div className="dim-value">
+              <input
+                type="number"
+                aria-label="Spring rest length"
+                step={1}
+                key={`rest:${f.spring.restLength}`}
+                defaultValue={+(f.spring.restLength * 100).toFixed(1)}
+                onBlur={(e) => {
+                  const v = parseFloat(e.target.value)
+                  if (Number.isFinite(v) && v > 0)
+                    store.getState().updateFastener(f.id, {
+                      spring: { ...f.spring!, restLength: v / 100 },
+                    })
+                }}
+              />
+              <span className="dim-unit">cm</span>
+            </div>
+          </div>
+        </>
+      )}
       <div className="btn-row">
         <button
           onClick={() => {

@@ -110,18 +110,32 @@ function plastic(): THREE.Texture | null {
   })
 }
 
-const BUILDERS: Record<string, () => THREE.Texture | null> = {
-  wood,
-  steel: () => brushed(7, 0.12),
-  aluminum: () => brushed(13, 0.07),
-  plastic,
+// Texture family per material; unknown/custom materials stay flat.
+const FAMILY: Record<string, () => THREE.Texture | null> = {
+  wood: () => wood(),
+  metal: () => brushed(7, 0.1),
   rubber: () => speckle(23, 0.18, 900),
+  plastic: () => plastic(),
+  mineral: () => speckle(31, 0.07, 1400),
+}
+
+const MATERIAL_FAMILY: Record<string, keyof typeof FAMILY> = {
+  pine: 'wood', oak: 'wood', walnut: 'wood', plywood: 'wood', mdf: 'wood',
+  bamboo: 'wood', cork: 'wood', wood: 'wood', cardboard: 'wood',
+  'rubber-soft': 'rubber', 'rubber-hard': 'rubber', 'rubber-tire': 'rubber', rubber: 'rubber',
+  'plastic-abs': 'plastic', 'plastic-acrylic': 'plastic', 'plastic-nylon': 'plastic',
+  plastic: 'plastic', foam: 'plastic', glass: 'plastic', ice: 'plastic',
+  steel: 'metal', aluminum: 'metal', brass: 'metal', copper: 'metal',
+  'cast-iron': 'metal', titanium: 'metal', lead: 'metal',
+  concrete: 'mineral', brick: 'mineral', granite: 'mineral', marble: 'mineral', ceramic: 'mineral',
 }
 
 /** Texture for a material name, or null (flat color) for custom materials. */
 export function textureFor(materialName: string): THREE.Texture | null {
-  if (cache.has(materialName)) return cache.get(materialName)!
-  const tex = BUILDERS[materialName] ? BUILDERS[materialName]() : null
-  cache.set(materialName, tex)
+  const family = MATERIAL_FAMILY[materialName]
+  const key = family ?? materialName
+  if (cache.has(key)) return cache.get(key)!
+  const tex = family ? FAMILY[family]() : null
+  cache.set(key, tex)
   return tex
 }

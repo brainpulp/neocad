@@ -12,7 +12,8 @@ it('renders a Run/Pause control, a button per stock type, and a parts:0 status',
   // Pause is shown because physics is ambient (running) by default.
   expect(screen.getByRole('button', { name: /Pause/ })).toBeInTheDocument()
   for (const def of Object.values(STOCK)) {
-    expect(screen.getByRole('button', { name: def.label })).toBeInTheDocument()
+    // Buttons carry an icon prefix; match on the label text.
+    expect(screen.getByRole('button', { name: new RegExp(`${def.label}$`) })).toBeInTheDocument()
   }
   expect(screen.getByText('parts: 0')).toBeInTheDocument()
 })

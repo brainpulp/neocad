@@ -1,5 +1,6 @@
 import { JOINT_TYPES, type JointType } from '../document/types'
 import { FASTENERS } from '../document/catalog'
+import { playBeep } from '../audio/impacts'
 import { useDocStore, useStoreApi } from './storeContext'
 
 interface ToolbarProps {
@@ -72,8 +73,12 @@ export function Toolbar({ onSave, onOpen, onExportGLTF, onExportSTL }: ToolbarPr
         ⛶ Fit
       </button>
       <button
-        title={soundOn ? 'Impact sounds on' : 'Impact sounds off'}
-        onClick={() => store.getState().setSoundOn(!soundOn)}
+        title={soundOn ? 'Impact sounds on (click to mute)' : 'Impact sounds off'}
+        onClick={() => {
+          const next = !soundOn
+          store.getState().setSoundOn(next)
+          if (next) playBeep() // audible confirmation that output works
+        }}
       >
         {soundOn ? '🔊' : '🔇'}
       </button>

@@ -41,6 +41,20 @@ Plans: `docs/superpowers/plans/` · Backlog: `docs/BACKLOG.md`
 - **M2.5 (builder UX quick wins) — DONE & verified.** Delete pieces/fasteners, scene tree
   (select + delete), keyboard shortcuts (Delete/Esc/Ctrl+Z/Y), empty-state hint, fastener
   count in status bar. See `docs/superpowers/plans/M2.5-verification-notes.md`.
+- **M-BuilderUX5 (motors, springs, mechanisms, materials) — DONE & browser-verified.**
+  FIXED the "joints act like springs" bug: the frame loop no longer steps/syncs a
+  STALE physics world (build-key gate in Scene.tsx) — align-on-create now sticks while
+  running. Fastened pairs only skip contact when their shapes overlap at the join
+  (doors can't clip through posts). MOTORS on pivot (rad/s + torque) and linear (m/s +
+  force) joints via the joint inspector; SPRING joint type (Jolt DistanceConstraint,
+  stiffness Hz/damping/rest length, wireframe tether visual); MECHANISMS palette
+  (see-saw, pendulum, swing gate, motorized crank-slider — plain pieces, fully
+  editable; crank-slider reciprocation is unit-tested). 30-material library with
+  honest densities (woods/rubbers/plastics/metals/minerals/ice), texture by family.
+  Env: hurricane mode (×6), drifting wind-direction arrows, camera quake-judder +
+  wind sway, rocks aim at the CURSOR with 10 jittered tumbling shapes. Sound: audio
+  re-arms on every gesture + 🔊 beep confirmation; dev `window.__impactCount`.
+  Alt-duplicate is paused-only. Palette: emoji icons + collapsible sections.
 - **M-BuilderUX4 (modifiers, forces, arcs, inspector) — DONE & browser-verified.**
   Alt BEFORE click = drag a duplicate (drag survives the world rebuild); Alt DURING
   drag = rotate in place (+Shift tilts about camera-right); dimension EXTENSION LINES
@@ -147,7 +161,7 @@ static build → GitHub Pages.
 ## Commands
 
 - `npm run dev` — dev server (Vite).
-- `npm test` — Vitest (96 tests; includes deterministic physics scenarios).
+- `npm test` — Vitest (111 tests; includes deterministic physics scenarios).
 - `npm run build` — production build → `dist/`.
 - Deploy: push to `main` triggers `.github/workflows/deploy.yml` (GitHub Pages).
   Enable Pages → "GitHub Actions" in repo settings once.
