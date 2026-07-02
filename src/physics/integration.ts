@@ -5,6 +5,13 @@ import { localDirToWorld, localToWorld, perpendicular } from '../document/math'
 import type { Document, Fastener, Material, Piece, Vec3 } from '../document/types'
 
 const FALLBACK_DENSITY = 1000
+// Pieces should feel like workshop stock, not superballs: material restitution is
+// honest data (future FEA uses it) but the rigid-body sim caps how bouncy contacts
+// get so nothing ricochets off the bench.
+const MAX_RESTITUTION = 0.4
+const FALLBACK_FRICTION = 0.5
+// The bench/ground grips well so pieces settle instead of sliding away.
+const GROUND_FRICTION = 0.8
 
 function volumeOf(piece: Piece): number {
   const d = piece.dimensions
@@ -144,6 +151,8 @@ export class PhysicsWorld {
       J.EMotionType_Static,
       LAYER_NON_MOVING,
     )
+    bcs.mFriction = GROUND_FRICTION
+    bcs.mRestitution = 0
     const body = this.bodyInterface.CreateBody(bcs)
     this.bodyInterface.AddBody(body.GetID(), J.EActivation_DontActivate)
   }
@@ -161,6 +170,9 @@ export class PhysicsWorld {
       isStatic ? J.EMotionType_Static : J.EMotionType_Dynamic,
       isStatic ? LAYER_NON_MOVING : LAYER_MOVING,
     )
+    const mat = materials.find((m) => m.name === piece.material)
+    bcs.mFriction = mat?.friction ?? FALLBACK_FRICTION
+    bcs.mRestitution = Math.min(mat?.restitution ?? 0.1, MAX_RESTITUTION)
     if (!isStatic) {
       // Realistic mass from material density × volume.
       bcs.mOverrideMassProperties = J.EOverrideMassProperties_CalculateInertia
