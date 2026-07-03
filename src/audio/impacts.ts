@@ -31,8 +31,18 @@ let noiseBuffer: AudioBuffer | null = null
 let lastPlay = 0
 let voices = 0
 
+// Dev/e2e visibility into the audio pipeline (state + how many sounds fired).
+const stats = { armAttempts: 0, played: 0, skipped: 0 }
+if (typeof window !== 'undefined') {
+  ;(window as unknown as Record<string, unknown>).__audio = {
+    stats,
+    state: () => ctx?.state ?? 'no-context',
+  }
+}
+
 /** Create/resume the AudioContext — call from a user gesture (autoplay policy). */
 export function ensureAudio(): Promise<void> {
+  stats.armAttempts++
   if (!ctx) {
     try {
       ctx = new AudioContext()
@@ -73,13 +83,17 @@ function beepNow(): void {
  * are skipped, hard hits saturate. Throttled so contact storms don't stack.
  */
 export function playImpact(material: string, speed: number): void {
-  if (!ctx || !noiseBuffer || ctx.state !== 'running') return
+  if (!ctx || !noiseBuffer || ctx.state !== 'running') {
+    stats.skipped++
+    return
+  }
   const strength = Math.min(1, Math.max(0, (speed - 0.35) / 5))
   if (strength <= 0.01) return
   const now = performance.now()
   if (now - lastPlay < 25 || voices >= 8) return
   lastPlay = now
   voices++
+  stats.played++
   const p = PROFILES[material] ?? PROFILES.bench
   const t0 = ctx.currentTime
   const gain = Math.pow(strength, 1.4) * 0.6

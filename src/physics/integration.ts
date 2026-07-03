@@ -83,7 +83,10 @@ export class PhysicsWorld {
   /** Called when a rigid fastener snaps (force exceeded its bond strength). */
   private onBreak: ((fastenerId: string) => void) | null = null
   // Rigid bonds with finite strength, checked against solver impulse each step.
-  private breakables: { fastenerId: string; constraint: any; strength: number }[] = []
+  // `over` counts CONSECUTIVE over-limit steps: a single solver spike (deep
+  // contact resolution) must not disintegrate a build — breaking needs a
+  // sustained overload, or a truly massive hit.
+  private breakables: { fastenerId: string; constraint: any; strength: number; over: number }[] = []
 
   constructor(
     Jolt: JoltModule,
@@ -293,20 +296,16 @@ export class PhysicsWorld {
     listener.OnContactAdded = (b1Ptr: number, b2Ptr: number) => {
       const body1 = J.wrapPointer(b1Ptr, J.Body)
       const body2 = J.wrapPointer(b2Ptr, J.Body)
-      if (
-        this.silentBodies.has(body1.GetID().GetIndexAndSequenceNumber()) ||
-        this.silentBodies.has(body2.GetID().GetIndexAndSequenceNumber())
-      )
-        return // the pull "hand" is a sensor — no phantom knocks
-      const v1 = body1.GetLinearVelocity()
-      const v2 = body2.GetLinearVelocity()
-      const speed = Math.hypot(
-        v1.GetX() - v2.GetX(),
-        v1.GetY() - v2.GetY(),
-        v1.GetZ() - v2.GetZ(),
-      )
-      const matA = this.bodyMaterials.get(body1.GetID().GetIndexAndSequenceNumber()) ?? 'bench'
-      const matB = this.bodyMaterials.get(body2.GetID().GetIndexAndSequenceNumber()) ?? 'bench'
+      const id1 = body1.GetID().GetIndexAndSequenceNumber()
+      const id2 = body2.GetID().GetIndexAndSequenceNumber()
+      if (this.silentBodies.has(id1) || this.silentBodies.has(id2)) return // the pull "hand" is a sensor — no phantom knocks
+      // Approach speed from PRE-step velocities: by the time this callback
+      // fires the solver has already absorbed the impact (live reads ≈ 0).
+      const v1 = this.preStepVel.get(id1) ?? [0, 0, 0]
+      const v2 = this.preStepVel.get(id2) ?? [0, 0, 0]
+      const speed = Math.hypot(v1[0] - v2[0], v1[1] - v2[1], v1[2] - v2[2])
+      const matA = this.bodyMaterials.get(id1) ?? 'bench'
+      const matB = this.bodyMaterials.get(id2) ?? 'bench'
       onImpact(matA, matB, speed)
     }
     listener.OnContactPersisted = () => {}
@@ -386,7 +385,7 @@ export class PhysicsWorld {
         }
         const constraint = settings.Create(bodyA, bodyB)
         this.physicsSystem.AddConstraint(constraint)
-        this.breakables.push({ fastenerId: fastener.id, constraint, strength })
+        this.breakables.push({ fastenerId: fastener.id, constraint, strength, over: 0 })
         return
       }
       const settings = new J.FixedConstraintSettings()
@@ -603,8 +602,24 @@ export class PhysicsWorld {
     this.bodyObjs.set(piece.id, body)
   }
 
+  // Body velocities captured BEFORE each step: Jolt's OnContactAdded fires
+  // after the solver has already killed the closing velocity, so reading
+  // live velocities in the callback reports ~0 for every impact (silent).
+  private preStepVel = new Map<number, [number, number, number]>()
+
   /** Advance the simulation by a FIXED dt (callers always pass 1/60). */
   step(dt: number): void {
+    if (this.contactListener) {
+      this.preStepVel.clear()
+      for (const id of this.bodies.values()) {
+        const v = this.bodyInterface.GetLinearVelocity(id)
+        this.preStepVel.set(id.GetIndexAndSequenceNumber(), [v.GetX(), v.GetY(), v.GetZ()])
+      }
+      for (const pr of this.projectiles) {
+        const v = this.bodyInterface.GetLinearVelocity(pr.bodyId)
+        this.preStepVel.set(pr.bodyId.GetIndexAndSequenceNumber(), [v.GetX(), v.GetY(), v.GetZ()])
+      }
+    }
     this.ji.Step(dt, 1)
     this.checkBreakables(dt)
   }
@@ -618,7 +633,9 @@ export class PhysicsWorld {
       const fixed = J.castObject(b.constraint, J.SixDOFConstraint)
       const lam = fixed.GetTotalLambdaPosition()
       const force = Math.hypot(lam.GetX(), lam.GetY(), lam.GetZ()) / dt
-      if (force > b.strength) {
+      b.over = force > b.strength ? b.over + 1 : 0
+      // Sustained overload (~100 ms) or a hit far past the rating.
+      if (b.over >= 6 || force > b.strength * 3) {
         this.physicsSystem.RemoveConstraint(b.constraint)
         this.breakables.splice(i, 1)
         this.onBreak?.(b.fastenerId)
@@ -878,10 +895,19 @@ export class PhysicsWorld {
     const hand = this.bodyInterface.CreateBody(bcs)
     this.silentBodies.add(hand.GetID().GetIndexAndSequenceNumber())
     this.bodyInterface.AddBody(hand.GetID(), J.EActivation_Activate)
-    const pcs = new J.PointConstraintSettings()
+    // A SOFT tether (spring-backed zero-length distance constraint), not a
+    // rigid point constraint: rigid pulls generate unbounded force when the
+    // towed piece jams against the bench or another piece — enough to rip
+    // fasteners apart and catapult pieces across the scene.
+    const pcs = new J.DistanceConstraintSettings()
     pcs.mSpace = J.EConstraintSpace_WorldSpace
     pcs.mPoint1 = new J.RVec3(gx, gy, gz)
     pcs.mPoint2 = new J.RVec3(gx, gy, gz)
+    pcs.mMinDistance = 0
+    pcs.mMaxDistance = 0
+    const ss = pcs.mLimitsSpringSettings
+    ss.mFrequency = 4.5
+    ss.mDamping = 1
     const constraint = pcs.Create(hand, body)
     this.physicsSystem.AddConstraint(constraint)
     const mp = body.GetMotionProperties()
@@ -952,7 +978,8 @@ export class PhysicsWorld {
     const id = this.bodies.get(this.pull.pieceId)
     if (!id) return
     const J = this.Jolt
-    this.bodyInterface.SetAngularVelocity(id, new J.Vec3(axis[0] * speed, axis[1] * speed, axis[2] * speed))
+    const s = Math.max(-8, Math.min(8, speed)) // hand-spin, not a lathe
+    this.bodyInterface.SetAngularVelocity(id, new J.Vec3(axis[0] * s, axis[1] * s, axis[2] * s))
   }
 
   /** Release the pull: drop the constraint + hand, clamp the exit velocity. */
@@ -976,6 +1003,15 @@ export class PhysicsWorld {
     if (speed > MAX_THROW_SPEED) {
       const k = MAX_THROW_SPEED / speed
       this.bodyInterface.SetLinearVelocity(id, new J.Vec3(v.GetX() * k, v.GetY() * k, v.GetZ() * k))
+    }
+    // Also cap the exit SPIN — a released piece pinwheeling at the angular cap
+    // rolls itself right off the bench.
+    const MAX_THROW_SPIN = 6
+    const w = this.bodyInterface.GetAngularVelocity(id)
+    const spin = Math.hypot(w.GetX(), w.GetY(), w.GetZ())
+    if (spin > MAX_THROW_SPIN) {
+      const k = MAX_THROW_SPIN / spin
+      this.bodyInterface.SetAngularVelocity(id, new J.Vec3(w.GetX() * k, w.GetY() * k, w.GetZ() * k))
     }
   }
 

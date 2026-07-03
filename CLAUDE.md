@@ -31,6 +31,24 @@ Plans: `docs/superpowers/plans/` · Backlog: `docs/BACKLOG.md`
 
 ## Status
 
+- **M-Stability (bug batch: silent disintegration, teleports, dead audio) — DONE
+  & browser-verified.** IMPACT SOUNDS NEVER WORKED before this: Jolt's
+  OnContactAdded fires AFTER the solver kills the closing velocity, so live
+  GetLinearVelocity reads ~0 for every hit and nothing crossed the loudness
+  threshold — fix: capture per-body velocities BEFORE each step (preStepVel
+  map) and compute approach speed from those. Regression test asserts a
+  dropped block reports >2 m/s. PULL is now a SOFT tether (DistanceConstraint
+  min=max=0 + spring 4.5 Hz/damping 1, not a rigid PointConstraint): rigid
+  pulls generated unbounded force when the towed piece jammed against the
+  bench — enough to silently rip fasteners apart ("parts keep disappearing").
+  BREAKABLES need SUSTAINED overload (6 consecutive over-strength steps, or
+  3× strength once) — single solver spikes on deep contacts must not
+  disintegrate builds. clampAboveSlab now clamps ONLY the edited pieces
+  (whole-doc sweeps popped bystanders resting half off the bench edge on
+  every unrelated commit; sandbox resize still sweeps all). endPull clamps
+  exit SPIN (≤6 rad/s) and spinPull is capped ±8 rad/s (pinwheel-roll-away).
+  insertMechanism shifts new mechanisms +x clear of existing pieces (spawning
+  into a build exploded it). Dev hook `window.__audio` = {stats, state()}.
 - **M-Interaction (pull-drag, rotate ring, multi-select, breakable bonds) — DONE
   & browser-verified.** PULL-DRAG is the default running drag: a Jolt
   PointConstraint "mouse joint" — kinematic sensor HAND body (mIsSensor, silent

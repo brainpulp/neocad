@@ -188,10 +188,14 @@ export interface DocState {
  * the ground) back onto the surface. Runs when paused edit gestures commit, so a
  * resize/move can't leave a piece interpenetrating — Run would fling or trap it.
  */
-export function clampAboveSlab(doc: Document): Document {
+export function clampAboveSlab(doc: Document, onlyIds?: string[]): Document {
   const sb = doc.ground.sandbox
   let changed = false
   const pieces = doc.pieces.map((p) => {
+    // Clamp ONLY the edited pieces: sweeping the whole doc pops bystanders —
+    // e.g. a piece settled half off the bench edge (bottom below slab top,
+    // center still on the bench) would teleport upward on every unrelated edit.
+    if (onlyIds && !onlyIds.includes(p.id)) return p
     const lift = (t: Transform): Transform | null => {
       const down = worldDirToLocal({ position: [0, 0, 0], rotation: t.rotation }, [0, 1, 0])
       const half = halfExtentAlong(p, down)
@@ -564,12 +568,39 @@ export function createDocStore(initial: Document = emptyDocument()) {
         const def = MECHANISMS.find((m) => m.id === id)
         if (!def) return
         const { pieces, fasteners, ropes } = def.build()
-        commit((doc) => ({
-          ...doc,
-          pieces: [...doc.pieces, ...pieces],
-          fasteners: [...doc.fasteners, ...fasteners],
-          ropes: [...(doc.ropes ?? []), ...(ropes ?? [])],
-        }))
+        commit((doc) => {
+          // Mechanisms are authored around the origin; dropping one INTO an
+          // existing build makes the solver explode everything apart. Shift
+          // the whole assembly to clear ground beside what's already there.
+          let dx = 0
+          if (doc.pieces.length > 0) {
+            const near = doc.pieces.some(
+              (p) =>
+                Math.abs(p.state.transform.position[0]) < 1.2 &&
+                Math.abs(p.state.transform.position[2]) < 1.2,
+            )
+            if (near) {
+              const maxX = Math.max(...doc.pieces.map((p) => p.state.transform.position[0]))
+              dx = maxX + 1.3
+            }
+          }
+          if (dx !== 0) {
+            for (const p of pieces) {
+              p.definition.transform.position[0] += dx
+              p.state.transform.position[0] += dx
+            }
+            for (const r of ropes ?? []) {
+              r.start[0] += dx
+              r.end[0] += dx
+            }
+          }
+          return {
+            ...doc,
+            pieces: [...doc.pieces, ...pieces],
+            fasteners: [...doc.fasteners, ...fasteners],
+            ropes: [...(doc.ropes ?? []), ...(ropes ?? [])],
+          }
+        })
       },
       resetPieces: (ids) =>
         set((s) => ({
@@ -625,12 +656,13 @@ export function createDocStore(initial: Document = emptyDocument()) {
         })),
       movePieceTransform: (id, transform) => {
         commit((doc) =>
-          // Depenetrate from the slab so the committed pose is physically valid.
+          // Depenetrate THIS piece from the slab so the committed pose is valid.
           clampAboveSlab(
             ops.updatePiece(doc, id, {
               definition: { transform: structuredClone(transform) },
               state: { transform: structuredClone(transform) },
             }),
+            [id],
           ),
         )
         // Rebuild so the (paused) physics body adopts the new pose.
@@ -669,9 +701,20 @@ export function createDocStore(initial: Document = emptyDocument()) {
           if (!transientPast) return {}
           const snapshot = transientPast
           transientPast = null
-          // A resize (or shrinking sandbox) can leave pieces inside the slab;
-          // sweep them back onto the surface as part of the same gesture.
-          const clamped = clampAboveSlab(s.doc)
+          // A resize can push the edited piece into the slab — sweep it out as
+          // part of the same gesture. Only pieces the gesture actually touched
+          // are clamped (whole-doc sweeps pop bystanders); a sandbox change is
+          // the exception, since the slab itself moved under everything.
+          const sandboxChanged =
+            (snapshot.ground.sandbox?.size ?? 0) !== (s.doc.ground.sandbox?.size ?? 0) ||
+            (snapshot.ground.sandbox?.thickness ?? 0) !== (s.doc.ground.sandbox?.thickness ?? 0)
+          const touched = s.doc.pieces
+            .filter((p) => {
+              const before = snapshot.pieces.find((x) => x.id === p.id)
+              return !before || before !== p
+            })
+            .map((p) => p.id)
+          const clamped = clampAboveSlab(s.doc, sandboxChanged ? undefined : touched)
           return {
             doc: clamped,
             past: [...s.past, snapshot],
