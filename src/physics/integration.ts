@@ -8,7 +8,7 @@ import {
 } from './jolt'
 import { makeShape } from './shapes'
 import { FASTENERS, STOCK } from '../document/catalog'
-import { localDirToWorld, localToWorld, perpendicular } from '../document/math'
+import { localDirToWorld, localToWorld, perpendicular, quatConjugate, quatRotate } from '../document/math'
 import type { Document, Fastener, Material, Piece, Rope, Vec3 } from '../document/types'
 
 const FALLBACK_DENSITY = 1000
@@ -80,8 +80,19 @@ export class PhysicsWorld {
   private groupFilter: any
   private subGroups = new Map<string, number>() // pieceId → subgroup id
 
-  constructor(Jolt: JoltModule, doc: Document, onImpact?: ImpactCallback) {
+  /** Called when a rigid fastener snaps (force exceeded its bond strength). */
+  private onBreak: ((fastenerId: string) => void) | null = null
+  // Rigid bonds with finite strength, checked against solver impulse each step.
+  private breakables: { fastenerId: string; constraint: any; strength: number }[] = []
+
+  constructor(
+    Jolt: JoltModule,
+    doc: Document,
+    onImpact?: ImpactCallback,
+    onBreak?: (fastenerId: string) => void,
+  ) {
     this.Jolt = Jolt
+    this.onBreak = onBreak ?? null
     const settings = new Jolt.JoltSettings()
     setupCollisionFiltering(Jolt, settings)
     this.ji = new Jolt.JoltInterface(settings)
@@ -282,6 +293,11 @@ export class PhysicsWorld {
     listener.OnContactAdded = (b1Ptr: number, b2Ptr: number) => {
       const body1 = J.wrapPointer(b1Ptr, J.Body)
       const body2 = J.wrapPointer(b2Ptr, J.Body)
+      if (
+        this.silentBodies.has(body1.GetID().GetIndexAndSequenceNumber()) ||
+        this.silentBodies.has(body2.GetID().GetIndexAndSequenceNumber())
+      )
+        return // the pull "hand" is a sensor — no phantom knocks
       const v1 = body1.GetLinearVelocity()
       const v2 = body2.GetLinearVelocity()
       const speed = Math.hypot(
@@ -338,6 +354,41 @@ export class PhysicsWorld {
     }
 
     if (kind === 'fixed') {
+      // Rigid bonds with a finite strength SNAP when overloaded (weld > bolt >
+      // nail > glue). This build's binding exposes solver impulses only on
+      // SixDOFConstraint, so breakable bonds compile to an all-axes-fixed
+      // 6-DOF (identical behavior to a FixedConstraint). A locked cylindrical
+      // joint compiles here too but has no bond strength — plain fixed.
+      const strength = fastener.strength ?? FASTENERS[fastener.type].strength
+      if (strength != null && Number.isFinite(strength)) {
+        const settings = new J.SixDOFConstraintSettings()
+        settings.mSpace = J.EConstraintSpace_WorldSpace
+        const pa2 = doc.pieces.find((p) => p.id === fastener.partA)
+        const pb2 = doc.pieces.find((p) => p.id === fastener.partB)
+        const mid: Vec3 = pa2 && pb2
+          ? [
+              (pa2.state.transform.position[0] + pb2.state.transform.position[0]) / 2,
+              (pa2.state.transform.position[1] + pb2.state.transform.position[1]) / 2,
+              (pa2.state.transform.position[2] + pb2.state.transform.position[2]) / 2,
+            ]
+          : [0, 0, 0]
+        settings.mPosition1 = new J.RVec3(mid[0], mid[1], mid[2])
+        settings.mPosition2 = new J.RVec3(mid[0], mid[1], mid[2])
+        for (const axis of [
+          J.SixDOFConstraintSettings_EAxis_TranslationX,
+          J.SixDOFConstraintSettings_EAxis_TranslationY,
+          J.SixDOFConstraintSettings_EAxis_TranslationZ,
+          J.SixDOFConstraintSettings_EAxis_RotationX,
+          J.SixDOFConstraintSettings_EAxis_RotationY,
+          J.SixDOFConstraintSettings_EAxis_RotationZ,
+        ]) {
+          settings.MakeFixedAxis(axis)
+        }
+        const constraint = settings.Create(bodyA, bodyB)
+        this.physicsSystem.AddConstraint(constraint)
+        this.breakables.push({ fastenerId: fastener.id, constraint, strength })
+        return
+      }
       const settings = new J.FixedConstraintSettings()
       settings.mAutoDetectPoint = true
       this.physicsSystem.AddConstraint(settings.Create(bodyA, bodyB))
@@ -555,6 +606,24 @@ export class PhysicsWorld {
   /** Advance the simulation by a FIXED dt (callers always pass 1/60). */
   step(dt: number): void {
     this.ji.Step(dt, 1)
+    this.checkBreakables(dt)
+  }
+
+  /** Snap any rigid bond whose solver impulse exceeded its strength this step. */
+  private checkBreakables(dt: number): void {
+    if (this.breakables.length === 0) return
+    const J = this.Jolt
+    for (let i = this.breakables.length - 1; i >= 0; i--) {
+      const b = this.breakables[i]
+      const fixed = J.castObject(b.constraint, J.SixDOFConstraint)
+      const lam = fixed.GetTotalLambdaPosition()
+      const force = Math.hypot(lam.GetX(), lam.GetY(), lam.GetZ()) / dt
+      if (force > b.strength) {
+        this.physicsSystem.RemoveConstraint(b.constraint)
+        this.breakables.splice(i, 1)
+        this.onBreak?.(b.fastenerId)
+      }
+    }
   }
 
   /** Start dragging a piece: it becomes kinematic so the pointer drives it. */
@@ -763,6 +832,151 @@ export class PhysicsWorld {
       this.bodyInterface.SetLinearVelocity(id, new J.Vec3(v.GetX() * k, v.GetY() * k, v.GetZ() * k))
     }
     this.bodyInterface.SetMotionType(id, J.EMotionType_Dynamic, J.EActivation_Activate)
+  }
+
+  // ---- Pull-drag: a spring at the exact grabbed point. The piece stays fully
+  // dynamic, so it dangles, pivots and drags under its own weight — mass is
+  // FELT through the interaction instead of just displayed. ----
+  // The pull is a "mouse joint": a kinematic sensor HAND body point-constrained
+  // to the piece at the grabbed spot. The constraint solver handles effective
+  // mass exactly (hand-rolled point impulses go unstable at long lever arms),
+  // so the piece dangles and pivots under its own weight. Weight is FELT via
+  // a mass-scaled tow speed: a cork block zips, a granite slab crawls.
+  private pull: {
+    pieceId: string
+    local: Vec3
+    hand: any
+    constraint: any
+    prevAngularDamping: number
+    towCap: number
+  } | null = null
+  // Bodies whose contacts should stay silent (the hand is a sensor but still
+  // reports contacts to the listener).
+  private silentBodies = new Set<number>()
+
+  private makePull(pieceId: string, local: Vec3): boolean {
+    const id = this.bodies.get(pieceId)
+    const body = this.bodyObjs.get(pieceId)
+    if (!id || !body) return false
+    const J = this.Jolt
+    if (this.bodyInterface.GetMotionType(id) === J.EMotionType_Static) return false
+    this.endPull()
+    const pos = this.bodyInterface.GetPosition(id)
+    const rot = this.bodyInterface.GetRotation(id)
+    const rel = quatRotate([rot.GetX(), rot.GetY(), rot.GetZ(), rot.GetW()], local)
+    const gx = pos.GetX() + rel[0]
+    const gy = pos.GetY() + rel[1]
+    const gz = pos.GetZ() + rel[2]
+    const bcs = new J.BodyCreationSettings(
+      new J.SphereShape(0.01),
+      new J.RVec3(gx, gy, gz),
+      new J.Quat(0, 0, 0, 1),
+      J.EMotionType_Kinematic,
+      LAYER_MOVING,
+    )
+    bcs.mIsSensor = true // no collision response — it is just an anchor
+    const hand = this.bodyInterface.CreateBody(bcs)
+    this.silentBodies.add(hand.GetID().GetIndexAndSequenceNumber())
+    this.bodyInterface.AddBody(hand.GetID(), J.EActivation_Activate)
+    const pcs = new J.PointConstraintSettings()
+    pcs.mSpace = J.EConstraintSpace_WorldSpace
+    pcs.mPoint1 = new J.RVec3(gx, gy, gz)
+    pcs.mPoint2 = new J.RVec3(gx, gy, gz)
+    const constraint = pcs.Create(hand, body)
+    this.physicsSystem.AddConstraint(constraint)
+    const mp = body.GetMotionProperties()
+    const prevAngularDamping = mp.GetAngularDamping()
+    // Carried pieces settle into a dangle instead of pendulum-swinging forever.
+    mp.SetAngularDamping(1.5)
+    const mass = 1 / Math.max(1e-6, mp.GetInverseMass())
+    // ~60 kg·m/s of towing effort: 4 m/s for anything light, a crawl for slabs.
+    const towCap = Math.min(4, Math.max(0.5, 60 / mass))
+    this.pull = { pieceId, local, hand, constraint, prevAngularDamping, towCap }
+    this.bodyInterface.ActivateBody(id)
+    return true
+  }
+
+  /**
+   * Start a pull at a world point on the piece. Returns the grab point in
+   * piece-local space (callers keep it to survive world rebuilds), or null if
+   * the piece can't be pulled (anchored/static).
+   */
+  beginPull(pieceId: string, worldPoint: Vec3): Vec3 | null {
+    const id = this.bodies.get(pieceId)
+    if (!id) return null
+    if (this.bodyInterface.GetMotionType(id) === this.Jolt.EMotionType_Static) return null
+    const pos = this.bodyInterface.GetPosition(id)
+    const rot = this.bodyInterface.GetRotation(id)
+    const local = quatRotate(quatConjugate([rot.GetX(), rot.GetY(), rot.GetZ(), rot.GetW()]), [
+      worldPoint[0] - pos.GetX(),
+      worldPoint[1] - pos.GetY(),
+      worldPoint[2] - pos.GetZ(),
+    ])
+    return this.makePull(pieceId, local) ? local : null
+  }
+
+  /** Re-attach a pull after a world rebuild (same piece-local grab point). */
+  beginPullLocal(pieceId: string, local: Vec3): boolean {
+    return this.makePull(pieceId, local)
+  }
+
+  /**
+   * Tow the hand toward `target`, once per frame BEFORE stepping. The point
+   * constraint drags the piece behind it; the hand's speed cap is where the
+   * mass-feel comes from.
+   */
+  applyPull(target: Vec3, dt: number): void {
+    if (!this.pull) return
+    const J = this.Jolt
+    const handId = this.pull.hand.GetID()
+    const cur = this.bodyInterface.GetPosition(handId)
+    const dx = target[0] - cur.GetX()
+    const dy = target[1] - cur.GetY()
+    const dz = target[2] - cur.GetZ()
+    const dist = Math.hypot(dx, dy, dz)
+    const maxStep = this.pull.towCap * dt
+    const f = dist > maxStep ? maxStep / dist : 1
+    this.bodyInterface.MoveKinematic(
+      handId,
+      new J.RVec3(cur.GetX() + dx * f, cur.GetY() + dy * f, cur.GetZ() + dz * f),
+      new J.Quat(0, 0, 0, 1),
+      dt,
+    )
+    const id = this.bodies.get(this.pull.pieceId)
+    if (id) this.bodyInterface.ActivateBody(id)
+  }
+
+  /** Spin the pulled piece (Alt-rotate while pulling): direct angular velocity. */
+  spinPull(axis: Vec3, speed: number): void {
+    if (!this.pull) return
+    const id = this.bodies.get(this.pull.pieceId)
+    if (!id) return
+    const J = this.Jolt
+    this.bodyInterface.SetAngularVelocity(id, new J.Vec3(axis[0] * speed, axis[1] * speed, axis[2] * speed))
+  }
+
+  /** Release the pull: drop the constraint + hand, clamp the exit velocity. */
+  endPull(): void {
+    const p = this.pull
+    this.pull = null
+    if (!p) return
+    const J = this.Jolt
+    this.physicsSystem.RemoveConstraint(p.constraint)
+    const handId = p.hand.GetID()
+    this.silentBodies.delete(handId.GetIndexAndSequenceNumber())
+    this.bodyInterface.RemoveBody(handId)
+    this.bodyInterface.DestroyBody(handId)
+    const id = this.bodies.get(p.pieceId)
+    if (!id) return
+    const body = this.bodyObjs.get(p.pieceId)
+    body?.GetMotionProperties().SetAngularDamping(p.prevAngularDamping)
+    const MAX_THROW_SPEED = 3
+    const v = this.bodyInterface.GetLinearVelocity(id)
+    const speed = Math.hypot(v.GetX(), v.GetY(), v.GetZ())
+    if (speed > MAX_THROW_SPEED) {
+      const k = MAX_THROW_SPEED / speed
+      this.bodyInterface.SetLinearVelocity(id, new J.Vec3(v.GetX() * k, v.GetY() * k, v.GetZ() * k))
+    }
   }
 
   /** Write current body transforms into each piece's State. Definition untouched. */

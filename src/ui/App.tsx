@@ -1,6 +1,6 @@
 import { useEffect, useMemo } from 'react'
 import { createDocStore } from '../document/store'
-import { StoreContext } from './storeContext'
+import { StoreContext, useDocStore } from './storeContext'
 import { Toolbar } from './Toolbar'
 import { Palette } from './Palette'
 import { Properties } from './Properties'
@@ -8,6 +8,7 @@ import { MaterialsEditor } from './MaterialsEditor'
 import { EnvPanel } from './EnvPanel'
 import { SceneTree } from './SceneTree'
 import { JoinDialog } from './JoinDialog'
+import { CoachMarks } from './CoachMarks'
 import { StatusBar } from './StatusBar'
 import { Scene } from '../render/Scene'
 import { EmptyState } from '../render/EmptyState'
@@ -77,7 +78,8 @@ export function App() {
       e.preventDefault()
       const s = store.getState()
       if (action === 'delete') {
-        if (s.selectedId) s.removePiece(s.selectedId)
+        if (s.selectedIds.length > 1) s.removePieces(s.selectedIds)
+        else if (s.selectedId) s.removePiece(s.selectedId)
       } else if (action === 'cancel') {
         if (s.pendingJoin) s.resolveJoin(null) // Esc on the attach dialog = don't attach
         s.setActiveTool(null)
@@ -119,6 +121,8 @@ export function App() {
             <Scene />
             <EmptyState />
             <JoinDialog />
+            <MarqueeOverlay />
+            <CoachMarks />
           </div>
           <div className="rightpanel">
             <SceneTree />
@@ -130,5 +134,19 @@ export function App() {
         <StatusBar />
       </div>
     </StoreContext.Provider>
+  )
+}
+
+/** The marquee rectangle (Shift+drag on empty ground while paused). */
+function MarqueeOverlay() {
+  const m = useDocStore((s) => s.marquee)
+  if (!m) return null
+  const left = Math.min(m.x0, m.x1)
+  const top = Math.min(m.y0, m.y1)
+  return (
+    <div
+      className="marquee"
+      style={{ left, top, width: Math.abs(m.x1 - m.x0), height: Math.abs(m.y1 - m.y0) }}
+    />
   )
 }

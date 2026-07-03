@@ -252,6 +252,31 @@ function JointProperties({ fastenerId }: { fastenerId: string }) {
           ))}
         </>
       )}
+      {!joint && f.type !== 'spring' && (
+        <>
+          <div className="label" style={{ marginTop: 10 }}>
+            BOND STRENGTH
+          </div>
+          <div className="dim-row" title="The join snaps past this load — a physics event, not an edit">
+            <input
+              type="range"
+              aria-label="Bond strength"
+              min={20}
+              max={1000}
+              step={10}
+              value={Math.round((f.strength ?? FASTENERS[f.type].strength ?? 9000) / 9.81)}
+              onChange={(e) =>
+                store.getState().updateFastener(f.id, {
+                  strength: parseFloat(e.target.value) * 9.81,
+                })
+              }
+            />
+            <span className="dim-unit">
+              holds ~{Math.round((f.strength ?? FASTENERS[f.type].strength ?? 9000) / 9.81)} kg
+            </span>
+          </div>
+        </>
+      )}
       {f.type === 'pivot' && (
         <>
           <div className="label" style={{ marginTop: 10 }}>

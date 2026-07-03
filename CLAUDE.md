@@ -31,6 +31,36 @@ Plans: `docs/superpowers/plans/` · Backlog: `docs/BACKLOG.md`
 
 ## Status
 
+- **M-Interaction (pull-drag, rotate ring, multi-select, breakable bonds) — DONE
+  & browser-verified.** PULL-DRAG is the default running drag: a Jolt
+  PointConstraint "mouse joint" — kinematic sensor HAND body (mIsSensor, silent
+  in the contact listener) point-constrained at the clicked spot; pieces dangle/
+  pivot under their weight; mass felt via tow-speed cap (60/mass, ≤4 m/s) +
+  angular damping 1.5 during the pull; Ctrl/Cmd = old rigid kinematic carry.
+  GOTCHA: hand-rolled point-impulse grabs are UNSTABLE at long lever arms (limit
+  cycle at the ±25 rad/s cap — looks frozen under aliased sampling); also
+  emscripten's GetInverseInertiaDiagonal lives in the inertia PRINCIPAL frame
+  (GetInertiaRotation), not body frame. ROTATE RING (RotateRing.tsx): paused +
+  selected + HOLD ALT → one ring for the current axis; X/Y/Z switch axis; drags
+  snap to 15° (Shift = free); jointed pieces get the ring on their JOINT axis
+  and swing about the anchor (no-rotation joints show no ring). Ctrl-drag
+  paused = move whole fastened ASSEMBLY rigidly (connectedGroup BFS, one undo
+  via transient API; frame loop must skip group members during the drag).
+  MULTI-SELECT: selectedIds[] (selectedId = primary), Shift-click toggles,
+  Shift+drag on empty ground = marquee (catcher plane mounts only while Shift
+  held so click-deselect/orbit survive; store.marquee rect + App overlay div);
+  drag on a selected piece moves the whole selection; Delete removes all.
+  COACH TIPS (CoachMarks.tsx): first-use cards (pull/joint/rope/blower/paused-
+  edit/multi-select), "Got it" per tip + "don't show tips again", localStorage.
+  BREAKABLE RIGID FASTENERS: strength (N) per type (weld 9000 / bolt 6000 /
+  nail 2000 / glue 1200, per-fastener override in inspector, shown as "holds
+  ~X kg"); compiled as all-axes-fixed SixDOFConstraint because THIS BINDING
+  ONLY EXPOSES GetTotalLambdaPosition ON SixDOF (Jolt.FixedConstraint is not
+  exported); |lambda|/dt > strength → RemoveConstraint + onBreak → store.
+  breakFastener (NO undo entry — a physics event; doc change re-keys the world).
+  MECHANISMS: four-bar linkage (Grashof crank–rocker, motorized), catapult
+  (counterweight + angle-limited pivot + loose payload), rope swing (2 soft-body
+  ropes; MechanismBuild.ropes[] now supported by insertMechanism).
 - **M-Quality1 (bug-fix batch from user critique) — DONE & browser-verified.**
   ROTATION ARCS REMOVED entirely (user: "lose them completely") — rotation is
   Alt-drag for now; a better single-axis UX is under discussion, do NOT rebuild

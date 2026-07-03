@@ -11,6 +11,7 @@ import { HeldPiece } from './HeldPiece'
 import { FastenerMarker } from './FastenerMarker'
 import { FeatureMarker } from './FeatureMarker'
 import { ResizeHandles } from './ResizeHandles'
+import { RotateRing } from './RotateRing'
 import { JointEditor } from './JointEditor'
 import { localDirToWorld, localToWorld, worldToLocal } from '../document/math'
 import { isJointType, type Vec3 } from '../document/types'
@@ -82,6 +83,14 @@ function rockGeometries(): BufferGeometry[] {
 
 interface DragState {
   id: string
+  /**
+   * 'pull' (default): a spring at the clicked point — the piece dangles and
+   * pivots under its own weight. 'carry' (Ctrl/Cmd): the old rigid kinematic
+   * grab for precise placement.
+   */
+  mode: 'pull' | 'carry'
+  /** Pull: grab point in piece-local space (survives world rebuilds). */
+  grabLocal?: Vec3
   /** Pointer-hit offset from the piece center at grab time (XZ). */
   offX: number
   offZ: number
@@ -98,8 +107,11 @@ interface DragState {
 
 interface PausedDrag {
   id: string
-  /** free = ground-plane move; slide/swing = constrained to the piece's joint. */
-  mode: 'free' | 'slide' | 'swing'
+  /**
+   * free = ground-plane move; slide/swing = constrained to the piece's joint;
+   * assembly (Ctrl/Cmd) = the whole fastened group moves rigidly together.
+   */
+  mode: 'free' | 'slide' | 'swing' | 'assembly'
   offX: number
   offZ: number
   centerY: number
@@ -114,6 +126,28 @@ interface PausedDrag {
   startVec?: Vector3
   quat0?: Quaternion
   center0?: Vector3
+  /** Assembly mode: every connected piece and where it started. */
+  group?: { id: string; start: Vector3 }[]
+}
+
+/** All pieces transitively connected to `rootId` through fasteners (incl. root). */
+function connectedGroup(doc: import('../document/types').Document, rootId: string): string[] {
+  const adj = new Map<string, string[]>()
+  for (const f of doc.fasteners) {
+    adj.set(f.partA, [...(adj.get(f.partA) ?? []), f.partB])
+    adj.set(f.partB, [...(adj.get(f.partB) ?? []), f.partA])
+  }
+  const seen = new Set<string>([rootId])
+  const queue = [rootId]
+  while (queue.length) {
+    for (const next of adj.get(queue.pop()!) ?? []) {
+      if (!seen.has(next)) {
+        seen.add(next)
+        queue.push(next)
+      }
+    }
+  }
+  return [...seen]
 }
 
 function Sim({ Jolt }: { Jolt: JoltModule }) {
@@ -121,6 +155,7 @@ function Sim({ Jolt }: { Jolt: JoltModule }) {
   const doc = useDocStore((s) => s.doc)
   const worldEpoch = useDocStore((s) => s.worldEpoch)
   const selectedId = useDocStore((s) => s.selectedId)
+  const selectedIds = useDocStore((s) => s.selectedIds)
   const proximityTarget = useDocStore((s) => s.proximityTarget)
   const running = useDocStore((s) => s.running)
   const tool = useDocStore((s) => s.tool)
@@ -198,12 +233,24 @@ function Sim({ Jolt }: { Jolt: JoltModule }) {
       if (!s.soundOn || !s.running) return
       playImpact(matA, speed)
       playImpact(matB, speed * 0.8) // usually throttled away; adds body on hard hits
+    }, (fastenerId) => {
+      // A bond snapped: drop it from the document (no undo) with a sharp crack.
+      const s = store.getState()
+      if (s.soundOn) playImpact('wood', 9)
+      s.breakFastener(fastenerId)
     })
     // A drag can survive a rebuild (e.g. Alt-duplicate adds a piece mid-drag):
     // re-grab the same piece in the fresh world, otherwise drop the drag.
-    if (drag.current && !worldRef.current.beginGrab(drag.current.id)) {
-      drag.current = null
-      store.getState().setDraggingId(null)
+    if (drag.current) {
+      const d = drag.current
+      const ok =
+        d.mode === 'pull'
+          ? worldRef.current.beginPullLocal(d.id, d.grabLocal ?? [0, 0, 0])
+          : worldRef.current.beginGrab(d.id)
+      if (!ok) {
+        drag.current = null
+        store.getState().setDraggingId(null)
+      }
     }
     if (pausedDrag.current && !store.getState().doc.pieces.some((p) => p.id === pausedDrag.current?.id)) {
       pausedDrag.current = null
@@ -248,13 +295,67 @@ function Sim({ Jolt }: { Jolt: JoltModule }) {
     if (store.getState().draggingId === '__blower') store.getState().setDraggingId(null)
   }
 
+  // Marquee select: while paused with the Move tool, SHIFT+drag on empty
+  // ground sweeps a rectangle; pieces whose centers fall inside are selected.
+  // The catcher plane only mounts while Shift is held so plain clicks/orbits
+  // keep their behavior (incl. click-on-nothing deselect).
+  const [shiftDown, setShiftDown] = useState(false)
+  useEffect(() => {
+    const down = (e: KeyboardEvent) => e.key === 'Shift' && setShiftDown(true)
+    const up = (e: KeyboardEvent) => e.key === 'Shift' && setShiftDown(false)
+    const blur = () => setShiftDown(false)
+    window.addEventListener('keydown', down)
+    window.addEventListener('keyup', up)
+    window.addEventListener('blur', blur)
+    return () => {
+      window.removeEventListener('keydown', down)
+      window.removeEventListener('keyup', up)
+      window.removeEventListener('blur', blur)
+    }
+  }, [])
+  const marqueeStart = useRef<{ x0: number; y0: number } | null>(null)
+  const marqueeMove = (e: import('@react-three/fiber').ThreeEvent<PointerEvent>) => {
+    const m = marqueeStart.current
+    if (!m) return
+    const x1 = e.nativeEvent.clientX
+    const y1 = e.nativeEvent.clientY
+    const st = store.getState()
+    st.setMarquee({ x0: m.x0, y0: m.y0, x1, y1 })
+    const rect = gl.domElement.getBoundingClientRect()
+    const lox = Math.min(m.x0, x1)
+    const hix = Math.max(m.x0, x1)
+    const loy = Math.min(m.y0, y1)
+    const hiy = Math.max(m.y0, y1)
+    const v = new Vector3()
+    st.selectMany(
+      st.doc.pieces
+        .filter((p) => {
+          v.set(...p.state.transform.position).project(camera)
+          const cx = rect.left + (v.x * 0.5 + 0.5) * rect.width
+          const cy = rect.top + (-v.y * 0.5 + 0.5) * rect.height
+          return cx >= lox && cx <= hix && cy >= loy && cy <= hiy
+        })
+        .map((p) => p.id),
+    )
+  }
+  const endMarquee = () => {
+    if (!marqueeStart.current) return
+    marqueeStart.current = null
+    const st = store.getState()
+    st.setMarquee(null)
+    if (st.draggingId === '__marquee') st.setDraggingId(null)
+  }
+
   useFrame(() => {
     const world = worldRef.current
     if (!world) return
     if (builtKey.current !== key) return // stale world; rebuild is imminent
     const state = store.getState()
     if (state.running) {
-      if (drag.current) world.moveGrab(drag.current.id, drag.current.target, FIXED_DT)
+      if (drag.current) {
+        if (drag.current.mode === 'pull') world.applyPull(drag.current.target, FIXED_DT)
+        else world.moveGrab(drag.current.id, drag.current.target, FIXED_DT)
+      }
       simTime.current += FIXED_DT
       world.updateRopeAttachments(state.doc)
       const env = state.env
@@ -353,8 +454,14 @@ function Sim({ Jolt }: { Jolt: JoltModule }) {
       })
     })
     // Drive meshes from State imperatively (no per-frame React re-render).
+    // Pieces mid-assembly-drag are owned by the pointer, not by State.
+    const assemblyIds =
+      pausedDrag.current?.mode === 'assembly'
+        ? new Set(pausedDrag.current.group?.map((g) => g.id))
+        : null
     for (const piece of state.doc.pieces) {
       if (gizmoActive && piece.id === state.selectedId) continue
+      if (assemblyIds?.has(piece.id)) continue
       const mesh = meshes.current.get(piece.id)
       if (!mesh) continue
       const [px, py, pz] = piece.state.transform.position
@@ -368,7 +475,8 @@ function Sim({ Jolt }: { Jolt: JoltModule }) {
     const d = drag.current
     if (!d) return
     drag.current = null
-    worldRef.current?.endGrab(d.id)
+    if (d.mode === 'pull') worldRef.current?.endPull()
+    else worldRef.current?.endGrab(d.id)
     store.getState().setDraggingId(null)
     // Record the release point as the piece's new rest placement (undoable).
     const piece = store.getState().doc.pieces.find((p) => p.id === d.id)
@@ -384,6 +492,31 @@ function Sim({ Jolt }: { Jolt: JoltModule }) {
     if (!pd) return
     pausedDrag.current = null
     store.getState().setDraggingId(null)
+    if (pd.mode === 'assembly' && pd.group) {
+      // Commit every group member as ONE undo entry, then rebuild physics.
+      const s = store.getState()
+      s.beginTransient()
+      for (const g of pd.group) {
+        const m = meshes.current.get(g.id)
+        if (!m) continue
+        const transform = {
+          position: [m.position.x, m.position.y, m.position.z] as Vec3,
+          rotation: [m.quaternion.x, m.quaternion.y, m.quaternion.z, m.quaternion.w] as [
+            number,
+            number,
+            number,
+            number,
+          ],
+        }
+        s.updatePieceTransient(g.id, {
+          definition: { transform: structuredClone(transform) },
+          state: { transform: structuredClone(transform) },
+        })
+      }
+      s.endTransient()
+      s.bumpWorldEpoch()
+      return
+    }
     const mesh = meshes.current.get(pd.id)
     if (!mesh) return
     store.getState().movePieceTransform(pd.id, {
@@ -411,6 +544,28 @@ function Sim({ Jolt }: { Jolt: JoltModule }) {
       centerY: py,
       planeY: e.point.y,
       grabOffY: e.point.y - py,
+    }
+    // Ctrl/Cmd = relocate the whole fastened assembly rigidly (SolidWorks'
+    // "move component" vs the default articulate-along-the-joint). A drag on
+    // a multi-selected piece moves the whole selection the same way.
+    const multi =
+      s.selectedIds.length > 1 && s.selectedIds.includes(piece.id) ? s.selectedIds : null
+    if (e.nativeEvent.ctrlKey || e.nativeEvent.metaKey || multi) {
+      const ids =
+        e.nativeEvent.ctrlKey || e.nativeEvent.metaKey
+          ? connectedGroup(s.doc, piece.id)
+          : multi!
+      pausedDrag.current = {
+        ...base,
+        mode: 'assembly',
+        group: ids.map((id) => {
+          const p = s.doc.pieces.find((x) => x.id === id)!
+          return { id, start: new Vector3(...p.state.transform.position) }
+        }),
+      }
+      s.setDraggingId(piece.id)
+      ;(e.target as Element).setPointerCapture(e.pointerId)
+      return
     }
     if (joint) {
       const pieceA = s.doc.pieces.find((p) => p.id === joint.partA)
@@ -477,6 +632,23 @@ function Sim({ Jolt }: { Jolt: JoltModule }) {
     if (!pd) return
     const mesh = meshes.current.get(pd.id)
     if (!mesh) return
+    if (pd.mode === 'assembly' && pd.group) {
+      // Ground-plane delta of the grabbed piece, applied rigidly to the group.
+      if (Math.abs(e.ray.direction.y) < 1e-6) return
+      const t = (pd.planeY - e.ray.origin.y) / e.ray.direction.y
+      if (t <= 0) return
+      const grabbed = pd.group.find((g) => g.id === pd.id)
+      if (!grabbed) return
+      const nx = e.ray.origin.x + e.ray.direction.x * t - pd.offX
+      const nz = e.ray.origin.z + e.ray.direction.z * t - pd.offZ
+      const dx = nx - grabbed.start.x
+      const dz = nz - grabbed.start.z
+      for (const g of pd.group) {
+        const m = meshes.current.get(g.id)
+        m?.position.set(g.start.x + dx, g.start.y, g.start.z + dz)
+      }
+      return
+    }
     if (pd.mode === 'slide' && pd.axis && pd.startPos) {
       const t = lineParam(pd.startPos, pd.axis, e.ray.origin, e.ray.direction)
       if (t == null) return
@@ -533,7 +705,7 @@ function Sim({ Jolt }: { Jolt: JoltModule }) {
           key={piece.id}
           piece={piece}
           materials={doc.materials}
-          selected={piece.id === selectedId}
+          selected={piece.id === selectedId || selectedIds.includes(piece.id)}
           highlighted={piece.id === proximityTarget || piece.id === jointA?.pieceId}
           onPointerMove={(e) => {
             const s = store.getState()
@@ -569,12 +741,17 @@ function Sim({ Jolt }: { Jolt: JoltModule }) {
               if (e.nativeEvent.altKey) {
                 const dx = e.nativeEvent.movementX ?? 0
                 const axis = e.nativeEvent.shiftKey ? horizontalRight() : UP
-                d.rotQuat.premultiply(new Quaternion().setFromAxisAngle(axis, dx * 0.012))
-                worldRef.current?.rotateGrab(
-                  d.id,
-                  [d.rotQuat.x, d.rotQuat.y, d.rotQuat.z, d.rotQuat.w],
-                  FIXED_DT,
-                )
+                if (d.mode === 'pull') {
+                  // The pulled body is dynamic: spin it with angular velocity.
+                  worldRef.current?.spinPull([axis.x, axis.y, axis.z], dx * 0.7)
+                } else {
+                  d.rotQuat.premultiply(new Quaternion().setFromAxisAngle(axis, dx * 0.012))
+                  worldRef.current?.rotateGrab(
+                    d.id,
+                    [d.rotQuat.x, d.rotQuat.y, d.rotQuat.z, d.rotQuat.w],
+                    FIXED_DT,
+                  )
+                }
                 return
               }
               if (e.nativeEvent.shiftKey) {
@@ -583,14 +760,17 @@ function Sim({ Jolt }: { Jolt: JoltModule }) {
                 if (t != null) {
                   d.centerY = Math.max(0.02, t - d.grabOffY)
                   d.planeY = d.centerY + d.grabOffY
-                  d.target = [d.target[0], d.centerY, d.target[2]]
+                  d.target = [d.target[0], d.mode === 'pull' ? d.planeY : d.centerY, d.target[2]]
                 }
               } else if (e.ray.direction.y !== 0) {
                 const t = (d.planeY - e.ray.origin.y) / e.ray.direction.y
                 if (t > 0) {
                   const hx = e.ray.origin.x + e.ray.direction.x * t
                   const hz = e.ray.origin.z + e.ray.direction.z * t
-                  d.target = [hx - d.offX, d.centerY, hz - d.offZ]
+                  d.target =
+                    d.mode === 'pull'
+                      ? [hx, d.planeY, hz] // the spring tows the grab POINT to the cursor
+                      : [hx - d.offX, d.centerY, hz - d.offZ]
                 }
               }
             }
@@ -633,6 +813,11 @@ function Sim({ Jolt }: { Jolt: JoltModule }) {
               s.select(piece.id)
               return
             }
+            // Shift-click = add/remove from the multi-selection (no drag).
+            if (e.nativeEvent.shiftKey) {
+              s.toggleSelect(piece.id)
+              return
+            }
             // Alt held BEFORE the click = drag away a duplicate (paused only —
             // while running Alt is reserved for rotate); Alt pressed AFTER the
             // click rotates in place (see move).
@@ -644,19 +829,31 @@ function Sim({ Jolt }: { Jolt: JoltModule }) {
               s.select(piece.id)
             }
             if (s.running) {
-              // Default tool while the sim runs: drag the piece across the canvas.
+              // Default while the sim runs: PULL the piece from the clicked
+              // point (it dangles and pivots under its weight). Ctrl/Cmd =
+              // rigid carry for precise placement.
               // (A just-made clone has no body yet; the rebuild effect re-grabs it.)
               if (!target.anchored) {
-                worldRef.current?.beginGrab(target.id)
+                const carry = e.nativeEvent.ctrlKey || e.nativeEvent.metaKey
                 const [cx, cy, cz] = target.state.transform.position
+                let grabLocal: Vec3 | undefined
+                if (carry) {
+                  worldRef.current?.beginGrab(target.id)
+                } else {
+                  grabLocal =
+                    worldRef.current?.beginPull(target.id, [e.point.x, e.point.y, e.point.z]) ??
+                    undefined
+                }
                 drag.current = {
                   id: target.id,
-                  offX: e.point.x - cx,
-                  offZ: e.point.z - cz,
-                  centerY: cy,
+                  mode: carry ? 'carry' : 'pull',
+                  grabLocal,
+                  offX: carry ? e.point.x - cx : 0,
+                  offZ: carry ? e.point.z - cz : 0,
+                  centerY: carry ? cy : e.point.y,
                   planeY: e.point.y,
-                  grabOffY: e.point.y - cy,
-                  target: [cx, cy, cz],
+                  grabOffY: carry ? e.point.y - cy : 0,
+                  target: carry ? [cx, cy, cz] : [e.point.x, e.point.y, e.point.z],
                   rotQuat: new Quaternion(...target.state.transform.rotation),
                 }
                 s.setDraggingId(target.id)
@@ -744,6 +941,29 @@ function Sim({ Jolt }: { Jolt: JoltModule }) {
           </group>
         )
       })}
+      {/* Marquee select: Shift+drag on empty ground while paused. */}
+      {!running && tool === 'transform' && shiftDown && (
+        <mesh
+          rotation={[-Math.PI / 2, 0, 0]}
+          position={[0, 0.001, 0]}
+          onPointerDown={(e) => {
+            if (!e.nativeEvent.shiftKey) return
+            e.stopPropagation()
+            marqueeStart.current = { x0: e.nativeEvent.clientX, y0: e.nativeEvent.clientY }
+            store.getState().setDraggingId('__marquee') // pauses orbit
+            ;(e.target as Element).setPointerCapture(e.pointerId)
+          }}
+          onPointerMove={marqueeMove}
+          onPointerUp={(e) => {
+            if (!marqueeStart.current) return
+            ;(e.target as Element).releasePointerCapture(e.pointerId)
+            endMarquee()
+          }}
+        >
+          <planeGeometry args={[200, 200]} />
+          <meshBasicMaterial transparent opacity={0} depthWrite={false} />
+        </mesh>
+      )}
       {/* Blower tool: full-ground catcher + faint air-jet cone while blowing. */}
       {tool === 'blower' && (
         <mesh
@@ -797,9 +1017,14 @@ function Sim({ Jolt }: { Jolt: JoltModule }) {
       )}
       {jointA && <FeatureMarker anchor={jointA} color="#ff8a00" />}
       {/* Paused + transform tool: handles mount on the bounding-box shell —
-          corner/top squares resize, lift cone raises. Rotation is Alt-drag
-          (arc gizmos removed by design). */}
-      {gizmoMesh && selectedPiece && <ResizeHandles piece={selectedPiece} mesh={gizmoMesh} />}
+          corner/top squares resize, lift cone raises. HOLDING ALT shows the
+          rotate ring (one axis at a time; X/Y/Z switch, 15° snap, Shift free). */}
+      {gizmoMesh && selectedPiece && (
+        <>
+          <ResizeHandles piece={selectedPiece} mesh={gizmoMesh} />
+          <RotateRing piece={selectedPiece} mesh={gizmoMesh} />
+        </>
+      )}
       <JointEditor />
     </>
   )

@@ -115,6 +115,15 @@ export interface DocState {
   /** Currently selected piece (transient UI state — not saved, not undoable). */
   selectedId: string | null
   select: (id: string | null) => void
+  /** Multi-selection (selectedId is the primary/last-clicked member). */
+  selectedIds: string[]
+  /** Shift-click: add/remove a piece from the selection. */
+  toggleSelect: (id: string) => void
+  /** Marquee: replace the whole selection at once. */
+  selectMany: (ids: string[]) => void
+  /** Marquee rectangle in client coords while dragging one (UI overlay). */
+  marquee: { x0: number; y0: number; x1: number; y1: number } | null
+  setMarquee: (m: { x0: number; y0: number; x1: number; y1: number } | null) => void
   /** Bumped whenever the physics world must be rebuilt from scratch (e.g. reset). */
   worldEpoch: number
   /** Force a physics-world rebuild (e.g. after a transient joint-limit edit). */
@@ -130,6 +139,8 @@ export interface DocState {
   addPiece: (piece: Piece) => void
   updatePiece: (id: string, patch: Partial<Piece>) => void
   removePiece: (id: string) => void
+  /** Delete several pieces (multi-select) as one undo entry. */
+  removePieces: (ids: string[]) => void
   /** Clone a piece in place (Alt-drag duplicate). Returns the clone, already committed. */
   duplicatePiece: (id: string) => Piece | null
   /** Drop a prebuilt mechanism into the scene (one undo entry). */
@@ -164,6 +175,8 @@ export interface DocState {
   updatePieceTransient: (id: string, patch: Partial<Piece>) => void
   endTransient: () => void
   removeFastener: (id: string) => void
+  /** Remove a fastener because physics snapped it (no undo entry). */
+  breakFastener: (id: string) => void
   addMaterial: (material: Material) => void
   updateMaterial: (name: string, patch: Partial<Material>) => void
   /** Replace the whole document (Open / autosave restore). Clears history. */
@@ -462,8 +475,31 @@ export function createDocStore(initial: Document = emptyDocument()) {
           worldEpoch: s.worldEpoch + 1,
         })),
       selectedId: null,
+      selectedIds: [],
       select: (selectedId) =>
-        set(selectedId ? { selectedId, selectedFastenerId: null } : { selectedId }),
+        set(
+          selectedId
+            ? { selectedId, selectedIds: [selectedId], selectedFastenerId: null }
+            : { selectedId, selectedIds: [] },
+        ),
+      toggleSelect: (id) =>
+        set((s) => {
+          const has = s.selectedIds.includes(id)
+          const selectedIds = has ? s.selectedIds.filter((x) => x !== id) : [...s.selectedIds, id]
+          return {
+            selectedIds,
+            selectedId: has ? (selectedIds[selectedIds.length - 1] ?? null) : id,
+            selectedFastenerId: null,
+          }
+        }),
+      selectMany: (ids) =>
+        set({
+          selectedIds: ids,
+          selectedId: ids[ids.length - 1] ?? null,
+          selectedFastenerId: null,
+        }),
+      marquee: null,
+      setMarquee: (marquee) => set({ marquee }),
       addPiece: (piece) => commit((doc) => ops.addPiece(doc, piece)),
       duplicatePiece: (id) => {
         const src = get().doc.pieces.find((p) => p.id === id)
@@ -475,7 +511,7 @@ export function createDocStore(initial: Document = emptyDocument()) {
         clone.definition = { transform: structuredClone(src.state.transform) }
         clone.state = { transform: structuredClone(src.state.transform) }
         commit((doc) => ops.addPiece(doc, clone))
-        set({ selectedId: clone.id })
+        set({ selectedId: clone.id, selectedIds: [clone.id] })
         return clone
       },
       ropeStart: null,
@@ -527,11 +563,12 @@ export function createDocStore(initial: Document = emptyDocument()) {
       insertMechanism: (id) => {
         const def = MECHANISMS.find((m) => m.id === id)
         if (!def) return
-        const { pieces, fasteners } = def.build()
+        const { pieces, fasteners, ropes } = def.build()
         commit((doc) => ({
           ...doc,
           pieces: [...doc.pieces, ...pieces],
           fasteners: [...doc.fasteners, ...fasteners],
+          ropes: [...(doc.ropes ?? []), ...(ropes ?? [])],
         }))
       },
       resetPieces: (ids) =>
@@ -576,6 +613,15 @@ export function createDocStore(initial: Document = emptyDocument()) {
           past: [...s.past, structuredClone(s.doc)],
           future: [],
           selectedId: s.selectedId === id ? null : s.selectedId,
+          selectedIds: s.selectedIds.filter((x) => x !== id),
+        })),
+      removePieces: (ids) =>
+        set((s) => ({
+          doc: ids.reduce((d, id) => ops.removePiece(d, id), s.doc),
+          past: [...s.past, structuredClone(s.doc)],
+          future: [],
+          selectedId: ids.includes(s.selectedId ?? '') ? null : s.selectedId,
+          selectedIds: s.selectedIds.filter((x) => !ids.includes(x)),
         })),
       movePieceTransform: (id, transform) => {
         commit((doc) =>
@@ -634,6 +680,13 @@ export function createDocStore(initial: Document = emptyDocument()) {
           }
         }),
       removeFastener: (id) => commit((doc) => ops.removeFastener(doc, id)),
+      // A snapped bond is a physics EVENT, not an edit: no undo entry. The doc
+      // change re-keys the world, which rebuilds without the constraint.
+      breakFastener: (id) =>
+        set((s) => ({
+          doc: ops.removeFastener(s.doc, id),
+          selectedFastenerId: s.selectedFastenerId === id ? null : s.selectedFastenerId,
+        })),
       addMaterial: (material) => commit((doc) => ops.addMaterial(doc, material)),
       updateMaterial: (name, patch) => commit((doc) => ops.updateMaterial(doc, name, patch)),
       loadDoc: (doc) => set({ doc, past: [], future: [] }),

@@ -113,6 +113,8 @@ export interface Fastener {
   /** Cylindrical joints: each freedom can be switched off in the inspector. */
   canSpin?: boolean
   canSlide?: boolean
+  /** Bond strength override (N) for rigid fasteners; the join breaks past this force. */
+  strength?: number
 }
 
 /** A rope end tied to a piece (anchor in that piece's local frame). */

@@ -14,14 +14,17 @@ export interface FastenerDef {
   constraint: ConstraintKind
   /** Short builder-facing description, shown in pickers. */
   hint?: string
+  /** Bond strength (N): the join BREAKS past this force. Undefined = unbreakable. */
+  strength?: number
 }
 
 // User-facing real-world fastener → hidden engine constraint (spec §6b).
+// Rigid bonds have honest relative strengths: a weld outlasts a nail.
 export const FASTENERS: Record<FastenerType, FastenerDef> = {
-  weld: { label: 'Weld', constraint: 'fixed', hint: 'permanent rigid join' },
-  glue: { label: 'Glue', constraint: 'fixed', hint: 'rigid join' },
-  bolt: { label: 'Bolt', constraint: 'fixed', hint: 'rigid, removable' },
-  nail: { label: 'Nail', constraint: 'fixed', hint: 'rigid, quick' },
+  weld: { label: 'Weld', constraint: 'fixed', hint: 'permanent rigid join', strength: 9000 },
+  glue: { label: 'Glue', constraint: 'fixed', hint: 'rigid join', strength: 1200 },
+  bolt: { label: 'Bolt', constraint: 'fixed', hint: 'rigid, removable', strength: 6000 },
+  nail: { label: 'Nail', constraint: 'fixed', hint: 'rigid, quick', strength: 2000 },
   pivot: { label: 'Pivot', constraint: 'hinge', hint: 'spins around the axis' },
   cylindrical: { label: 'Cylindrical', constraint: 'cylindrical', hint: 'spins + slides along the axis' },
   linear: { label: 'Linear', constraint: 'slider', hint: 'slides along the axis' },

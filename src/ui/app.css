@@ -91,6 +91,31 @@ body { font-family: system-ui, sans-serif; background: #f4f6f9; color: #22303f; 
 }
 .dim-unit { color: #66788c; font-size: 11px; }
 
+/* First-use coach tips: prominent, bottom-center of the viewport. */
+.coach-card {
+  position: absolute; left: 50%; bottom: 60px; transform: translateX(-50%);
+  display: flex; gap: 12px; align-items: flex-start; max-width: 480px;
+  background: #ffffff; border: 1px solid #2f6df0; border-radius: 12px;
+  padding: 14px 16px; box-shadow: 0 6px 24px rgba(24, 39, 58, 0.22); z-index: 70;
+}
+.coach-icon { font-size: 26px; line-height: 1; margin-top: 2px; }
+.coach-text strong { color: #16273c; font-size: 14px; }
+.coach-text p { margin: 4px 0 8px; color: #33465c; font-size: 13px; line-height: 1.45; }
+.coach-actions { display: flex; align-items: center; gap: 14px; }
+.coach-actions button {
+  background: #2f6df0; color: #fff; border: none; border-radius: 6px;
+  padding: 5px 14px; font-size: 13px; font-weight: 600; cursor: pointer;
+}
+.coach-actions label {
+  display: flex; align-items: center; gap: 5px; color: #66788c; font-size: 12px; cursor: pointer;
+}
+
+/* Marquee selection rectangle (Shift+drag on empty ground while paused). */
+.marquee {
+  position: fixed; border: 1px dashed #2f6df0; background: rgba(47, 109, 240, 0.08);
+  pointer-events: none; z-index: 60;
+}
+
 /* Weight chip floating over the selected piece. */
 .weight-chip {
   background: rgba(255, 255, 255, 0.92); color: #22303f; border: 1px solid #cfd9e4;
