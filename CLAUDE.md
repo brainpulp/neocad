@@ -31,6 +31,25 @@ Plans: `docs/superpowers/plans/` · Backlog: `docs/BACKLOG.md`
 
 ## Status
 
+- **M-Placement (context-aware placement, de-anchored mechanisms, rope elasticity)
+  — DONE & browser-verified.** STOCK GHOST now rests ON the surface under the
+  cursor (rest height = floor + half-height-down, floor = slabTop on the bench
+  else 0) — WYSIWYG, no more 1.2 m sky-drop that stacked/clipped pieces onto
+  each other (the apparent "ghost duplicates" were two real overlapping pieces
+  from that drop, NOT a render bug — verified: exactly one solid mesh + one
+  outline per piece). MECHANISMS are placed via a MODE, not inserted at origin:
+  palette click → `placingMechanismId` + footprint ghost follows cursor →
+  ground click → `placeMechanismAt(pos)` (Esc cancels). NO MECHANISM IS
+  ANCHORED anymore (user-only Fix): every one is welded to a heavy concrete
+  BASE PLATE that just rests on the bench (`basePlate()` + `weld()` helpers in
+  mechanisms.ts); posts/stands/rails weld to it. `mechanismBounds()` sizes the
+  ghost. Test asserts no mechanism piece is `anchored` and each is one connected
+  assembly (catapult payload is the one allowed loose projectile). SWING GATE
+  rebuilt to read as a gate: two posts (hinge/latch) + a leaf hinged between
+  them with swing limits. ROPE ELASTICITY: new `Rope.elasticity` (0 = an
+  inextensible real rope, default; higher = bungee) drives edge compliance;
+  soft-body mLinearDamping + 12 iterations kill the old wiggle. Inspector's
+  "Stiffness" row is now "Springiness" (shows "rope" at 0, "bungee N%" above).
 - **M-Stability (bug batch: silent disintegration, teleports, dead audio) — DONE
   & browser-verified.** IMPACT SOUNDS NEVER WORKED before this: Jolt's
   OnContactAdded fires AFTER the solver kills the closing velocity, so live

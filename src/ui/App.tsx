@@ -84,6 +84,7 @@ export function App() {
         if (s.pendingJoin) s.resolveJoin(null) // Esc on the attach dialog = don't attach
         s.setActiveTool(null)
         s.setFastenTool(null)
+        s.setPlacingMechanism(null)
         s.cancelJoint()
         s.select(null)
         s.selectFastener(null)

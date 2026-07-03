@@ -35,9 +35,9 @@ function structureKey(doc: import('../document/types').Document): string {
   const ropes = (doc.ropes ?? [])
     .map(
       (r) =>
-        `${r.id}:${r.segments},${r.radius},${r.slack},${r.stiffness},${r.looped ? 1 : 0},${
-          r.attachStart?.pieceId ?? ''
-        },${r.attachEnd?.pieceId ?? ''}`,
+        `${r.id}:${r.segments},${r.radius},${r.slack},${r.stiffness},${r.elasticity ?? 0},${
+          r.looped ? 1 : 0
+        },${r.attachStart?.pieceId ?? ''},${r.attachEnd?.pieceId ?? ''}`,
     )
     .join('|')
   const sb = doc.ground.sandbox
@@ -1220,8 +1220,10 @@ export function Scene() {
 // Dev-only hook so e2e scripts can project world→screen through the live camera.
 function DevCameraHook() {
   const camera = useThree((s) => s.camera)
+  const scene = useThree((s) => s.scene)
   if (import.meta.env.DEV) {
     ;(window as unknown as Record<string, unknown>).__camera = camera
+    ;(window as unknown as Record<string, unknown>).__scene = scene
   }
   return null
 }

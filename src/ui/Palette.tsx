@@ -28,6 +28,7 @@ export function Palette() {
   const store = useStoreApi()
   const activeTool = useDocStore((s) => s.activeTool)
   const fastenTool = useDocStore((s) => s.fastenTool)
+  const placingMechanismId = useDocStore((s) => s.placingMechanismId)
 
   const stockButton = (t: StockType) => (
     <button
@@ -47,7 +48,14 @@ export function Palette() {
       </Section>
       <Section title="MECHANISMS">
         {MECHANISMS.map((m) => (
-          <button key={m.id} onClick={() => store.getState().insertMechanism(m.id)}>
+          <button
+            key={m.id}
+            className={placingMechanismId === m.id ? 'active' : ''}
+            title="Click, then click a spot on the bench to place it"
+            onClick={() =>
+              store.getState().setPlacingMechanism(placingMechanismId === m.id ? null : m.id)
+            }
+          >
             <span className="icon">{m.icon}</span> {m.label}
           </button>
         ))}

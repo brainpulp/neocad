@@ -143,8 +143,13 @@ export interface DocState {
   removePieces: (ids: string[]) => void
   /** Clone a piece in place (Alt-drag duplicate). Returns the clone, already committed. */
   duplicatePiece: (id: string) => Piece | null
-  /** Drop a prebuilt mechanism into the scene (one undo entry). */
+  /** Drop a prebuilt mechanism into the scene at the origin (tests/back-compat). */
   insertMechanism: (id: string) => void
+  /** Mechanism chosen from the palette, awaiting a click to place it (ghost follows cursor). */
+  placingMechanismId: string | null
+  setPlacingMechanism: (id: string | null) => void
+  /** Place the pending mechanism at a ground position (one undo entry). */
+  placeMechanismAt: (position: Vec3) => void
   /** First endpoint picked with the rope tool. */
   ropeStart: { point: Vec3; attach: import('./types').RopeAttachment | null } | null
   /** Rope tool click: first sets the start, second creates the rope. */
@@ -392,7 +397,8 @@ export function createDocStore(initial: Document = emptyDocument()) {
       },
       activeTool: null,
       // Stock and fasten tools are mutually exclusive modes.
-      setActiveTool: (activeTool) => set({ activeTool, fastenTool: null, pendingFastenA: null }),
+      setActiveTool: (activeTool) =>
+        set({ activeTool, fastenTool: null, pendingFastenA: null, placingMechanismId: null }),
       commitHeldAt: (position) => {
         const { activeTool, proximityTarget, fastenTool, running } = get()
         if (!activeTool) return
@@ -540,7 +546,8 @@ export function createDocStore(initial: Document = emptyDocument()) {
           segments: Math.min(48, Math.max(8, Math.round(dist / 0.06))),
           radius: 0.012,
           slack: 1.15,
-          stiffness: 0.9,
+          stiffness: 1,
+          elasticity: 0, // real rope: inextensible by default
           looped: false,
           attachStart: ropeStart.attach,
           attachEnd: attach,
@@ -601,6 +608,41 @@ export function createDocStore(initial: Document = emptyDocument()) {
             ropes: [...(doc.ropes ?? []), ...(ropes ?? [])],
           }
         })
+      },
+      placingMechanismId: null,
+      setPlacingMechanism: (placingMechanismId) =>
+        set({ placingMechanismId, activeTool: null, fastenTool: null }),
+      placeMechanismAt: (position) => {
+        const id = get().placingMechanismId
+        const def = MECHANISMS.find((m) => m.id === id)
+        if (!def) return
+        const { pieces, fasteners, ropes } = def.build()
+        // Builds are authored around the origin; shift the whole assembly to the
+        // clicked spot (XZ only — Y is the bench-relative height it was built at).
+        const dx = position[0]
+        const dz = position[2]
+        for (const p of pieces) {
+          p.definition.transform.position[0] += dx
+          p.definition.transform.position[2] += dz
+          p.state.transform.position[0] += dx
+          p.state.transform.position[2] += dz
+        }
+        for (const r of ropes ?? []) {
+          r.start[0] += dx
+          r.start[2] += dz
+          r.end[0] += dx
+          r.end[2] += dz
+          if (r.attachStart) {
+            /* piece-local anchors need no shift */
+          }
+        }
+        commit((doc) => ({
+          ...doc,
+          pieces: [...doc.pieces, ...pieces],
+          fasteners: [...doc.fasteners, ...fasteners],
+          ropes: [...(doc.ropes ?? []), ...(ropes ?? [])],
+        }))
+        set({ placingMechanismId: null })
       },
       resetPieces: (ids) =>
         set((s) => ({

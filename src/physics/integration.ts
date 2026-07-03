@@ -184,8 +184,12 @@ export class PhysicsWorld {
       shared.mVertices.push_back(v)
     }
 
-    // Stretch constraints between neighbours (+ skip-one edges to resist kinks).
-    const compliance = 1e-6 + (1 - rope.stiffness) * 2e-3
+    // Edge compliance = how much the rope STRETCHES. Real rope is inextensible
+    // (compliance ≈ 0); `elasticity` opts into bungee stretch. `stiffness` is a
+    // legacy knob that still firms things up. Default (elasticity 0) = a taut,
+    // non-springy line.
+    const elasticity = rope.elasticity ?? 0
+    const compliance = 1e-7 + elasticity * 6e-3 + (1 - rope.stiffness) * 2e-4
     const link = (a: number, b: number, c: number) => {
       shared.mEdgeConstraints.push_back(new J.SoftBodySharedSettingsEdge(a, b, c))
     }
@@ -205,9 +209,12 @@ export class PhysicsWorld {
       new J.Quat(0, 0, 0, 1),
       LAYER_MOVING,
     )
-    sbcs.mNumIterations = 8
+    // More iterations + linear damping so the rope settles instead of jiggling
+    // ("wiggles") forever; an elastic rope is allowed to ring a little longer.
+    sbcs.mNumIterations = 12
+    sbcs.mLinearDamping = 0.5 - elasticity * 0.35
     sbcs.mFriction = mat?.friction ?? 0.6
-    sbcs.mRestitution = 0.05
+    sbcs.mRestitution = 0.02
     const body = this.bodyInterface.CreateSoftBody(sbcs)
     this.bodyInterface.AddBody(body.GetID(), J.EActivation_Activate)
     this.ropeBodies.push({ rope, body, count })

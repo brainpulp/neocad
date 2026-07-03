@@ -140,6 +140,11 @@ export interface Rope {
   slack: number
   /** 0..1 — how hard the rope resists stretching. */
   stiffness: number
+  /**
+   * 0..1 springiness: 0 = an inextensible rope/chain, higher = a bungee that
+   * stretches under load. Real rope is ~0; this is opt-in elasticity.
+   */
+  elasticity?: number
   /** Closed loop (belt) instead of an open strand. */
   looped: boolean
   attachStart?: RopeAttachment | null

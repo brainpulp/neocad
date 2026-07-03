@@ -508,7 +508,15 @@ function RopeProperties({ ropeId }: { ropeId: string }) {
       <div className="label">ROPE</div>
       {row('Thickness', 0.5, 4, 0.25, rope.radius * 100, (v) => upd({ radius: v / 100 }), `${(rope.radius * 100).toFixed(2)} cm`)}
       {row('Slack', 1, 2, 0.05, rope.slack, (v) => upd({ slack: v }), `×${rope.slack.toFixed(2)}`)}
-      {row('Stiffness', 0.1, 1, 0.05, rope.stiffness, (v) => upd({ stiffness: v }))}
+      {row(
+        'Springiness',
+        0,
+        1,
+        0.05,
+        rope.elasticity ?? 0,
+        (v) => upd({ elasticity: v }),
+        (rope.elasticity ?? 0) < 0.03 ? 'rope' : `bungee ${Math.round((rope.elasticity ?? 0) * 100)}%`,
+      )}
       {row('Segments', 8, 48, 1, rope.segments, (v) => upd({ segments: Math.round(v) }), `${rope.segments}`)}
       <label className="field checkbox" title="Close the rope into a loop (belt)">
         <input type="checkbox" checked={rope.looped} onChange={(e) => upd({ looped: e.target.checked })} />
