@@ -31,6 +31,24 @@ Plans: `docs/superpowers/plans/` · Backlog: `docs/BACKLOG.md`
 
 ## Status
 
+- **M-JointEdit (Onshape-style joint adjust — actually moves the part) — DONE & browser-verified.**
+  ROOT INSIGHT from researching Onshape mates: a mate isn't baked once — it has
+  live offset/angle params that RE-SOLVE and MOVE the parts, plus a flip that
+  flips the part to the other side. NeoCad baked alignment at creation and never
+  re-applied it, so "Flip axis" only reversed the stored axis vector (motor
+  direction) and did nothing visible — the #1 "no way to modify the angle"
+  complaint. NEW: `adjustJoint(id,{rotate,slide})` rigidly turns/slides the LOOSE
+  piece about/along the world joint axis through the anchor (jointFrame +
+  rotatePieceAboutAxis/slidePieceAlongAxis in joints.ts), committed via
+  movePieceTransform (one undo, clamps slab). Inspector ADJUST row: ↺−15° /
+  ↻+15° / ⟲Flip(180°) / ←Slide→, labeled with which piece moves (the loose/
+  smaller one, matching the joint mover rule). Old Flip-axis/Swap-ends kept for
+  motion-direction. GHOST-DUPE: dumped the full render tree during place + pull-
+  drag — exactly ONE solid mesh + ONE inverted-hull outline per selected piece,
+  NO duplicate geometry. The "ghosts" are drop-shadows of lifted pieces or two
+  genuinely-overlapping solids (bad joint / stacked placement), not a render
+  bug. NEXT: gear/rack/screw couplings; the A→type→B joining GESTURE stays a
+  Fable task.
 - **M-JointFix2 (mover-by-size, huge-label bug, collapsible SCENE) — DONE & browser-verified.**
   BAD-JOINT ROOT CAUSE: with both pieces free planJoint moved the FIRST-clicked
   one, so clicking a big cylinder first ROTATED+SLID the whole cylinder onto a

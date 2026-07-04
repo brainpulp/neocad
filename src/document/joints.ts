@@ -1,6 +1,7 @@
 import { STOCK, pieceVolume } from './catalog'
 import type { JointFeature } from './features'
 import {
+  add,
   cross,
   dot,
   localDirToWorld,
@@ -31,6 +32,33 @@ export function halfExtentAlong(piece: Piece, dirLocal: Vec3): number {
     case 'wedge':
       return (Math.abs(x) * d.x + Math.abs(y) * d.y + Math.abs(z) * d.z) / 2
   }
+}
+
+/**
+ * The world joint frame (pivot + axis) from a fastener, using part A's live
+ * pose (anchors/axis are stored in A's local frame).
+ */
+export function jointFrame(f: Fastener, pieceA: Piece): { pivot: Vec3; axis: Vec3 } {
+  return {
+    pivot: localToWorld(pieceA.state.transform, f.anchorA ?? [0, 0, 0]),
+    axis: normalize(localDirToWorld(pieceA.state.transform, f.axisA ?? [0, 1, 0])),
+  }
+}
+
+/** Rigidly turn a piece by `angle` about a world axis line through `pivot`. */
+export function rotatePieceAboutAxis(piece: Piece, pivot: Vec3, axis: Vec3, angle: number): Transform {
+  const q = quatFromAxisAngle(axis, angle)
+  const t = piece.state.transform
+  return {
+    position: add(pivot, quatRotate(q, sub(t.position, pivot))),
+    rotation: quatMultiply(q, t.rotation),
+  }
+}
+
+/** Slide a piece by `delta` along a world axis (keeps orientation). */
+export function slidePieceAlongAxis(piece: Piece, axis: Vec3, delta: number): Transform {
+  const t = piece.state.transform
+  return { position: add(t.position, scale(axis, delta)), rotation: [...t.rotation] }
 }
 
 /** Reverse the joint's axis direction (slide range mirrors with it). */

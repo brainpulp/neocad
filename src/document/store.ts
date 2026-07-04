@@ -12,11 +12,17 @@ import {
   type Vec3,
 } from './types'
 import * as ops from './document'
-import { makePiece, nextFastenerId } from './catalog'
+import { makePiece, nextFastenerId, pieceVolume } from './catalog'
 import { MECHANISMS } from './mechanisms'
 import { worldDirToLocal, worldToLocal } from './math'
 import { snapToFeature, suggestJoint, type JointFeature } from './features'
-import { halfExtentAlong, planJoint } from './joints'
+import {
+  halfExtentAlong,
+  jointFrame,
+  planJoint,
+  rotatePieceAboutAxis,
+  slidePieceAlongAxis,
+} from './joints'
 
 /** Interaction tools. 'transform' drags pieces (sim running) or shows a gizmo (paused). */
 export type Tool = 'transform' | 'joint' | 'rope' | 'blower'
@@ -74,6 +80,12 @@ export interface DocState {
   updateFastenerTransient: (id: string, patch: Partial<import('./types').Fastener>) => void
   /** Commit a fastener edit as one undo entry (e.g. axis re-pick). */
   updateFastener: (id: string, patch: Partial<import('./types').Fastener>) => void
+  /**
+   * Adjust a joint by MOVING the loose piece about/along the joint axis
+   * (Onshape-style angle/offset): `rotate` in radians about the axis through the
+   * anchor, `slide` in metres along it. This actually relocates the part.
+   */
+  adjustJoint: (id: string, opts: { rotate?: number; slide?: number }) => void
   /** Resize the sandbox workbench (transient-friendly; commit via endTransient). */
   setSandboxSizeTransient: (size: number) => void
   /** Piece currently being dragged across the canvas (disables orbit while set). */
@@ -276,6 +288,27 @@ export function createDocStore(initial: Document = emptyDocument()) {
       updateFastener: (id, patch) => {
         commit((doc) => ops.updateFastener(doc, id, patch))
         set((s) => ({ worldEpoch: s.worldEpoch + 1 }))
+      },
+      adjustJoint: (id, opts) => {
+        const doc = get().doc
+        const f = doc.fasteners.find((x) => x.id === id)
+        if (!f) return
+        const a = doc.pieces.find((p) => p.id === f.partA)
+        const b = doc.pieces.find((p) => p.id === f.partB)
+        if (!a || !b) return
+        // Move the loose piece (both free → the smaller, matching the joint mover).
+        const move =
+          !a.anchored && (b.anchored || pieceVolume(a) <= pieceVolume(b))
+            ? a
+            : !b.anchored
+              ? b
+              : null
+        if (!move) return
+        const { pivot, axis } = jointFrame(f, a)
+        let tr = move.state.transform
+        if (opts.rotate) tr = rotatePieceAboutAxis({ ...move, state: { transform: tr } }, pivot, axis, opts.rotate)
+        if (opts.slide) tr = slidePieceAlongAxis({ ...move, state: { transform: tr } }, axis, opts.slide)
+        get().movePieceTransform(move.id, tr)
       },
       setSandboxSizeTransient: (size) =>
         set((s) => ({

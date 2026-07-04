@@ -1,7 +1,14 @@
-import { FASTENERS, STOCK, formatMass, pieceMass } from '../document/catalog'
+import { FASTENERS, STOCK, formatMass, pieceMass, pieceVolume } from '../document/catalog'
 import { flipJointAxis, swapJointEnds } from '../document/joints'
 import { isJointType, type Piece } from '../document/types'
 import { useDocStore, useStoreApi } from './storeContext'
+
+/** Name of the piece that ADJUST will move (the loose/smaller one). */
+function moverName(a: Piece, b: Piece): string {
+  if (!a.anchored && (b.anchored || pieceVolume(a) <= pieceVolume(b))) return a.name
+  if (!b.anchored) return b.name
+  return a.name
+}
 
 interface DimMeta {
   label: string
@@ -209,10 +216,34 @@ function JointProperties({ fastenerId }: { fastenerId: string }) {
           {a?.name ?? '?'} ↔ {b?.name ?? '?'}
         </span>
       </p>
+      {/* ADJUST: actually MOVES the loose piece about/along the joint axis, so
+          you can fix a bad angle or slide it into place (Onshape-style). */}
+      <div className="label" style={{ marginTop: 8 }}>
+        ADJUST {a && b ? `(moves ${moverName(a, b)})` : ''}
+      </div>
+      <div className="btn-row">
+        <button title="Turn −15° about the joint axis" onClick={() => store.getState().adjustJoint(f.id, { rotate: -Math.PI / 12 })}>
+          ↺ −15°
+        </button>
+        <button title="Turn +15° about the joint axis" onClick={() => store.getState().adjustJoint(f.id, { rotate: Math.PI / 12 })}>
+          ↻ +15°
+        </button>
+        <button title="Turn it 180° to the other side" onClick={() => store.getState().adjustJoint(f.id, { rotate: Math.PI })}>
+          ⟲ Flip
+        </button>
+      </div>
+      <div className="btn-row">
+        <button title="Slide 2 cm along the axis" onClick={() => store.getState().adjustJoint(f.id, { slide: -0.02 })}>
+          ← Slide
+        </button>
+        <button title="Slide 2 cm along the axis" onClick={() => store.getState().adjustJoint(f.id, { slide: 0.02 })}>
+          Slide →
+        </button>
+      </div>
       {joint && (
         <div className="btn-row">
           <button
-            title="Reverse the axis direction"
+            title="Reverse the motion axis direction (swaps which way it drives)"
             onClick={() => store.getState().updateFastener(f.id, flipJointAxis(f))}
           >
             ⇅ Flip axis
