@@ -69,7 +69,7 @@ export function candidateFeatures(piece: Piece, local: Vec3): JointFeature[] {
       })()
       return [
         { kind: 'center', label: 'Center', point: [0, 0, 0], axis: null },
-        { kind: 'face', label: 'Bottom', point: [0, -y, 0], axis: [0, 1, 0] },
+        { kind: 'face', label: 'Bottom', point: [0, -y, 0], axis: [0, -1, 0] },
         { kind: 'face', label: 'Slope', point: [0, 0, 0], axis: slopeNormal },
         { kind: 'edge', label: 'Apex edge', point: [-x, y, lz], axis: [0, 0, 1] },
         { kind: 'edge', label: 'Base edge', point: [x, -y, lz], axis: [0, 0, 1] },
@@ -83,13 +83,16 @@ export function candidateFeatures(piece: Piece, local: Vec3): JointFeature[] {
       const feats: JointFeature[] = [
         { kind: 'center', label: 'Center', point: [0, 0, 0], axis: null },
       ]
+      // A face's axis is its OUTWARD normal (signed per side), not just the axis
+      // line — the mate needs to know which way each face points so two faces
+      // can be brought together opposed (flush) instead of overlapping.
       const faceAxes: [Vec3, Vec3][] = [
         [[x, 0, 0], [1, 0, 0]],
-        [[-x, 0, 0], [1, 0, 0]],
+        [[-x, 0, 0], [-1, 0, 0]],
         [[0, y, 0], [0, 1, 0]],
-        [[0, -y, 0], [0, 1, 0]],
+        [[0, -y, 0], [0, -1, 0]],
         [[0, 0, z], [0, 0, 1]],
-        [[0, 0, -z], [0, 0, 1]],
+        [[0, 0, -z], [0, 0, -1]],
       ]
       for (const [point, axis] of faceAxes)
         feats.push({ kind: 'face', label: 'Face center', point, axis })

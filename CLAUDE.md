@@ -31,6 +31,27 @@ Plans: `docs/superpowers/plans/` · Backlog: `docs/BACKLOG.md`
 
 ## Status
 
+- **M-JointAlign (flush face-mate fix + flat 2D joint symbols) — DONE & browser-verified.**
+  THE BIG JOINT BUG: joining two faces clipped instead of mating flush. Root
+  cause in features.ts — a box face's `axis` was the unsigned axis LINE
+  ([1,0,0] for BOTH the +x and −x faces), so planJoint could not tell which way
+  a face pointed. Faces now carry their true OUTWARD normal (−x face → [−1,0,0];
+  wedge bottom → [0,−1,0]). planJoint then separates ENGAGEMENT into two rules:
+  two faces mate ANTI-parallel (normals opposed → flush kiss, `faceMate` branch);
+  everything else (shaft→bore, peg→face, edge→edge) stays PARALLEL/co-axial as
+  before. `jointAxis` (stored motion axis) is now computed separately from the
+  alignment target. planJoint's `type` widened JointType→FastenerType so welds
+  can align too. Tests: face-mate flush + opposed normals; co-axial dowel-in-bore
+  unchanged. Browser-verified: two rotated boards hinge flush (survive Run);
+  a 45°-tilted dowel joints co-axial/vertical into a block (was the clipping
+  screenshot). GLYPHS are now FLAT 2D symbols in 3D planes (not chunky 3D):
+  ring-arc hinge, double-arrow slider, twin-ring axle lie in the joint-axis
+  plane; weld disc / bolt hex / nail / glue / spring billboard to camera.
+  meshBasicMaterial, DoubleSide, depthTest off (x-ray), toneMapped off.
+  STILL OPEN (Fable session): the A→type→B joining GESTURE itself (make it
+  "easy and concrete", motion-preview ghost before commit). NEXT Opus batch:
+  gear/rack/screw couplings (Jolt GearConstraint/RackAndPinionConstraint verified
+  exported) → then rebuild mechanisms.
 - **M-JointIdentity (maker renames + per-type 3D glyphs) — DONE & browser-verified.**
   Labels now speak hardware (schema ids unchanged): Pivot→**Hinge**,
   Cylindrical→**Axle**, Linear→**Slider**. FastenerMarker.tsx renders a distinct

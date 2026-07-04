@@ -1,6 +1,6 @@
 import { useFrame } from '@react-three/fiber'
 import { useRef } from 'react'
-import { Quaternion, Vector3, type Group, type Mesh } from 'three'
+import { DoubleSide, Quaternion, Vector3, type Group, type Mesh } from 'three'
 import type { Document, Fastener, Vec3 } from '../document/types'
 import { localDirToWorld, localToWorld } from '../document/math'
 import { useDocStore, useStoreApi } from '../ui/storeContext'
@@ -12,8 +12,8 @@ const QUAT_TMP = new Quaternion()
 // Joint-family color language: orange = rigid bond, blue = motion joint,
 // green = elastic. Selection turns any glyph hot orange.
 const RIGID_COLOR = '#e8a13a'
-const MOTION_COLOR = '#3d7bd9'
-const SPRING_COLOR = '#7a9c4e'
+const MOTION_COLOR = '#2f6df0'
+const SPRING_COLOR = '#5a8f3c'
 const SELECTED_COLOR = '#ff8a00'
 
 /**
@@ -31,17 +31,20 @@ export function fastenerMidpoint(doc: Document, fastener: Fastener): Vec3 | null
 }
 
 /**
- * Every fastener type gets its own 3D glyph, so a build reads like a drawing:
- * hinge = swing arc (sweep shows the actual limits), slider = travel arrow with
- * end stops, axle = shaft sleeve, bolt = hex head, nail = pin, weld = bead,
- * glue = droplet, spring = coil tether. Glyphs are screen-scaled, aligned to
- * the live joint axis, and are the click target that opens the joint inspector.
+ * Each fastener type gets a FLAT 2D symbol placed in a 3D plane — a schematic
+ * badge, not a chunky 3D prop. Motion symbols lie in the plane of the joint
+ * axis (hinge arc, slider double-arrow, axle rings); rigid symbols billboard to
+ * face the camera. Screen-scaled, x-ray so they never hide inside geometry, and
+ * the click target that opens the joint inspector.
  */
 export function FastenerMarker({ fastener }: { fastener: Fastener }) {
   const store = useStoreApi()
   const group = useRef<Group>(null)
   const coil = useRef<Mesh>(null)
   const selected = useDocStore((s) => s.selectedFastenerId === fastener.id)
+
+  const isMotion =
+    fastener.type === 'pivot' || fastener.type === 'linear' || fastener.type === 'cylindrical'
 
   useFrame(({ camera }) => {
     const g = group.current
@@ -54,22 +57,20 @@ export function FastenerMarker({ fastener }: { fastener: Fastener }) {
     }
     g.visible = true
     g.position.set(mid[0], mid[1], mid[2])
-    // Motion glyphs are authored with +Y as the joint axis; align to the live one.
     const a = doc.pieces.find((p) => p.id === fastener.partA)
-    if (a && (fastener.type === 'pivot' || fastener.type === 'linear' || fastener.type === 'cylindrical')) {
+    if (isMotion && a) {
+      // Motion symbol lies in the plane spanned by the joint axis: put +Y on the
+      // axis (arc/arrow/ring geometry is authored around +Y).
       const axis = localDirToWorld(a.state.transform, fastener.axisA ?? [0, 1, 0])
       DIR_TMP.set(axis[0], axis[1], axis[2]).normalize()
       g.quaternion.copy(QUAT_TMP.setFromUnitVectors(UP_TMP, DIR_TMP))
     } else {
-      g.quaternion.identity()
+      // Rigid/spring badges billboard toward the camera (flat, always readable).
+      g.quaternion.copy(camera.quaternion)
     }
-    // Screen-constant size: ~the same on screen whether zoomed in or out.
     const s = Math.min(2.2, Math.max(0.55, camera.position.distanceTo(g.position) / 3.5))
     g.scale.setScalar(s)
 
-    // Springs also draw their tether between the two live anchor points. The
-    // coil mesh is a SIBLING of the scaled glyph group and works in raw world
-    // space, exactly like the pre-glyph implementation.
     if (fastener.type === 'spring' && coil.current) {
       const pa = a ? localToWorld(a.state.transform, fastener.anchorA ?? [0, 0, 0]) : mid
       const b = doc.pieces.find((p) => p.id === fastener.partB)
@@ -85,8 +86,6 @@ export function FastenerMarker({ fastener }: { fastener: Fastener }) {
     }
   })
 
-  const isMotion =
-    fastener.type === 'pivot' || fastener.type === 'linear' || fastener.type === 'cylindrical'
   const color = selected
     ? SELECTED_COLOR
     : fastener.type === 'spring'
@@ -94,18 +93,18 @@ export function FastenerMarker({ fastener }: { fastener: Fastener }) {
       : isMotion
         ? MOTION_COLOR
         : RIGID_COLOR
-  // Rigid-bond badges sit exactly at the mating interface — buried between
-  // flush faces they'd be invisible, so they x-ray through geometry. Motion
-  // glyphs extend outside the pieces and stay honestly depth-tested.
-  const xray = !isMotion && fastener.type !== 'spring'
-  const mat = (
-    <meshStandardMaterial
+
+  // Flat symbol material: unlit, x-ray (draws over geometry — joints sit at the
+  // mating interface and would otherwise be buried), double-sided.
+  const flat = (opacity = 1) => (
+    <meshBasicMaterial
       color={color}
-      emissive={color}
-      emissiveIntensity={selected ? 0.55 : 0.25}
-      depthTest={!xray}
-      transparent={xray}
-      opacity={xray ? 0.9 : 1}
+      side={DoubleSide}
+      transparent
+      opacity={opacity}
+      depthTest={false}
+      depthWrite={false}
+      toneMapped={false}
     />
   )
 
@@ -120,124 +119,117 @@ export function FastenerMarker({ fastener }: { fastener: Fastener }) {
       {fastener.type === 'spring' && (
         <mesh ref={coil} raycast={() => null}>
           <cylinderGeometry args={[0.012, 0.012, 1, 8, 1, true]} />
-          <meshBasicMaterial color={color} wireframe transparent opacity={0.9} />
+          <meshBasicMaterial color={color} wireframe transparent opacity={0.9} toneMapped={false} />
         </mesh>
       )}
-    <group
-      ref={group}
-      renderOrder={5}
-      onPointerDown={(e) => {
-        e.stopPropagation()
-        store.getState().selectFastener(fastener.id)
-      }}
-    >
-      {fastener.type === 'pivot' && (
-        <>
-          {/* swing arc (torus hole axis rotated onto +Y) + the axis pin */}
-          <mesh rotation={[Math.PI / 2, 0, 0]} key={`arc:${sweep.toFixed(2)}`}>
-            <torusGeometry args={[0.085, 0.009, 10, 48, sweep]} />
-            {mat}
-          </mesh>
+      <group
+        ref={group}
+        renderOrder={10}
+        onPointerDown={(e) => {
+          e.stopPropagation()
+          store.getState().selectFastener(fastener.id)
+        }}
+      >
+        {fastener.type === 'pivot' && (
+          <>
+            {/* flat swing arc in the plane ⊥ the pin, + the axis line */}
+            <mesh rotation={[Math.PI / 2, 0, 0]} key={`arc:${sweep.toFixed(2)}`}>
+              <ringGeometry args={[0.075, 0.092, 40, 1, 0, sweep]} />
+              {flat()}
+            </mesh>
+            <mesh rotation={[Math.PI / 2, 0, 0]}>
+              <ringGeometry args={[0, 0.09, 3, 1, 0, sweep]} />
+              {flat(0.18)}
+            </mesh>
+            {/* the pin, as a thin flat bar along the axis */}
+            <mesh>
+              <planeGeometry args={[0.01, 0.19]} />
+              {flat()}
+            </mesh>
+          </>
+        )}
+        {fastener.type === 'linear' && (
+          <>
+            {/* double-headed travel arrow (flat) with end-stop ticks */}
+            <mesh>
+              <planeGeometry args={[0.012, 0.17]} />
+              {flat()}
+            </mesh>
+            <mesh position={[0, 0.11, 0]}>
+              <circleGeometry args={[0.028, 3]} />
+              {flat()}
+            </mesh>
+            <mesh position={[0, -0.11, 0]} rotation={[0, 0, Math.PI]}>
+              <circleGeometry args={[0.028, 3]} />
+              {flat()}
+            </mesh>
+            <mesh position={[0, 0.14, 0]}>
+              <planeGeometry args={[0.07, 0.012]} />
+              {flat()}
+            </mesh>
+            <mesh position={[0, -0.14, 0]}>
+              <planeGeometry args={[0.07, 0.012]} />
+              {flat()}
+            </mesh>
+          </>
+        )}
+        {fastener.type === 'cylindrical' && (
+          <>
+            {/* two flat rings around the shaft axis + a slide arrow = spin & slide */}
+            <mesh position={[0, 0.05, 0]} rotation={[Math.PI / 2, 0, 0]}>
+              <ringGeometry args={[0.05, 0.062, 32]} />
+              {flat()}
+            </mesh>
+            <mesh position={[0, -0.05, 0]} rotation={[Math.PI / 2, 0, 0]}>
+              <ringGeometry args={[0.05, 0.062, 32]} />
+              {flat()}
+            </mesh>
+            <mesh>
+              <planeGeometry args={[0.01, 0.13]} />
+              {flat()}
+            </mesh>
+          </>
+        )}
+        {fastener.type === 'weld' && (
           <mesh>
-            <cylinderGeometry args={[0.006, 0.006, 0.17, 8]} />
-            {mat}
+            {/* filled disc with a ring = a bead */}
+            <circleGeometry args={[0.05, 24]} />
+            {flat(0.9)}
           </mesh>
-        </>
-      )}
-      {fastener.type === 'linear' && (
-        <>
-          {/* travel arrow along the axis, with end-stop ticks */}
+        )}
+        {fastener.type === 'bolt' && (
           <mesh>
-            <cylinderGeometry args={[0.007, 0.007, 0.17, 8]} />
-            {mat}
+            {/* flat hex */}
+            <circleGeometry args={[0.05, 6]} />
+            {flat()}
           </mesh>
-          <mesh position={[0, 0.105, 0]}>
-            <coneGeometry args={[0.022, 0.05, 10]} />
-            {mat}
+        )}
+        {fastener.type === 'nail' && (
+          <>
+            <mesh position={[0, 0.03, 0]}>
+              <circleGeometry args={[0.028, 16]} />
+              {flat()}
+            </mesh>
+            <mesh position={[0, -0.04, 0]}>
+              <planeGeometry args={[0.014, 0.09]} />
+              {flat()}
+            </mesh>
+          </>
+        )}
+        {fastener.type === 'glue' && (
+          <mesh scale={[1, 1.15, 1]}>
+            {/* teardrop-ish: a disc squished vertically */}
+            <circleGeometry args={[0.042, 20]} />
+            {flat(0.85)}
           </mesh>
-          <mesh position={[0, -0.105, 0]} rotation={[Math.PI, 0, 0]}>
-            <coneGeometry args={[0.022, 0.05, 10]} />
-            {mat}
-          </mesh>
-          <mesh position={[0, 0.135, 0]}>
-            <boxGeometry args={[0.06, 0.008, 0.06]} />
-            {mat}
-          </mesh>
-          <mesh position={[0, -0.135, 0]}>
-            <boxGeometry args={[0.06, 0.008, 0.06]} />
-            {mat}
-          </mesh>
-        </>
-      )}
-      {fastener.type === 'cylindrical' && (
-        <>
-          {/* bearing sleeve around the shaft + a spin ring */}
+        )}
+        {fastener.type === 'spring' && (
           <mesh>
-            <cylinderGeometry args={[0.045, 0.045, 0.13, 18, 1, true]} />
-            <meshStandardMaterial
-              color={color}
-              emissive={color}
-              emissiveIntensity={selected ? 0.55 : 0.25}
-              transparent
-              opacity={0.55}
-            />
+            <circleGeometry args={[0.03, 16]} />
+            {flat()}
           </mesh>
-          <mesh rotation={[Math.PI / 2, 0, 0]}>
-            <torusGeometry args={[0.055, 0.007, 8, 32]} />
-            {mat}
-          </mesh>
-        </>
-      )}
-      {fastener.type === 'weld' && (
-        <mesh>
-          <cylinderGeometry args={[0.042, 0.042, 0.016, 20]} />
-          {mat}
-        </mesh>
-      )}
-      {fastener.type === 'bolt' && (
-        <>
-          <mesh>
-            <cylinderGeometry args={[0.034, 0.034, 0.024, 6]} />
-            {mat}
-          </mesh>
-          <mesh position={[0, -0.03, 0]}>
-            <cylinderGeometry args={[0.012, 0.012, 0.05, 10]} />
-            {mat}
-          </mesh>
-        </>
-      )}
-      {fastener.type === 'nail' && (
-        <>
-          <mesh>
-            <cylinderGeometry args={[0.007, 0.002, 0.11, 8]} />
-            {mat}
-          </mesh>
-          <mesh position={[0, 0.055, 0]}>
-            <cylinderGeometry args={[0.02, 0.02, 0.008, 12]} />
-            {mat}
-          </mesh>
-        </>
-      )}
-      {fastener.type === 'glue' && (
-        <mesh scale={[1, 0.65, 1]}>
-          <sphereGeometry args={[0.038, 16, 12]} />
-          <meshStandardMaterial
-            color={color}
-            emissive={color}
-            emissiveIntensity={selected ? 0.55 : 0.25}
-            transparent
-            opacity={0.85}
-            depthTest={false}
-          />
-        </mesh>
-      )}
-      {fastener.type === 'spring' && (
-        <mesh>
-          <sphereGeometry args={[0.03, 12, 8]} />
-          {mat}
-        </mesh>
-      )}
-    </group>
+        )}
+      </group>
     </>
   )
 }

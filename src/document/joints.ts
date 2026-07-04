@@ -15,7 +15,7 @@ import {
   worldDirToLocal,
   length,
 } from './math'
-import type { Fastener, JointType, Piece, Quat, Transform, Vec3 } from './types'
+import type { Fastener, FastenerType, Piece, Quat, Transform, Vec3 } from './types'
 
 /** Half-extent of a piece along a piece-local direction (box support function). */
 export function halfExtentAlong(piece: Piece, dirLocal: Vec3): number {
@@ -130,7 +130,7 @@ export function planJoint(
   featA: JointFeature,
   pieceB: Piece,
   featB: JointFeature,
-  type: JointType,
+  type: FastenerType,
   fastenerId: string,
 ): JointPlan {
   const ta = pieceA.state.transform
@@ -161,16 +161,25 @@ export function planJoint(
 
   const mover: 'a' | 'b' | null = !pieceA.anchored ? 'a' : !pieceB.anchored ? 'b' : null
 
-  // The joint axis: prefer the stationary piece's feature axis (slide the gear
-  // onto the AXLE's axis), then the mover's, then the line between the points.
   const gap = sub(worldB, worldA)
   const fallback: Vec3 = length(gap) < 1e-4 ? [0, 1, 0] : normalize(gap)
   const stationaryAxis = mover === 'a' ? axisBWorld : axisAWorld
   const moverAxis = mover === 'a' ? axisAWorld : axisBWorld
-  let axisWorld = stationaryAxis ?? moverAxis ?? fallback
 
-  // A linear joint along a face NORMAL just bounces in and out like a spring.
-  // Drawers slide IN the face plane: swap to the guide's longest in-plane axis.
+  // How the two features ENGAGE:
+  //  • two FACES mate flush — the mover's face turns to OPPOSE the stationary
+  //    face (normals anti-parallel) and the faces kiss. This is "stick two
+  //    boards together" and was the big clipping bug (they aligned parallel,
+  //    so the boards ended up back-to-back overlapping instead of face-to-face).
+  //  • everything else (shaft→bore, peg→face, end→end, edge→edge) engages
+  //    PARALLEL / co-axial (a dowel slides down a hole, a gear onto an axle).
+  const faceMate = featA.kind === 'face' && featB.kind === 'face'
+
+  // The stored MOTION axis (what the joint actually moves along/around).
+  let jointAxis = stationaryAxis ?? moverAxis ?? fallback
+
+  // A drawer sliding ON a face travels IN the face plane, not along its normal:
+  // pick the guide's longest in-plane axis for the slide direction.
   const faceLinear = type === 'linear' && (featA.kind === 'face' || featB.kind === 'face')
   if (faceLinear) {
     const guide = featB.kind === 'face' ? pieceB : pieceA
@@ -191,7 +200,7 @@ export function planJoint(
         best = dir
       }
     }
-    axisWorld = localDirToWorld(guide.state.transform, best)
+    jointAxis = localDirToWorld(guide.state.transform, best)
   }
 
   let moverId: string | null = null
@@ -202,20 +211,21 @@ export function planJoint(
     const piece = mover === 'a' ? pieceA : pieceB
     const feat = mover === 'a' ? featA : featB
     const t = piece.state.transform
-    const ownAxisWorld = mover === 'a' ? axisAWorld : axisBWorld
-    // Rotate so the mover's feature axis lies along the joint axis (when it has one),
-    // then translate so its feature point lands on the stationary feature point.
-    // Face-based linear joints skip the rotation — the mated faces stay flush
-    // and the piece just slides.
+    const own = mover === 'a' ? axisAWorld : axisBWorld
+    const stat = mover === 'a' ? axisBWorld : axisAWorld
     const stationaryRot = (mover === 'a' ? pieceB : pieceA).state.transform.rotation
-    const rotation =
-      ownAxisWorld && stationaryAxis && !faceLinear
-        ? twistSnap(
-            quatMultiply(quatFromTo(ownAxisWorld, axisWorld), t.rotation),
-            stationaryRot,
-            axisWorld,
-          )
-        : t.rotation
+    // Rotate the mover so its feature axis engages the stationary one — opposed
+    // for a face mate (flush), aligned otherwise — then square the roll so the
+    // parts sit parallel, then translate so the feature points coincide.
+    let rotation = t.rotation
+    if (own && stat) {
+      const target: Vec3 = faceMate ? [-stat[0], -stat[1], -stat[2]] : stat
+      rotation = twistSnap(
+        quatMultiply(quatFromTo(own, target), t.rotation),
+        stationaryRot,
+        normalize(target),
+      )
+    }
     const target = mover === 'a' ? worldB : worldA
     const position = sub(target, quatRotate(rotation, feat.point))
     moverId = piece.id
@@ -232,7 +242,7 @@ export function planJoint(
     anchorB: featB.point,
     // Expressed in A's frame AFTER any repositioning, so compile-time
     // local→world conversion reproduces the joint axis exactly.
-    axisA: worldDirToLocal(finalTa, axisWorld),
+    axisA: worldDirToLocal(finalTa, jointAxis),
   }
 
   if (type === 'linear' || type === 'cylindrical') {
@@ -240,7 +250,7 @@ export function planJoint(
     // stationary part (the shaft you slide along), or B as a default.
     const guide = mover === 'a' ? pieceB : mover === 'b' ? pieceA : pieceB
     const guideFeat = guide === pieceB ? featB : featA
-    const axisGuideLocal = worldDirToLocal(guide.state.transform, axisWorld)
+    const axisGuideLocal = worldDirToLocal(guide.state.transform, jointAxis)
     const half = halfExtentAlong(guide, axisGuideLocal)
     // Anchor's offset from the guide's center along the axis.
     const offset = dot(guideFeat.point, axisGuideLocal)
