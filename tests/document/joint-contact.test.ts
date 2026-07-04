@@ -1,5 +1,6 @@
 import { it, expect, describe } from 'vitest'
 import { makePiece } from '../../src/document/catalog'
+import { piecesOverlap } from '../../src/document/contact'
 import { snapToFeature } from '../../src/document/features'
 import { planJoint } from '../../src/document/joints'
 import { localDirToWorld, localToWorld, worldToLocal } from '../../src/document/math'
@@ -83,6 +84,43 @@ describe('planJoint: surface-contact landing', () => {
     const boreWorld = localToWorld(plan.moverTransform!, [0, 0, 0])
     expect(boreWorld[0]).toBeCloseTo(0, 3)
     expect(boreWorld[2]).toBeCloseTo(0, 3)
+  })
+
+  it('two ROTATED cubes hinged edge-to-edge swing clear instead of vetoing', () => {
+    // The user's case: yawed cubes, hinge clicked on two edges. Bringing the
+    // edge lines together at the current roll overlaps the bodies — the fix
+    // swings the mover about the hinge line (like opening a book) to the
+    // nearest clear angle. It must NOT report "would create a collision".
+    const yaw = (deg: number): [number, number, number, number] => {
+      const a = (deg * Math.PI) / 180
+      return [0, Math.sin(a / 2), 0, Math.cos(a / 2)]
+    }
+    const mk = (id: string, pos: Vec3, deg: number) => {
+      const p = makePiece('block', pos)
+      p.id = id
+      p.dimensions = { x: 0.9, y: 0.9, z: 0.9 }
+      p.state.transform.rotation = yaw(deg)
+      p.definition.transform.rotation = yaw(deg)
+      return p
+    }
+    const c1 = mk('r1', [-0.8, 0.45, 0], 25)
+    const c2 = mk('r2', [0.8, 0.45, 0], -35)
+    // Click near each cube's top edge facing the other cube.
+    const clickL = localToWorld(c1.state.transform, [0.44, 0.44, 0])
+    const clickR = localToWorld(c2.state.transform, [-0.44, 0.44, 0])
+    const featL = snapToFeature(c1, worldToLocal(c1.state.transform, clickL))
+    const featR = snapToFeature(c2, worldToLocal(c2.state.transform, clickR))
+    expect(featL.kind).toBe('edge')
+    expect(featR.kind).toBe('edge')
+    const plan = planJoint(c1, featL, c2, featR, 'pivot', 'fr', {
+      clickA: worldToLocal(c1.state.transform, clickL),
+      clickB: worldToLocal(c2.state.transform, clickR),
+      allPieces: [c1, c2],
+    })
+    expect(plan.veto).toBeUndefined()
+    expect(plan.fastener).not.toBeNull()
+    // Final pose does not interpenetrate the stationary cube.
+    expect(piecesOverlap(c2, plan.moverTransform!, c1, c1.state.transform)).toBe(false)
   })
 
   it('a landing that would bury the mover in a THIRD piece is vetoed', () => {

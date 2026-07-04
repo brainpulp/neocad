@@ -12,7 +12,7 @@ import {
   type Vec3,
 } from './types'
 import * as ops from './document'
-import { makePiece, nextFastenerId, pieceVolume } from './catalog'
+import { makePiece, nextFastenerId } from './catalog'
 import { MECHANISMS } from './mechanisms'
 import { worldDirToLocal, worldToLocal } from './math'
 import { snapToFeature, suggestJoint, type JointFeature } from './features'
@@ -313,14 +313,13 @@ export function createDocStore(initial: Document = emptyDocument()) {
         const a = doc.pieces.find((p) => p.id === f.partA)
         const b = doc.pieces.find((p) => p.id === f.partB)
         if (!a || !b) return
-        // Move the loose piece (both free → the smaller, matching the joint mover).
-        const move =
-          !a.anchored && (b.anchored || pieceVolume(a) <= pieceVolume(b))
-            ? a
-            : !b.anchored
-              ? b
-              : null
-        if (!move) return
+        // Same rule as joining: the part that CAME to the joint (B) moves; a
+        // fixed part never does. Both fixed → say so instead of doing nothing.
+        const move = !b.anchored ? b : !a.anchored ? a : null
+        if (!move) {
+          set({ jointNotice: 'Both parts are fixed — unfix one to adjust the joint.' })
+          return
+        }
         const { pivot, axis } = jointFrame(f, a)
         let tr = move.state.transform
         if (opts.rotate) tr = rotatePieceAboutAxis({ ...move, state: { transform: tr } }, pivot, axis, opts.rotate)

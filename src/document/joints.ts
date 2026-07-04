@@ -389,40 +389,68 @@ export function planJoint(
     }
   }
 
-  const moverTransform: Transform = { position, rotation }
-
   // The whole fastened chain rides along rigidly with the mover.
-  const deltaRot = quatMultiply(rotation, quatConjugate(tMov.rotation))
-  const deltaPos = sub(position, quatRotate(deltaRot, tMov.position))
-  const groupMoves = moverGroup.map((m) =>
-    m.id === moverPiece.id
-      ? { id: m.id, transform: moverTransform }
-      : {
-          id: m.id,
-          transform: {
-            position: add(quatRotate(deltaRot, m.state.transform.position), deltaPos),
-            rotation: quatMultiply(deltaRot, m.state.transform.rotation),
+  const buildMoves = (rot: Quat, pos: Vec3) => {
+    const deltaRot = quatMultiply(rot, quatConjugate(tMov.rotation))
+    const deltaPos = sub(pos, quatRotate(deltaRot, tMov.position))
+    return moverGroup.map((m) =>
+      m.id === moverPiece.id
+        ? { id: m.id, transform: { position: pos, rotation: rot } }
+        : {
+            id: m.id,
+            transform: {
+              position: add(quatRotate(deltaRot, m.state.transform.position), deltaPos),
+              rotation: quatMultiply(deltaRot, m.state.transform.rotation),
+            },
           },
-        },
-  )
+    )
+  }
+  const movingIds = new Set(moverGroup.map((p) => p.id))
+  const others = (opts.allPieces ?? [pieceA, pieceB]).filter((p) => !movingIds.has(p.id))
+  const collides = (moves: { id: string; transform: Transform }[]) => {
+    for (const move of moves) {
+      const movingPiece = moverGroup.find((p) => p.id === move.id)!
+      for (const other of others) {
+        if (piecesOverlap(movingPiece, move.transform, other, other.state.transform)) return true
+      }
+    }
+    return false
+  }
+
+  let groupMoves = buildMoves(rotation, position)
 
   // The veto: a landing that interpenetrates any piece outside the moving
   // chain is refused outright. (Touch and millimetre kisses pass —
   // piecesOverlap erodes by a margin.) Shaft-into-ring stays exempt: solid-
   // cylinder collision shapes make a gear on its axle a permanent overlap.
-  if (!ringPair) {
-    const movingIds = new Set(groupMoves.map((g) => g.id))
-    const others = (opts.allPieces ?? [pieceA, pieceB]).filter((p) => !movingIds.has(p.id))
-    for (const move of groupMoves) {
-      const movingPiece = moverGroup.find((p) => p.id === move.id)!
-      for (const other of others) {
-        if (piecesOverlap(movingPiece, move.transform, other, other.state.transform)) {
-          return { moverId: null, moverTransform: null, fastener: null, veto: 'collision' }
+  if (!ringPair && collides(groupMoves)) {
+    // An edge-to-edge hinge has a free roll about its own axis: before
+    // refusing, SWING the mover about the hinge line — like opening a book —
+    // and land at the nearest angle that clears. Two rotated cubes joined at
+    // their edges should hinge open, not error out.
+    let resolved = false
+    if (moverFeat.kind === 'edge' && statFeat.kind === 'edge') {
+      const hingePoint = localToWorld(tStat, statFeat.point)
+      for (let step = 1; step <= 12 && !resolved; step++) {
+        for (const sign of [1, -1]) {
+          const q = quatFromAxisAngle(jointAxis, sign * step * (Math.PI / 12))
+          const rot2 = quatMultiply(q, rotation)
+          const pos2 = add(hingePoint, quatRotate(q, sub(position, hingePoint)))
+          const gm2 = buildMoves(rot2, pos2)
+          if (!collides(gm2)) {
+            rotation = rot2
+            position = pos2
+            groupMoves = gm2
+            resolved = true
+            break
+          }
         }
       }
     }
+    if (!resolved) return { moverId: null, moverTransform: null, fastener: null, veto: 'collision' }
   }
 
+  const moverTransform: Transform = { position, rotation }
   const finalTa = mover === 'a' ? moverTransform : ta
 
   const fastener: Fastener = {

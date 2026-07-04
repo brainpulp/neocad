@@ -873,6 +873,8 @@ export class PhysicsWorld {
     constraint: any
     prevAngularDamping: number
     towCap: number
+    /** Max distance the hand may lead the grab point (bounds spring force). */
+    leash: number
   } | null = null
   // Bodies whose contacts should stay silent (the hand is a sensor but still
   // reports contacts to the listener).
@@ -912,19 +914,31 @@ export class PhysicsWorld {
     pcs.mPoint2 = new J.RVec3(gx, gy, gz)
     pcs.mMinDistance = 0
     pcs.mMaxDistance = 0
+    const mp = body.GetMotionProperties()
+    const mass = 1 / Math.max(1e-6, mp.GetInverseMass())
+    // A TIGHT critically-damped spring (~40 ms settle): pieces track the
+    // cursor closely instead of trailing half a screen behind. (A constant-
+    // stiffness spring was tried for mass feel — heavy slabs turned into
+    // freight trains that overshot the cursor; mass-scaled stiffness is the
+    // well-behaved regime, and mass is felt through the SPEED budget below.)
     const ss = pcs.mLimitsSpringSettings
-    ss.mFrequency = 4.5
+    ss.mFrequency = 8
     ss.mDamping = 1
     const constraint = pcs.Create(hand, body)
     this.physicsSystem.AddConstraint(constraint)
-    const mp = body.GetMotionProperties()
     const prevAngularDamping = mp.GetAngularDamping()
     // Carried pieces settle into a dangle instead of pendulum-swinging forever.
     mp.SetAngularDamping(1.5)
-    const mass = 1 / Math.max(1e-6, mp.GetInverseMass())
-    // ~60 kg·m/s of towing effort: 4 m/s for anything light, a crawl for slabs.
-    const towCap = Math.min(4, Math.max(0.5, 60 / mass))
-    this.pull = { pieceId, local, hand, constraint, prevAngularDamping, towCap }
+    // ~240 kg·m/s of towing effort: cork moves at mouse speed, a granite slab
+    // visibly crawls. (The old 60/mass with a 4 m/s ceiling made EVERYTHING
+    // trail the cursor identically — steel felt the same as cork.)
+    const towCap = Math.min(25, Math.max(1.2, 240 / mass))
+    // Bound the spring force to ~4.5 kN regardless of mass: the hand may only
+    // lead the grab point by what the spring turns into that force, so a
+    // jammed piece can't have its fasteners silently ripped out by the pull.
+    const k = mass * (2 * Math.PI * 8) ** 2
+    const leash = Math.min(0.25, 4500 / k)
+    this.pull = { pieceId, local, hand, constraint, prevAngularDamping, towCap, leash }
     this.bodyInterface.ActivateBody(id)
     return true
   }
@@ -969,13 +983,37 @@ export class PhysicsWorld {
     const dist = Math.hypot(dx, dy, dz)
     const maxStep = this.pull.towCap * dt
     const f = dist > maxStep ? maxStep / dist : 1
-    this.bodyInterface.MoveKinematic(
-      handId,
-      new J.RVec3(cur.GetX() + dx * f, cur.GetY() + dy * f, cur.GetZ() + dz * f),
-      new J.Quat(0, 0, 0, 1),
-      dt,
-    )
+    let hx = cur.GetX() + dx * f
+    let hy = cur.GetY() + dy * f
+    let hz = cur.GetZ() + dz * f
+    // LEASH: the hand never leads the actual grab point by more than the
+    // stored per-piece leash, so the spring force stays bounded (~4.5 kN).
+    // Without it a fast hand + jammed piece stretches the spring without
+    // limit — the silent fastener-ripper soft pulls were introduced to stop.
+    const LEASH = this.pull.leash
     const id = this.bodies.get(this.pull.pieceId)
+    if (id) {
+      const pos = this.bodyInterface.GetPosition(id)
+      const rot = this.bodyInterface.GetRotation(id)
+      const rel = quatRotate(
+        [rot.GetX(), rot.GetY(), rot.GetZ(), rot.GetW()],
+        this.pull.local,
+      )
+      const grabX = pos.GetX() + rel[0]
+      const grabY = pos.GetY() + rel[1]
+      const grabZ = pos.GetZ() + rel[2]
+      const lx = hx - grabX
+      const ly = hy - grabY
+      const lz = hz - grabZ
+      const lead = Math.hypot(lx, ly, lz)
+      if (lead > LEASH) {
+        const s = LEASH / lead
+        hx = grabX + lx * s
+        hy = grabY + ly * s
+        hz = grabZ + lz * s
+      }
+    }
+    this.bodyInterface.MoveKinematic(handId, new J.RVec3(hx, hy, hz), new J.Quat(0, 0, 0, 1), dt)
     if (id) this.bodyInterface.ActivateBody(id)
   }
 

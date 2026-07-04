@@ -72,6 +72,16 @@ Plans: `docs/superpowers/plans/` · Backlog: `docs/BACKLOG.md`
   (Tinkercad-style, .inspector-float, absent when nothing selected); sidebar
   unifies SCENE + WORKBENCH + FORCES + MATERIALS. 174 tests; browser-verified:
   the 4-cube 3-edge-hinge scenario lands flush side-by-side and survives Run.
+  BATCH 3: (1) edge-to-edge hinges on ROTATED cubes SWING-TO-CLEAR — if the
+  roll-preserving landing overlaps, planJoint rotates the mover about the
+  hinge line in 15° steps (nearest first) and lands at the first clear angle;
+  veto only if a full sweep fails. (2) adjustJoint uses the joining mover rule
+  (B moves, fixed never; both fixed → jointNotice instead of a silent no-op —
+  the "adjust buttons do nothing" report). (3) PULL-DRAG retuned: spring 4.5→
+  8 Hz (tight tracking), towCap 60/mass→240/mass capped 25 (cork at mouse
+  speed, granite crawls — the old 4 m/s ceiling made steel feel like cork),
+  force-bounding LEASH min(0.25, 4500/k) so jams still can't rip fasteners.
+  175 tests; browser-verified incl. REAL DOM clicks on the ADJUST buttons.
   NEXT: Opus batch per the spec — on-canvas adjust handles, generic hardware
   trio, weld-chain compiler collapse.
 - **M-JointEdit (Onshape-style joint adjust — actually moves the part) — DONE & browser-verified.**

@@ -1,13 +1,14 @@
-import { FASTENERS, STOCK, formatMass, pieceMass, pieceVolume } from '../document/catalog'
+import { FASTENERS, STOCK, formatMass, pieceMass } from '../document/catalog'
 import { flipJointAxis, swapJointEnds } from '../document/joints'
 import { isJointType, type Piece } from '../document/types'
 import { useDocStore, useStoreApi } from './storeContext'
 
-/** Name of the piece that ADJUST will move (the loose/smaller one). */
+/** Name of the piece that ADJUST will move — same rule as joining: the part
+ * that CAME to the joint (B) moves; a fixed part never does. */
 function moverName(a: Piece, b: Piece): string {
-  if (!a.anchored && (b.anchored || pieceVolume(a) <= pieceVolume(b))) return a.name
   if (!b.anchored) return b.name
-  return a.name
+  if (!a.anchored) return a.name
+  return '— both fixed'
 }
 
 interface DimMeta {
