@@ -45,6 +45,35 @@ together* as they move them. Build a first-class snap system:
   hardcoded). A modifier (e.g. hold Ctrl) temporarily disables snapping for free placement.
 - **Visual feedback** — snap guides/indicators (alignment lines, highlighted target
   feature) so the user sees WHAT they're snapping to before releasing.
+- **Connection points / snap markers (Lego-style)** — beyond geometric snapping,
+  parts can carry named **connectors** (stud/socket, tab/slot, plug/port) that snap
+  ONLY to compatible connectors on specific other parts. Markers are authored on
+  library parts (and addable by the user to any part) with a position, orientation,
+  and a mating "kind"; two compatible connectors within range click together and can
+  auto-fasten. This is what makes assembling fast — you don't align faces by hand,
+  the studs find their sockets. (Data lives on the part definition; the snap solver
+  prefers connector-matches over raw geometry snaps.)
+
+## Later — M-Library (rich, visual parts library)
+
+Today the palette is a short text list of stock. Grow it into a real library:
+- **Many more shape types** — a broad catalog of stock and primitives (structural
+  shapes, panels, rods, brackets, connectors, etc.), organized into categories.
+- **Dropdown/browser with thumbnails, not text** — each part shows as a rendered
+  thumbnail (small 3D preview or generated icon), so users pick by sight, Tinkercad-style.
+- Searchable / filterable; recently-used; favorites.
+
+## Later — M-Parametric (parametric shape generators)
+
+Tinkercad's "Shape Generators" applied to builders: parts defined by parameters that
+regenerate geometry live (and, where relevant, physics + connectors):
+- **Building elements** — stairs, roof, box (open/closed, wall thickness), pipe,
+  fittings (elbow/tee/coupling), windows, doors, frames.
+- **Basic mechanisms** — parametric versions of the mechanism library (gear with N
+  teeth, rack, hinge assembly, etc.).
+- Each exposes editable parameters in the inspector; changing a parameter rebuilds
+  the shape without losing joints/fasteners where possible. Connectors (see M-Snap)
+  can be generated at parametric positions (e.g. stud grid on a plate).
 
 ## Later — Guidance milestone (Rings 2 & 3) OR M3 (mechanisms)
 
