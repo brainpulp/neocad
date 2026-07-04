@@ -31,6 +31,29 @@ Plans: `docs/superpowers/plans/` · Backlog: `docs/BACKLOG.md`
 
 ## Status
 
+- **M-Materials1 (materials become physics: magnets, real bounce, optics) —
+  DONE & browser-verified.** Roadmap (4 phases, read before material work):
+  `docs/superpowers/specs/2026-07-04-materials-roadmap.md`. SHIPPED: (1)
+  MAGNETISM — `Material.magnetic: 'magnet'|'ferrous'`; new 'magnet' material;
+  steel/cast-iron ferrous; per-step force pass in PhysicsWorld.step():
+  point-DIPOLE magnet↔magnet (flip one → repels; side-by-side parallel
+  repels — real physics), induced magnet↔ferrous attraction; softened 1/r²,
+  260 N cap, 2 m range, roster rebuilt with the world so painting a piece
+  'magnet' energizes it. (2) REAL BOUNCE — the global MAX_RESTITUTION 0.4
+  clamp (which made rubber thud like steel) lifted to 0.88; rubber-soft ball
+  rebounds to ~0.73× drop height, steel ~0.16×. (3) OPTICS —
+  `Material.optics {transmission, ior, roughness}` → MeshPhysicalMaterial
+  transmission in PieceMesh: glass (ior 1.5), ice (1.31 frosty), acrylic.
+  (4) MIGRATION GOTCHA (real bug found): autosaved/opened docs carry their
+  OWN materials list — old docs had no magnet/optics fields, so the features
+  were silently dead. `mergeLibraryMaterials` (store.loadDoc) backfills new
+  fields + appends new library entries WITHOUT clobbering user edits. Also:
+  `setPieceVelocity` test/tool API. 181 tests; browser demos: steel balls
+  cluster to an anchored magnet bar (pine ball ignores it), bounce race,
+  see-through glass pane + translucent ice. HEADLESS NOTE: sim advances one
+  fixed step per FRAME — SwiftShader runs ~well below 60 fps, so demo waits
+  must budget wall-time ≫ sim-time. NEXT per roadmap: M-Soft (soft-body
+  volumes, plasticity, brittle shatter) → M-Heat → M-Liquids.
 - **M-JointContact (surface-contact joining — the literal-joints slice) — DONE &
   browser-verified.** THE MODEL (converged with user, spec:
   `docs/superpowers/specs/2026-07-04-joints-literal-redesign.md` — read it before

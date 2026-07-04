@@ -12,10 +12,10 @@ import { localDirToWorld, localToWorld, perpendicular, quatConjugate, quatRotate
 import type { Document, Fastener, Material, Piece, Rope, Vec3 } from '../document/types'
 
 const FALLBACK_DENSITY = 1000
-// Pieces should feel like workshop stock, not superballs: material restitution is
-// honest data (future FEA uses it) but the rigid-body sim caps how bouncy contacts
-// get so nothing ricochets off the bench.
-const MAX_RESTITUTION = 0.4
+// Material restitution is honest data and the sim now honors it: a soft-rubber
+// ball (0.85) genuinely bounces, steel (0.1) thuds. The cap only trims the
+// physically-absurd top end; velocity caps below keep even that stable.
+const MAX_RESTITUTION = 0.88
 const FALLBACK_FRICTION = 0.5
 // The bench/ground grips well so pieces settle instead of sliding away.
 const GROUND_FRICTION = 0.8
@@ -117,6 +117,22 @@ export class PhysicsWorld {
     for (const fastener of doc.fasteners) this.createFastener(fastener, doc)
     for (const rope of doc.ropes ?? []) this.createRope(rope, doc)
     if (onImpact) this.installContactListener(onImpact)
+
+    // Magnetism roster: magnets emit a dipole field along their long (local y)
+    // axis; ferrous pieces are pulled in. Rebuilt with the world, so painting
+    // a piece 'magnet' in the inspector is enough to energize it.
+    for (const piece of doc.pieces) {
+      const mat = doc.materials.find((m) => m.name === piece.material)
+      if (!mat?.magnetic) continue
+      const d = piece.dimensions
+      const volume =
+        STOCK[piece.stockType].primitive === 'sphere'
+          ? (4 / 3) * Math.PI * d.radius ** 3
+          : STOCK[piece.stockType].primitive === 'cylinder'
+            ? Math.PI * d.radius * d.radius * d.height
+            : (d.x ?? 0.1) * (d.y ?? 0.1) * (d.z ?? 0.1)
+      this.magnetics.push({ pieceId: piece.id, kind: mat.magnetic, volume })
+    }
   }
 
   // ---- Soft-body ropes ----
@@ -614,8 +630,94 @@ export class PhysicsWorld {
   // live velocities in the callback reports ~0 for every impact (silent).
   private preStepVel = new Map<number, [number, number, number]>()
 
+  // ---- Magnetism: magnets pull ferrous pieces and attract/repel each other
+  // by pole orientation (point-dipole model, softened and force-capped). ----
+  private magnetics: { pieceId: string; kind: 'magnet' | 'ferrous'; volume: number }[] = []
+
+  private applyMagnets(): void {
+    if (this.magnetics.length === 0) return
+    const J = this.Jolt
+    const RANGE = 2 // m — beyond this the field is negligible
+    const FMAX = 260 // N per pair — snappy pickup, no explosions
+    // Live poses.
+    const live = this.magnetics
+      .map((m) => {
+        const id = this.bodies.get(m.pieceId)
+        if (!id) return null
+        const p = this.bodyInterface.GetPosition(id)
+        const r = this.bodyInterface.GetRotation(id)
+        const axis = quatRotate([r.GetX(), r.GetY(), r.GetZ(), r.GetW()], [0, 1, 0])
+        return { ...m, id, pos: [p.GetX(), p.GetY(), p.GetZ()] as Vec3, axis }
+      })
+      .filter((m): m is NonNullable<typeof m> => m !== null)
+    const push = (id: any, f: Vec3, at: Vec3) => {
+      this.bodyInterface.AddForce(
+        id,
+        new J.Vec3(f[0], f[1], f[2]),
+        new J.RVec3(at[0], at[1], at[2]),
+        J.EActivation_Activate,
+      )
+    }
+    for (let i = 0; i < live.length; i++) {
+      for (let j = i + 1; j < live.length; j++) {
+        const A = live[i]
+        const B = live[j]
+        if (A.kind === 'ferrous' && B.kind === 'ferrous') continue // no field between them
+        const r: Vec3 = [B.pos[0] - A.pos[0], B.pos[1] - A.pos[1], B.pos[2] - A.pos[2]]
+        const dist = Math.hypot(r[0], r[1], r[2])
+        if (dist > RANGE || dist < 1e-6) continue
+        const d2 = dist * dist + 0.02 // softened so contact never divides by ~0
+        const rn: Vec3 = [r[0] / dist, r[1] / dist, r[2] / dist]
+        let f: Vec3
+        if (A.kind === 'magnet' && B.kind === 'magnet') {
+          // Point-dipole force: real attract/repel behavior — flip one magnet
+          // and the pair repels. m ∝ volume, along each magnet's local y pole.
+          const DIPOLE_K = 1.6e6
+          const m1 = A.axis.map((v) => v * A.volume) as Vec3
+          const m2 = B.axis.map((v) => v * B.volume) as Vec3
+          const d1 = m1[0] * rn[0] + m1[1] * rn[1] + m1[2] * rn[2]
+          const d12 = m1[0] * m2[0] + m1[1] * m2[1] + m1[2] * m2[2]
+          const dd2 = m2[0] * rn[0] + m2[1] * rn[1] + m2[2] * rn[2]
+          const k = DIPOLE_K / (d2 * d2)
+          f = [
+            k * (d1 * m2[0] + dd2 * m1[0] + d12 * rn[0] - 5 * d1 * dd2 * rn[0]),
+            k * (d1 * m2[1] + dd2 * m1[1] + d12 * rn[1] - 5 * d1 * dd2 * rn[1]),
+            k * (d1 * m2[2] + dd2 * m1[2] + d12 * rn[2] - 5 * d1 * dd2 * rn[2]),
+          ]
+        } else {
+          // Magnet ↔ ferrous: induced attraction, always toward the magnet.
+          // Tuned for PLAY: a hand-sized magnet visibly grabs steel from ~1 m
+          // (the force cap keeps close-range snaps from exploding).
+          const FERROUS_K = 3.5e5
+          const s = (FERROUS_K * A.volume * B.volume) / d2
+          f = [rn[0] * s, rn[1] * s, rn[2] * s] // pulls B toward... sign below
+          // Attraction: force on B points toward A (−rn), reaction on A +rn.
+          f = [-f[0], -f[1], -f[2]]
+        }
+        const mag = Math.hypot(f[0], f[1], f[2])
+        if (mag > FMAX) {
+          const s = FMAX / mag
+          f = [f[0] * s, f[1] * s, f[2] * s]
+        }
+        // f is the force ON B; equal and opposite on A.
+        push(B.id, f, B.pos)
+        push(A.id, [-f[0], -f[1], -f[2]], A.pos)
+      }
+    }
+  }
+
+  /** Set a piece's linear velocity directly (shove tools, tests). */
+  setPieceVelocity(pieceId: string, v: Vec3): void {
+    const id = this.bodies.get(pieceId)
+    if (!id) return
+    const J = this.Jolt
+    this.bodyInterface.SetLinearVelocity(id, new J.Vec3(v[0], v[1], v[2]))
+    this.bodyInterface.ActivateBody(id)
+  }
+
   /** Advance the simulation by a FIXED dt (callers always pass 1/60). */
   step(dt: number): void {
+    this.applyMagnets()
     if (this.contactListener) {
       this.preStepVel.clear()
       for (const id of this.bodies.values()) {

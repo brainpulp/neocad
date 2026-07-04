@@ -10,9 +10,11 @@ beforeAll(async () => {
   Jolt = await initJolt()
 })
 
-it('bounce is capped: a rubber ball dropped from 1m rebounds under half its drop height', () => {
+it('bounce is REAL but lossy: a rubber ball rebounds high yet below its drop height', () => {
+  // Restitution is honored now (M-Materials1) — the old global 0.4 cap made
+  // rubber thud like steel. Energy must still be lost: no perpetual bouncing.
   const doc = emptyDocument()
-  const ball = makePiece('ball', [0, 1, 0]) // rubber, raw restitution 0.8
+  const ball = makePiece('ball', [0, 1, 0]) // rubber, restitution 0.8
   doc.pieces = [ball]
   const world = new PhysicsWorld(Jolt, doc)
   let touched = false
@@ -25,8 +27,8 @@ it('bounce is capped: a rubber ball dropped from 1m rebounds under half its drop
     if (touched) reboundPeak = Math.max(reboundPeak, y)
   }
   expect(touched).toBe(true)
-  // Uncapped 0.8 restitution would rebound to ~0.64 of the drop; the cap keeps it low.
-  expect(reboundPeak).toBeLessThan(0.5)
+  expect(reboundPeak).toBeGreaterThan(0.45) // genuinely bouncy…
+  expect(reboundPeak).toBeLessThan(0.9) // …but never gains energy
   world.dispose()
 })
 

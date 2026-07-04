@@ -1,5 +1,6 @@
 import { createStore } from 'zustand/vanilla'
 import {
+  DEFAULT_MATERIALS,
   emptyDocument,
   isJointType,
   type Document,
@@ -211,6 +212,32 @@ export interface DocState {
  * the ground) back onto the surface. Runs when paused edit gestures commit, so a
  * resize/move can't leave a piece interpenetrating — Run would fling or trap it.
  */
+/**
+ * Bring an opened/restored document's materials up to date with the library:
+ * append library materials it lacks entirely, and backfill NEW physics fields
+ * (magnetic, optics) onto known library materials that predate them. User
+ * edits (density, color, renames) are never clobbered — only missing fields
+ * and missing entries are filled, so an old autosave gets working magnets and
+ * glass without losing its customizations.
+ */
+export function mergeLibraryMaterials(doc: Document): Document {
+  const have = new Map(doc.materials.map((m) => [m.name, m]))
+  let changed = false
+  const materials = doc.materials.map((m) => {
+    const lib = DEFAULT_MATERIALS.find((d) => d.name === m.name)
+    if (!lib) return m
+    const patch: Partial<Material> = {}
+    if (m.magnetic == null && lib.magnetic != null) patch.magnetic = lib.magnetic
+    if (m.optics == null && lib.optics != null) patch.optics = structuredClone(lib.optics)
+    if (Object.keys(patch).length === 0) return m
+    changed = true
+    return { ...m, ...patch }
+  })
+  const missing = DEFAULT_MATERIALS.filter((d) => !have.has(d.name))
+  if (missing.length > 0) changed = true
+  return changed ? { ...doc, materials: [...materials, ...structuredClone(missing)] } : doc
+}
+
 export function clampAboveSlab(doc: Document, onlyIds?: string[]): Document {
   const sb = doc.ground.sandbox
   let changed = false
@@ -880,7 +907,7 @@ export function createDocStore(initial: Document = emptyDocument()) {
         })),
       addMaterial: (material) => commit((doc) => ops.addMaterial(doc, material)),
       updateMaterial: (name, patch) => commit((doc) => ops.updateMaterial(doc, name, patch)),
-      loadDoc: (doc) => set({ doc, past: [], future: [] }),
+      loadDoc: (doc) => set({ doc: mergeLibraryMaterials(doc), past: [], future: [] }),
     }
   })
 }

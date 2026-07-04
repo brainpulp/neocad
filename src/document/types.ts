@@ -14,6 +14,10 @@ export interface Material {
   friction: number
   restitution: number
   color: string
+  /** 'magnet' pieces emit a dipole field; 'ferrous' pieces are attracted to it. */
+  magnetic?: 'magnet' | 'ferrous'
+  /** See-through rendering: transmission 0..1, index of refraction, surface roughness. */
+  optics?: { transmission: number; ior?: number; roughness?: number }
   // Reserved for the future FEA/failure evaluator. Unused by the M1 rigid-body sim,
   // declared now so adding the evaluator needs no document migration (spec §6c).
   youngsModulus?: number
@@ -183,26 +187,27 @@ export const DEFAULT_MATERIALS: Material[] = [
   { name: 'rubber', density: 1100, friction: 0.9, restitution: 0.8, color: '#2b2b2b' },
   // Plastics
   { name: 'plastic-abs', density: 1050, friction: 0.35, restitution: 0.3, color: '#e8b23a' },
-  { name: 'plastic-acrylic', density: 1180, friction: 0.3, restitution: 0.25, color: '#7fd0e8' },
+  { name: 'plastic-acrylic', density: 1180, friction: 0.3, restitution: 0.25, color: '#7fd0e8', optics: { transmission: 0.75, ior: 1.49, roughness: 0.12 } },
   { name: 'plastic-nylon', density: 1140, friction: 0.25, restitution: 0.3, color: '#e8e4da' },
   { name: 'plastic', density: 1200, friction: 0.3, restitution: 0.3, color: '#3b82c4' },
   { name: 'foam', density: 60, friction: 0.8, restitution: 0.4, color: '#eef0d8' },
   // Metals
-  { name: 'steel', density: 7850, friction: 0.4, restitution: 0.1, color: '#8a8f98' },
+  { name: 'steel', density: 7850, friction: 0.4, restitution: 0.1, color: '#8a8f98', magnetic: 'ferrous' },
+  { name: 'magnet', density: 7500, friction: 0.45, restitution: 0.05, color: '#c03a30', magnetic: 'magnet' },
   { name: 'aluminum', density: 2700, friction: 0.4, restitution: 0.1, color: '#c9cdd3' },
   { name: 'brass', density: 8500, friction: 0.35, restitution: 0.1, color: '#c9a53e' },
   { name: 'copper', density: 8960, friction: 0.35, restitution: 0.1, color: '#c07347' },
-  { name: 'cast-iron', density: 7200, friction: 0.45, restitution: 0.08, color: '#4c4f54' },
+  { name: 'cast-iron', density: 7200, friction: 0.45, restitution: 0.08, color: '#4c4f54', magnetic: 'ferrous' },
   { name: 'titanium', density: 4500, friction: 0.38, restitution: 0.1, color: '#a6adb8' },
   { name: 'lead', density: 11340, friction: 0.5, restitution: 0.03, color: '#5a5f6a' },
   // Mineral & brittle (rigid for now; the failure evaluator makes these breakable)
-  { name: 'glass', density: 2500, friction: 0.5, restitution: 0.05, color: '#bcd8e2', youngsModulus: 70e9, yieldStrength: 33e6 },
+  { name: 'glass', density: 2500, friction: 0.5, restitution: 0.05, color: '#bcd8e2', optics: { transmission: 0.9, ior: 1.5, roughness: 0.06 }, youngsModulus: 70e9, yieldStrength: 33e6 },
   { name: 'ceramic', density: 2400, friction: 0.6, restitution: 0.05, color: '#e8e3dc', youngsModulus: 300e9, yieldStrength: 25e6 },
   { name: 'concrete', density: 2400, friction: 0.8, restitution: 0.05, color: '#9b9c96' },
   { name: 'brick', density: 1900, friction: 0.75, restitution: 0.05, color: '#a85a42' },
   { name: 'granite', density: 2700, friction: 0.65, restitution: 0.08, color: '#75777c' },
   { name: 'marble', density: 2700, friction: 0.5, restitution: 0.08, color: '#d9d7d2' },
-  { name: 'ice', density: 917, friction: 0.03, restitution: 0.05, color: '#cfe8f5' },
+  { name: 'ice', density: 917, friction: 0.03, restitution: 0.05, color: '#cfe8f5', optics: { transmission: 0.55, ior: 1.31, roughness: 0.4 } },
   { name: 'cardboard', density: 250, friction: 0.6, restitution: 0.15, color: '#b98f5c' },
   { name: 'hemp', density: 900, friction: 0.6, restitution: 0.1, color: '#b09468' },
 ]

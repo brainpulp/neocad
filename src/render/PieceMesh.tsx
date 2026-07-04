@@ -51,6 +51,7 @@ export const PieceMesh = forwardRef<Mesh, Props>(function PieceMesh(
   ref,
 ) {
   const v = pieceVisual(piece, materials)
+  const optics = materials.find((m) => m.name === piece.material)?.optics
 
   // Mechanical stock renders a custom silhouette (teeth, groove, lobe) and the
   // wedge a triangular prism; rebuilt only when dimensions change, disposed when replaced.
@@ -106,12 +107,26 @@ export const PieceMesh = forwardRef<Mesh, Props>(function PieceMesh(
       onPointerOut={onPointerOut}
     >
       {geometryJsx}
-      <meshStandardMaterial
-        color={v.color}
-        map={textureFor(piece.material) ?? undefined}
-        roughness={0.75}
-        metalness={0.05}
-      />
+      {optics ? (
+        // See-through materials (glass, ice, acrylic): physically-based
+        // transmission with a real index of refraction — light bends through
+        // the volume instead of a flat alpha fade.
+        <meshPhysicalMaterial
+          color={v.color}
+          transmission={optics.transmission}
+          ior={optics.ior ?? 1.5}
+          roughness={optics.roughness ?? 0.1}
+          thickness={Math.min(0.3, maxExtent(piece) * 0.4)}
+          metalness={0}
+        />
+      ) : (
+        <meshStandardMaterial
+          color={v.color}
+          map={textureFor(piece.material) ?? undefined}
+          roughness={0.75}
+          metalness={0.05}
+        />
+      )}
       {showOutline && (
         // Inverted-hull outline: same geometry, expanded, back faces only.
         <mesh ref={outlineRef} scale={outlineScale(piece, rim)} raycast={() => null}>
