@@ -123,6 +123,7 @@ export function App() {
             <EmptyState />
             <JoinDialog />
             <MarqueeOverlay />
+            <JointNotice />
             <CoachMarks />
           </div>
           <div className="rightpanel">
@@ -135,6 +136,21 @@ export function App() {
         <StatusBar />
       </div>
     </StoreContext.Provider>
+  )
+}
+
+/** Advisory from a refused join ("both parts fixed" / "would collide"). */
+function JointNotice() {
+  const notice = useDocStore((s) => s.jointNotice)
+  const clear = useDocStore((s) => s.clearJointNotice)
+  if (!notice) return null
+  return (
+    <div className="joint-notice" role="alert">
+      <span>⚠ {notice}</span>
+      <button onClick={clear} aria-label="Dismiss">
+        ✕
+      </button>
+    </div>
   )
 }
 

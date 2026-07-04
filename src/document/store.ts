@@ -61,6 +61,8 @@ export interface JointAnchor {
   pieceId: string
   /** Snapped joint feature, piece-local (world pose derived from live State). */
   feature: JointFeature
+  /** Raw clicked point, piece-local — the contact landing seats the SURFACE here. */
+  local?: Vec3
 }
 
 export interface DocState {
@@ -103,6 +105,9 @@ export interface DocState {
   /** Click a piece at a world point with the joint tool. First click = A, second = B. */
   jointClick: (pieceId: string, point: Vec3) => void
   cancelJoint: () => void
+  /** Advisory from the last join attempt ("both parts fixed", "would collide"), or null. */
+  jointNotice: string | null
+  clearJointNotice: () => void
   /** Set when a held piece is dropped onto another: the user picks how to attach. */
   pendingJoin: PendingJoin | null
   /** Resolve the drop dialog: a fastener type joins the pieces; null means no fastener. */
@@ -277,7 +282,7 @@ export function createDocStore(initial: Document = emptyDocument()) {
       tool: 'transform',
       setTool: (tool) => {
         jointTypeExplicit = false
-        set({
+        set((s) => ({
           tool,
           activeTool: null,
           fastenTool: null,
@@ -285,7 +290,11 @@ export function createDocStore(initial: Document = emptyDocument()) {
           jointA: null,
           jointHover: null,
           ropeStart: null,
-        })
+          jointNotice: null,
+          // Joining is a paused activity: parts must hold still to be joined,
+          // and the post-landing adjust step needs a frozen world.
+          running: tool === 'joint' ? false : s.running,
+        }))
       },
       selectedFastenerId: null,
       selectFastener: (selectedFastenerId) =>
@@ -353,10 +362,13 @@ export function createDocStore(initial: Document = emptyDocument()) {
         if (tool !== 'joint') return
         const piece = doc.pieces.find((p) => p.id === pieceId)
         if (!piece) return
-        const feature = snapToFeature(piece, worldToLocal(piece.state.transform, point))
+        const local = worldToLocal(piece.state.transform, point)
+        const feature = snapToFeature(piece, local)
         if (!jointA || jointA.pieceId === pieceId) {
-          // First pick (or re-picking point A on the same piece).
-          const patch: Partial<DocState> = { jointA: { pieceId, feature } }
+          // First pick (or re-picking point A on the same piece). A suggestion
+          // may update what the type picker DISPLAYS — and whatever is
+          // displayed is exactly what gets applied at the second click.
+          const patch: Partial<DocState> = { jointA: { pieceId, feature, local }, jointNotice: null }
           if (!jointTypeExplicit) {
             const sug = suggestJoint(feature)
             if (sug !== 'weld') patch.jointType = sug
@@ -369,14 +381,26 @@ export function createDocStore(initial: Document = emptyDocument()) {
           set({ jointA: null })
           return
         }
-        let type = jointType
-        if (!jointTypeExplicit) {
-          const sug = suggestJoint(jointA.feature, feature)
-          if (sug !== 'weld') type = sug
-        }
-        // Move the loose piece so the two features coincide (axes aligned),
+        const type = jointType // WYSIWYG: displayed type = applied type, always.
+        // Land the second-clicked piece in surface contact against the first,
         // THEN constrain — the joint starts satisfied instead of yanking on Run.
-        const plan = planJoint(pieceA, jointA.feature, piece, feature, type, nextFastenerId())
+        const plan = planJoint(pieceA, jointA.feature, piece, feature, type, nextFastenerId(), {
+          clickA: jointA.local,
+          clickB: local,
+          allPieces: doc.pieces,
+        })
+        if (plan.veto || !plan.fastener) {
+          set({
+            jointA: null,
+            jointHover: null,
+            jointNotice:
+              plan.veto === 'fixed'
+                ? 'Both parts are fixed — unfix one to join them.'
+                : 'Solving this joint would create a collision — pick different spots.',
+          })
+          return
+        }
+        const fastener = plan.fastener
         commit((d) => {
           let next = d
           if (plan.moverId && plan.moverTransform) {
@@ -385,18 +409,21 @@ export function createDocStore(initial: Document = emptyDocument()) {
               state: { transform: structuredClone(plan.moverTransform) },
             })
           }
-          return ops.addFastener(next, plan.fastener)
+          return ops.addFastener(next, fastener)
         })
         // Joint placed: hand control straight back to the drag/Move tool.
         set((s) => ({
           jointA: null,
           jointHover: null,
+          jointNotice: null,
           jointType: type,
           tool: 'transform',
           worldEpoch: s.worldEpoch + 1,
         }))
       },
-      cancelJoint: () => set({ jointA: null, jointHover: null }),
+      cancelJoint: () => set({ jointA: null, jointHover: null, jointNotice: null }),
+      jointNotice: null,
+      clearJointNotice: () => set({ jointNotice: null }),
       pendingJoin: null,
       resolveJoin: (type) => {
         const { pendingJoin, doc } = get()
@@ -407,9 +434,30 @@ export function createDocStore(initial: Document = emptyDocument()) {
           if (isJointType(type)) {
             // Drop-created joints snap to features too: a gear dropped on an
             // axle slides onto the axle's centerline, not a guessed point.
-            const featA = snapToFeature(a, worldToLocal(a.state.transform, pendingJoin.point))
-            const featB = snapToFeature(b, worldToLocal(b.state.transform, pendingJoin.point))
-            const plan = planJoint(a, featA, b, featB, type, nextFastenerId())
+            // The TARGET is the part that stays (first slot); the dropped
+            // piece is the one being brought in (second slot = the mover).
+            const localDropped = worldToLocal(a.state.transform, pendingJoin.point)
+            const localTarget = worldToLocal(b.state.transform, pendingJoin.point)
+            const featDropped = snapToFeature(a, localDropped)
+            const featTarget = snapToFeature(b, localTarget)
+            const plan = planJoint(b, featTarget, a, featDropped, type, nextFastenerId(), {
+              clickA: localTarget,
+              clickB: localDropped,
+              allPieces: get().doc.pieces,
+            })
+            if (plan.veto || !plan.fastener) {
+              set({
+                pendingJoin: null,
+                running: resumeAfterJoin,
+                jointNotice:
+                  plan.veto === 'fixed'
+                    ? 'Both parts are fixed — unfix one to join them.'
+                    : 'Solving this joint would create a collision — pick different spots.',
+              })
+              resumeAfterJoin = false
+              return
+            }
+            const fastener = plan.fastener
             commit((d) => {
               let next = d
               if (plan.moverId && plan.moverTransform) {
@@ -418,7 +466,7 @@ export function createDocStore(initial: Document = emptyDocument()) {
                   state: { transform: structuredClone(plan.moverTransform) },
                 })
               }
-              return ops.addFastener(next, plan.fastener)
+              return ops.addFastener(next, fastener)
             })
             set((s) => ({ worldEpoch: s.worldEpoch + 1 }))
           } else {

@@ -33,11 +33,11 @@ it('a gear on a floating axle slides to the end stop and stays ON the shaft', ()
     definition: { transform: structuredClone(plan.moverTransform!) },
     state: { transform: structuredClone(plan.moverTransform!) },
   })
-  d = ops.addFastener(d, plan.fastener)
+  d = ops.addFastener(d, plan.fastener!)
 
   // Slide limits cover exactly the shaft: anchor at +0.2 of a ±0.3 shaft.
-  expect(plan.fastener.slideMin).toBeCloseTo(-0.5, 1)
-  expect(plan.fastener.slideMax).toBeCloseTo(0.1, 1)
+  expect(plan.fastener!.slideMin).toBeCloseTo(-0.5, 1)
+  expect(plan.fastener!.slideMax).toBeCloseTo(0.1, 1)
 
   const world = new PhysicsWorld(Jolt, d)
   for (let i = 0; i < 300; i++) world.step(1 / 60)

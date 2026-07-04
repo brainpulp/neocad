@@ -19,7 +19,7 @@ function gearOnAxle() {
   // Apply the mover transform so world math is consistent.
   gear.state.transform = structuredClone(plan.moverTransform!)
   gear.definition.transform = structuredClone(plan.moverTransform!)
-  return { gear, axle, f: plan.fastener }
+  return { gear, axle, f: plan.fastener! }
 }
 
 it('flipJointAxis reverses the axis and mirrors the slide range', () => {

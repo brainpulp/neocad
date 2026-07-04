@@ -1,4 +1,5 @@
-import { STOCK, pieceVolume } from './catalog'
+import { STOCK } from './catalog'
+import { piecesOverlap, surfaceAnchor } from './contact'
 import type { JointFeature } from './features'
 import {
   add,
@@ -14,6 +15,7 @@ import {
   scale,
   sub,
   worldDirToLocal,
+  worldToLocal,
   length,
 } from './math'
 import type { Fastener, FastenerType, Piece, Quat, Transform, Vec3 } from './types'
@@ -141,17 +143,29 @@ export interface JointPlan {
   /** Piece to reposition so the joint starts satisfied (null = nothing moves). */
   moverId: string | null
   moverTransform: Transform | null
-  fastener: Fastener
+  /** Null when the plan is vetoed (nothing to create). */
+  fastener: Fastener | null
+  /** Why the join was refused: both parts fixed, or the landing would collide. */
+  veto?: 'fixed' | 'collision'
 }
 
+
 /**
- * Plan a joint between two snapped features: pick the world axis, move one piece
- * so the two feature points coincide (and axes align), and produce the fastener
- * with piece-local anchors. Moving a piece BEFORE constraining means the solver
- * never has to yank parts together on Run.
+ * Plan a joint between two picked points (A first — the part that STAYS; B
+ * second — the part being brought in). See
+ * docs/superpowers/specs/2026-07-04-joints-literal-redesign.md.
  *
- * Which piece moves: the non-anchored one, preferring A (the first-picked piece —
- * "grab the gear, click the axle" moves the gear). Both anchored = neither moves.
+ * Landing rule: SURFACE CONTACT. The mover is rotated so its clicked surface
+ * faces the stationary clicked surface (outward normals opposed), rolled square
+ * (twistSnap), and translated so the two surface points kiss. Joining never
+ * buries a part: the old rule aligned feature AXES, which for shafts means
+ * "inside each other" (the dowel-swallowed-by-the-log bug).
+ *
+ * Exception — shaft into ring: a true bore feature meeting a cylinder shaft
+ * still engages co-axially (gear onto axle). Exempt from the collision veto
+ * because mechanical stock collides as solid cylinders until drilling lands.
+ *
+ * Veto: both parts fixed, or a landing that would interpenetrate any piece.
  */
 export function planJoint(
   pieceA: Piece,
@@ -160,17 +174,16 @@ export function planJoint(
   featB: JointFeature,
   type: FastenerType,
   fastenerId: string,
+  opts: { clickA?: Vec3; clickB?: Vec3; allPieces?: Piece[] } = {},
 ): JointPlan {
   const ta = pieceA.state.transform
   const tb = pieceB.state.transform
-  const worldA = localToWorld(ta, featA.point)
-  const worldB = localToWorld(tb, featB.point)
-  const axisAWorld = featA.axis ? localDirToWorld(ta, featA.axis) : null
-  const axisBWorld = featB.axis ? localDirToWorld(tb, featB.axis) : null
 
   // A spring tethers the two points exactly where they are — nothing moves,
   // the current separation becomes the rest length.
   if (type === 'spring') {
+    const worldA = localToWorld(ta, featA.point)
+    const worldB = localToWorld(tb, featB.point)
     return {
       moverId: null,
       moverTransform: null,
@@ -187,116 +200,153 @@ export function planJoint(
     }
   }
 
-  // Which piece relocates to satisfy the joint. A fixed piece never moves. When
-  // BOTH are free, move the SMALLER one — you bring the dowel to the drum, not
-  // the drum to the dowel (the old "first-clicked moves" rule flung big parts:
-  // clicking a cylinder first rotated and slid the whole cylinder onto a dowel).
-  const mover: 'a' | 'b' | null = pieceA.anchored
-    ? pieceB.anchored
-      ? null
-      : 'b'
-    : pieceB.anchored
-      ? 'a'
-      : pieceVolume(pieceA) <= pieceVolume(pieceB)
-        ? 'a'
-        : 'b'
+  // Who moves: the SECOND-clicked part comes to the first. A fixed part never
+  // moves; both fixed = no join (predictable beats clever — the old smaller-
+  // piece heuristic was a patch over unpredictability).
+  const mover: 'a' | 'b' | null = !pieceB.anchored ? 'b' : !pieceA.anchored ? 'a' : null
+  if (!mover) return { moverId: null, moverTransform: null, fastener: null, veto: 'fixed' }
 
-  const gap = sub(worldB, worldA)
-  const fallback: Vec3 = length(gap) < 1e-4 ? [0, 1, 0] : normalize(gap)
-  const stationaryAxis = mover === 'a' ? axisBWorld : axisAWorld
-  const moverAxis = mover === 'a' ? axisAWorld : axisBWorld
+  const moverPiece = mover === 'a' ? pieceA : pieceB
+  const statPiece = mover === 'a' ? pieceB : pieceA
+  const moverFeat = mover === 'a' ? featA : featB
+  const statFeat = mover === 'a' ? featB : featA
+  const tMov = moverPiece.state.transform
+  const tStat = statPiece.state.transform
 
-  // How the two features ENGAGE:
-  //  • two FACES mate flush — the mover's face turns to OPPOSE the stationary
-  //    face (normals anti-parallel) and the faces kiss. This is "stick two
-  //    boards together" and was the big clipping bug (they aligned parallel,
-  //    so the boards ended up back-to-back overlapping instead of face-to-face).
-  //  • everything else (shaft→bore, peg→face, end→end, edge→edge) engages
-  //    PARALLEL / co-axial (a dowel slides down a hole, a gear onto an axle).
-  const faceMate = featA.kind === 'face' && featB.kind === 'face'
+  // Shaft-into-ring: a bore meeting a cylinder shaft engages co-axially.
+  const isCyl = (p: Piece) => STOCK[p.stockType].primitive === 'cylinder'
+  const shaftKinds = new Set(['bore', 'axis', 'end'])
+  const ringPair =
+    (featA.kind === 'bore' || featB.kind === 'bore') &&
+    isCyl(pieceA) &&
+    isCyl(pieceB) &&
+    shaftKinds.has(featA.kind) &&
+    shaftKinds.has(featB.kind)
 
-  // The stored MOTION axis (what the joint actually moves along/around).
-  let jointAxis = stationaryAxis ?? moverAxis ?? fallback
+  let rotation: Quat
+  let position: Vec3
+  let anchorMover: Vec3
+  let anchorStat: Vec3
+  let jointAxis: Vec3
 
-  // A drawer sliding ON a face travels IN the face plane, not along its normal:
-  // pick the guide's longest in-plane axis for the slide direction.
-  const faceLinear = type === 'linear' && (featA.kind === 'face' || featB.kind === 'face')
-  if (faceLinear) {
-    const guide = featB.kind === 'face' ? pieceB : pieceA
-    const guideFeat = featB.kind === 'face' ? featB : featA
-    const n = guideFeat.axis ?? [0, 1, 0]
-    const dims = guide.dimensions
-    const candidates: [Vec3, number][] = [
-      [[1, 0, 0], dims.x ?? dims.radius * 2],
-      [[0, 1, 0], dims.y ?? dims.height ?? dims.radius * 2],
-      [[0, 0, 1], dims.z ?? dims.radius * 2],
-    ]
-    let best: Vec3 = [1, 0, 0]
-    let bestSize = -1
-    for (const [dir, size] of candidates) {
-      if (Math.abs(dot(dir, n)) > 0.9) continue // that's the normal itself
-      if (size > bestSize) {
-        bestSize = size
-        best = dir
-      }
-    }
-    jointAxis = localDirToWorld(guide.state.transform, best)
-  }
-
-  let moverId: string | null = null
-  let moverTransform: Transform | null = null
-  let finalTa = ta
-
-  if (mover) {
-    const piece = mover === 'a' ? pieceA : pieceB
-    const feat = mover === 'a' ? featA : featB
-    const t = piece.state.transform
-    const own = mover === 'a' ? axisAWorld : axisBWorld
-    const stat = mover === 'a' ? axisBWorld : axisAWorld
-    const stationaryRot = (mover === 'a' ? pieceB : pieceA).state.transform.rotation
-    // Rotate the mover so its feature axis engages the stationary one — opposed
-    // for a face mate (flush), aligned otherwise — then square the roll so the
-    // parts sit parallel, then translate so the feature points coincide.
-    let rotation = t.rotation
-    if (own && stat) {
-      const target: Vec3 = faceMate ? [-stat[0], -stat[1], -stat[2]] : stat
+  if (ringPair) {
+    // Legacy co-axial engagement: align the mover's feature axis with the
+    // stationary one, square the roll, and bring the feature points together.
+    const ownAxis = moverFeat.axis ? localDirToWorld(tMov, moverFeat.axis) : null
+    const statAxis = statFeat.axis ? localDirToWorld(tStat, statFeat.axis) : null
+    rotation = tMov.rotation
+    if (ownAxis && statAxis) {
       rotation = twistSnap(
-        quatMultiply(quatFromTo(own, target), t.rotation),
-        stationaryRot,
-        normalize(target),
+        quatMultiply(quatFromTo(ownAxis, statAxis), tMov.rotation),
+        tStat.rotation,
+        normalize(statAxis),
       )
     }
-    const target = mover === 'a' ? worldB : worldA
-    const position = sub(target, quatRotate(rotation, feat.point))
-    moverId = piece.id
-    moverTransform = { position, rotation }
-    if (mover === 'a') finalTa = moverTransform
+    const target = localToWorld(tStat, statFeat.point)
+    position = sub(target, quatRotate(rotation, moverFeat.point))
+    anchorMover = moverFeat.point
+    anchorStat = statFeat.point
+    jointAxis = statAxis ?? ownAxis ?? [0, 1, 0]
+  } else {
+    // SURFACE CONTACT landing.
+    const clickMov = (mover === 'a' ? opts.clickA : opts.clickB) ?? moverFeat.point
+    const clickStat = (mover === 'a' ? opts.clickB : opts.clickA) ?? statFeat.point
+    const sMov = surfaceAnchor(moverPiece, clickMov)
+    const sStat = surfaceAnchor(statPiece, clickStat)
+    const nStat = localDirToWorld(tStat, sStat.normal)
+    const nMov = localDirToWorld(tMov, sMov.normal)
+    const opposed: Vec3 = [-nStat[0], -nStat[1], -nStat[2]]
+    rotation = twistSnap(
+      quatMultiply(quatFromTo(nMov, opposed), tMov.rotation),
+      tStat.rotation,
+      nStat,
+    )
+    const statPoint = localToWorld(tStat, sStat.point)
+    position = sub(statPoint, quatRotate(rotation, sMov.point))
+    anchorMover = sMov.point
+    anchorStat = sStat.point
+    jointAxis = nStat
+
+    // A hinge/axle picked on an EDGE pivots about that edge line, not the
+    // contact normal — the door lands flush on the post AND swings on its edge.
+    const edgeSide = moverFeat.kind === 'edge' ? 'mover' : statFeat.kind === 'edge' ? 'stat' : null
+    if (edgeSide && (type === 'pivot' || type === 'cylindrical')) {
+      const edgeFeat = edgeSide === 'mover' ? moverFeat : statFeat
+      const edgeT = edgeSide === 'mover' ? { position, rotation } : tStat
+      const edgeAxis = localDirToWorld(edgeT, edgeFeat.axis ?? [0, 1, 0])
+      const inPlane = sub(edgeAxis, scale(nStat, dot(edgeAxis, nStat)))
+      if (length(inPlane) > 0.35) jointAxis = normalize(inPlane)
+      const edgePointWorld = localToWorld(edgeT, edgeFeat.point)
+      if (edgeSide === 'mover') {
+        anchorMover = edgeFeat.point
+        anchorStat = worldToLocal(tStat, edgePointWorld)
+      } else {
+        anchorStat = edgeFeat.point
+        anchorMover = worldToLocal({ position, rotation }, edgePointWorld)
+      }
+    }
+
+    // A slider on a surface travels IN the contact plane, not along its normal:
+    // pick the stationary piece's longest in-plane principal axis.
+    if (type === 'linear') {
+      const dims = statPiece.dimensions
+      const candidates: [Vec3, number][] = [
+        [[1, 0, 0], dims.x ?? dims.radius * 2],
+        [[0, 1, 0], dims.y ?? dims.height ?? dims.radius * 2],
+        [[0, 0, 1], dims.z ?? dims.radius * 2],
+      ]
+      let best: Vec3 | null = null
+      let bestSize = -1
+      for (const [dirLocal, size] of candidates) {
+        const w = localDirToWorld(tStat, dirLocal)
+        if (Math.abs(dot(w, nStat)) > 0.9) continue // that's the normal itself
+        if (size > bestSize) {
+          bestSize = size
+          best = w
+        }
+      }
+      if (best) jointAxis = normalize(sub(best, scale(nStat, dot(best, nStat))))
+    } else if (type === 'cylindrical' && !edgeSide && isCyl(statPiece)) {
+      // Spinning against a shaft's flank: the motion axis is the shaft's axis.
+      jointAxis = localDirToWorld(tStat, [0, 1, 0])
+    }
+
+    // The veto: a landing that interpenetrates any piece is refused outright.
+    // (Touch and millimetre kisses pass — piecesOverlap erodes by a margin.)
+    const moverT: Transform = { position, rotation }
+    const others = opts.allPieces ?? [pieceA, pieceB]
+    for (const other of others) {
+      if (other.id === moverPiece.id) continue
+      if (piecesOverlap(moverPiece, moverT, other, other.state.transform)) {
+        return { moverId: null, moverTransform: null, fastener: null, veto: 'collision' }
+      }
+    }
   }
+
+  const moverTransform: Transform = { position, rotation }
+  const finalTa = mover === 'a' ? moverTransform : ta
 
   const fastener: Fastener = {
     id: fastenerId,
     type,
     partA: pieceA.id,
     partB: pieceB.id,
-    anchorA: featA.point,
-    anchorB: featB.point,
+    anchorA: mover === 'a' ? anchorMover : anchorStat,
+    anchorB: mover === 'a' ? anchorStat : anchorMover,
     // Expressed in A's frame AFTER any repositioning, so compile-time
     // local→world conversion reproduces the joint axis exactly.
     axisA: worldDirToLocal(finalTa, jointAxis),
   }
 
   if (type === 'linear' || type === 'cylindrical') {
-    // End stops: the sliding anchor must stay within the guide piece — the
-    // stationary part (the shaft you slide along), or B as a default.
-    const guide = mover === 'a' ? pieceB : mover === 'b' ? pieceA : pieceB
-    const guideFeat = guide === pieceB ? featB : featA
-    const axisGuideLocal = worldDirToLocal(guide.state.transform, jointAxis)
-    const half = halfExtentAlong(guide, axisGuideLocal)
-    // Anchor's offset from the guide's center along the axis.
-    const offset = dot(guideFeat.point, axisGuideLocal)
+    // End stops: the sliding anchor must stay within the stationary piece (the
+    // guide you slide along).
+    const axisGuideLocal = worldDirToLocal(tStat, jointAxis)
+    const half = halfExtentAlong(statPiece, axisGuideLocal)
+    const offset = dot(anchorStat, axisGuideLocal)
     fastener.slideMin = -half - offset
     fastener.slideMax = half - offset
   }
 
-  return { moverId, moverTransform, fastener }
+  return { moverId: moverPiece.id, moverTransform, fastener }
 }

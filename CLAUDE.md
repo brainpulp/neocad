@@ -31,6 +31,32 @@ Plans: `docs/superpowers/plans/` · Backlog: `docs/BACKLOG.md`
 
 ## Status
 
+- **M-JointContact (surface-contact joining — the literal-joints slice) — DONE &
+  browser-verified.** THE MODEL (converged with user, spec:
+  `docs/superpowers/specs/2026-07-04-joints-literal-redesign.md` — read it before
+  ANY joint work): joining only BONDS; motion comes from HARDWARE (generic
+  hinge/bearing/slide parts, next milestone, Opus batch) or SHAPE (drilling,
+  later). THE SLICE: planJoint rewritten around SURFACE CONTACT — new
+  `document/contact.ts` has `surfaceAnchor` (nearest surface point + outward
+  normal per primitive) and a GJK boolean overlap test (support functions,
+  3 mm erosion margin so kiss-contact ≠ overlap). Landing = mover's clicked
+  surface normal opposed to stationary's, twist-snapped, clicked points kiss —
+  a dowel clicked onto a log's flank lands TANGENT on the barrel (was: buried
+  co-axially, the "trying to fix a dowel to a cylinder" screenshot). MOVER RULE:
+  second-clicked comes to the first; anchored never moves; both fixed → veto.
+  COLLISION VETO: landing that would interpenetrate ANY piece is refused
+  ("Solving this joint would create a collision"), `.joint-notice` toast in App.
+  Exemption: bore-meets-cylinder-shaft pairs (gear onto axle) stay co-axial and
+  unvetoed — mechanical stock collides as solid cylinders until drilling.
+  PAUSE-TO-JOIN: selecting the joint tool pauses (stays paused). WYSIWYG picker:
+  suggestions only update the DISPLAYED type at first click; displayed = applied
+  (old code silently substituted a suggestion at second click after tool
+  re-entry — the radio lied). Edge+pivot/cylindrical: lands flush via contact,
+  but the motion axis is the clicked EDGE line projected into the contact plane
+  (door swings on its edge, not the face normal). Slide stops now measured on
+  the stationary guide. Drop-attach (resolveJoin) reordered: target stays,
+  dropped piece moves. 170 tests. NEXT: Opus batch per the spec — on-canvas
+  adjust handles, generic hardware trio, weld-chain compiler collapse.
 - **M-JointEdit (Onshape-style joint adjust — actually moves the part) — DONE & browser-verified.**
   ROOT INSIGHT from researching Onshape mates: a mate isn't baked once — it has
   live offset/angle params that RE-SOLVE and MOVE the parts, plus a flip that
