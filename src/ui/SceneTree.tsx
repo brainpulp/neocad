@@ -11,10 +11,13 @@ export function SceneTree() {
   const selectedRopeId = useDocStore((s) => s.selectedRopeId)
 
   const nameOf = (id: string) => pieces.find((p) => p.id === id)?.name ?? '?'
+  const count = pieces.length + ropes.length + fasteners.length
 
   return (
-    <div className="scenetree">
-      <div className="label">SCENE</div>
+    // Collapsible so the object list doesn't visually run into the inspector
+    // below it (they read as one panel otherwise).
+    <details open className="scenetree palette-section">
+      <summary className="label">SCENE · {count}</summary>
       {pieces.length === 0 && <p className="muted">empty</p>}
       {pieces.map((p) => (
         <div
@@ -84,6 +87,6 @@ export function SceneTree() {
           </button>
         </div>
       ))}
-    </div>
+    </details>
   )
 }

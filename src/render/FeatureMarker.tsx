@@ -48,7 +48,7 @@ export function FeatureMarker({ anchor, color }: { anchor: JointAnchor; color: s
           <meshBasicMaterial color={color} transparent opacity={0.6} depthTest={false} />
         </mesh>
       )}
-      <Html center distanceFactor={8} style={{ pointerEvents: 'none' }}>
+      <Html center style={{ pointerEvents: 'none' }}>
         <div className="feature-badge">{anchor.feature.label}</div>
       </Html>
     </group>

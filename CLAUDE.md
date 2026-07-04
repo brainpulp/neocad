@@ -31,6 +31,15 @@ Plans: `docs/superpowers/plans/` · Backlog: `docs/BACKLOG.md`
 
 ## Status
 
+- **M-JointFix2 (mover-by-size, huge-label bug, collapsible SCENE) — DONE & browser-verified.**
+  BAD-JOINT ROOT CAUSE: with both pieces free planJoint moved the FIRST-clicked
+  one, so clicking a big cylinder first ROTATED+SLID the whole cylinder onto a
+  thin dowel (the clipping screenshot). Now both-free → the SMALLER piece
+  (pieceVolume) moves; anchored still wins. GIANT "End" LABEL: FeatureMarker/
+  HeldPiece/JointEditor Html used drei `distanceFactor` → balloons to fill the
+  screen when the camera is close; removed it (fixed screen size like the
+  weight chip). SCENE tree is now a collapsible `<details>` card (SCENE · N)
+  with its own border/background so it stops blending into the inspector.
 - **M-JointAlign (flush face-mate fix + flat 2D joint symbols) — DONE & browser-verified.**
   THE BIG JOINT BUG: joining two faces clipped instead of mating flush. Root
   cause in features.ts — a box face's `axis` was the unsigned axis LINE

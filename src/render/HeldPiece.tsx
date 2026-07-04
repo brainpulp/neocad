@@ -82,7 +82,7 @@ export function HeldPiece() {
         <mesh position={[gx, slabTop + top / 2, gz]}>
           <boxGeometry args={[hx * 2, top, hz * 2]} />
           <meshStandardMaterial color="#2f6df0" transparent opacity={0.18} depthWrite={false} />
-          <Html center distanceFactor={10} style={{ pointerEvents: 'none' }}>
+          <Html center style={{ pointerEvents: 'none' }}>
             <div className="join-badge">⊕ {mech.def.label}</div>
           </Html>
         </mesh>
@@ -122,7 +122,7 @@ export function HeldPiece() {
           opacity={0.45}
         />
         {proximityTarget && (
-          <Html center distanceFactor={8} style={{ pointerEvents: 'none' }}>
+          <Html center style={{ pointerEvents: 'none' }}>
             <div className="join-badge">⊕ {joinLabel}</div>
           </Html>
         )}

@@ -56,3 +56,18 @@ describe('face-to-face mate (the "stick two boards together" case)', () => {
     expect(Math.abs(axisWorld[1])).toBeCloseTo(1, 3)
   })
 })
+
+describe('joint mover choice (both pieces free)', () => {
+  it('moves the SMALLER piece — a dowel goes to the drum, not the drum to the dowel', () => {
+    const drum = makePiece('rod', [0, 0.3, 0])
+    drum.dimensions = { radius: 0.45, height: 0.5 } // big
+    const dowel = makePiece('dowel', [1, 0.3, 0])
+    dowel.dimensions = { radius: 0.02, height: 0.5 } // small
+    // Joint tool click order: drum first (A), dowel second (B).
+    const featA = snapToFeature(drum, worldToLocal(drum.state.transform, [0, 0.55, 0]))
+    const featB = snapToFeature(dowel, worldToLocal(dowel.state.transform, [1, 0.5, 0]))
+    const plan = planJoint(drum, featA, dowel, featB, 'cylindrical', 'f')
+    // The DOWEL relocates; the drum stays put despite being clicked first.
+    expect(plan.moverId).toBe(dowel.id)
+  })
+})

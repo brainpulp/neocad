@@ -66,7 +66,13 @@ body { font-family: system-ui, sans-serif; background: #f4f6f9; color: #22303f; 
   pointer-events: none; color: #66788c; font-size: 15px; opacity: 0.9; text-align: center; padding: 20px;
 }
 
-.scenetree { margin-bottom: 10px; border-bottom: 1px solid #dbe2ea; padding-bottom: 8px; }
+/* SCENE list: a distinct card so it doesn't blend into the inspector below. */
+.scenetree {
+  margin-bottom: 12px; padding: 6px 8px 8px; background: #f1f4f8;
+  border: 1px solid #dbe2ea; border-radius: 8px; max-height: 34vh; overflow: auto;
+}
+.scenetree > summary.label { margin-bottom: 4px; }
+.properties { border-top: 2px solid #e3e9f0; padding-top: 10px; }
 .tree-row {
   display: flex; align-items: center; gap: 6px; padding: 3px 6px; border-radius: 4px; cursor: pointer; font-size: 12px;
 }

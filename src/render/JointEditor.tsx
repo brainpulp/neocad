@@ -148,7 +148,7 @@ export function JointEditor() {
         <planeGeometry args={[1, 1]} />
         <meshBasicMaterial color="#1668e3" depthTest={false} toneMapped={false} />
       </mesh>
-      <Html center distanceFactor={8} style={{ pointerEvents: 'none' }}>
+      <Html center style={{ pointerEvents: 'none' }}>
         <div className="dim-bubble">{label}</div>
       </Html>
     </group>

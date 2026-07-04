@@ -1,4 +1,4 @@
-import { STOCK } from './catalog'
+import { STOCK, pieceVolume } from './catalog'
 import type { JointFeature } from './features'
 import {
   cross,
@@ -159,7 +159,19 @@ export function planJoint(
     }
   }
 
-  const mover: 'a' | 'b' | null = !pieceA.anchored ? 'a' : !pieceB.anchored ? 'b' : null
+  // Which piece relocates to satisfy the joint. A fixed piece never moves. When
+  // BOTH are free, move the SMALLER one — you bring the dowel to the drum, not
+  // the drum to the dowel (the old "first-clicked moves" rule flung big parts:
+  // clicking a cylinder first rotated and slid the whole cylinder onto a dowel).
+  const mover: 'a' | 'b' | null = pieceA.anchored
+    ? pieceB.anchored
+      ? null
+      : 'b'
+    : pieceB.anchored
+      ? 'a'
+      : pieceVolume(pieceA) <= pieceVolume(pieceB)
+        ? 'a'
+        : 'b'
 
   const gap = sub(worldB, worldA)
   const fallback: Vec3 = length(gap) < 1e-4 ? [0, 1, 0] : normalize(gap)
