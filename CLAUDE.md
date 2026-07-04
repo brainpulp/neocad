@@ -82,8 +82,14 @@ Plans: `docs/superpowers/plans/` · Backlog: `docs/BACKLOG.md`
   speed, granite crawls — the old 4 m/s ceiling made steel feel like cork),
   force-bounding LEASH min(0.25, 4500/k) so jams still can't rip fasteners.
   175 tests; browser-verified incl. REAL DOM clicks on the ADJUST buttons.
-  NEXT: Opus batch per the spec — on-canvas adjust handles, generic hardware
-  trio, weld-chain compiler collapse.
+  BATCH 4: edge-to-edge hinges land CENTERED (edge midpoint to midpoint — a
+  short edge centers on a long one; the click position ALONG an edge is
+  noise); "Offset along axis" row in the joint inspector (slider ±50 cm +
+  numeric, session-relative, applies deltas via adjustJoint) shifts the part
+  along the hinge/slide axis. Verified with real mouse drags on the slider.
+  176 tests. NEXT: Opus batch per the spec — on-canvas adjust handles,
+  generic hardware trio, weld-chain compiler collapse; motor invert toggle
+  queued in BACKLOG.
 - **M-JointEdit (Onshape-style joint adjust — actually moves the part) — DONE & browser-verified.**
   ROOT INSIGHT from researching Onshape mates: a mate isn't baked once — it has
   live offset/angle params that RE-SOLVE and MOVE the parts, plus a flip that

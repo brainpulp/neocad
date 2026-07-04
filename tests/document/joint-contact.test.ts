@@ -123,6 +123,34 @@ describe('planJoint: surface-contact landing', () => {
     expect(piecesOverlap(c2, plan.moverTransform!, c1, c1.state.transform)).toBe(false)
   })
 
+  it('edge-to-edge lands CENTERED: a short edge centers on a long one, click spots ignored', () => {
+    // Joist (1.2 m edge along z) and slat (0.1 m edge along z? no — its long
+    // edge along x). Use two blocks of different depth: clicks near OPPOSITE
+    // ends must still land the edges midpoint-to-midpoint.
+    const long = makePiece('block', [0, 0.45, 0])
+    long.id = 'long'
+    long.dimensions = { x: 0.9, y: 0.9, z: 2.0 } // long edge along z
+    long.anchored = true
+    const short = makePiece('block', [2, 0.45, 0])
+    short.id = 'short'
+    short.dimensions = { x: 0.9, y: 0.9, z: 0.6 }
+    // Click near +z end of long's top-right edge; near -z end of short's.
+    const clickLong: Vec3 = [0.44, 0.89, 0.9]
+    const clickShort: Vec3 = [2 - 0.44, 0.89, -0.28]
+    const featLong = snapToFeature(long, worldToLocal(long.state.transform, clickLong))
+    const featShort = snapToFeature(short, worldToLocal(short.state.transform, clickShort))
+    expect(featLong.kind).toBe('edge')
+    expect(featShort.kind).toBe('edge')
+    const plan = planJoint(long, featLong, short, featShort, 'pivot', 'fc', {
+      clickA: worldToLocal(long.state.transform, clickLong),
+      clickB: worldToLocal(short.state.transform, clickShort),
+      allPieces: [long, short],
+    })
+    expect(plan.veto).toBeUndefined()
+    // Centered along the edge direction (z): mover center lands at z = 0.
+    expect(plan.moverTransform!.position[2]).toBeCloseTo(0, 3)
+  })
+
   it('a landing that would bury the mover in a THIRD piece is vetoed', () => {
     const table = makePiece('panel', [0, 0.5, 0])
     table.anchored = true

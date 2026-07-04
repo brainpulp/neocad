@@ -108,6 +108,7 @@ Guidance (from spec §13 amendment):
 
 - Articulated fasteners: **hinge** (revolute), **slider** (prismatic), **ball/pin**, **rope/cable**
 - **Motors**: powered hinge/slider (axle/wheel) with targetVelocity + maxForce
+- **Motor invert-direction toggle** in the joint inspector's MOTOR section (queued 2026-07-04)
 - Demos: pulley lifting a weight; driven cart on a ramp
 - Incremental physics-world updates (avoid full rebuild on every structural change)
 - Rope state serialization (define node-position vs rest-length representation)

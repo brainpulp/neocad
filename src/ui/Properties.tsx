@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { FASTENERS, STOCK, formatMass, pieceMass } from '../document/catalog'
 import { flipJointAxis, swapJointEnds } from '../document/joints'
 import { isJointType, type Piece } from '../document/types'
@@ -186,6 +187,46 @@ export function Properties() {
   )
 }
 
+/**
+ * Slide the part along the joint axis, numerically. The value is a SESSION
+ * offset from wherever the part sat when the joint was selected (0 = as
+ * landed); dragging the slider or typing cm applies the DELTA as a real move.
+ */
+function OffsetRow({ fastenerId }: { fastenerId: string }) {
+  const store = useStoreApi()
+  const [offset, setOffset] = useState(0) // cm
+  const apply = (cm: number) => {
+    if (!Number.isFinite(cm)) return
+    const clamped = Math.max(-100, Math.min(100, cm))
+    const delta = (clamped - offset) / 100
+    if (delta !== 0) store.getState().adjustJoint(fastenerId, { slide: delta })
+    setOffset(clamped)
+  }
+  return (
+    <div className="dim-row" title="Shift the part along the joint axis (0 = where it landed)">
+      <div className="dim-label">Offset along axis</div>
+      <input
+        type="range"
+        aria-label="Offset along axis"
+        min={-50}
+        max={50}
+        step={0.5}
+        value={offset}
+        onChange={(e) => apply(parseFloat(e.target.value))}
+      />
+      <div className="dim-value">
+        <input
+          type="number"
+          value={Math.round(offset * 10) / 10}
+          step={0.5}
+          onChange={(e) => apply(parseFloat(e.target.value))}
+        />
+        <span className="dim-unit">cm</span>
+      </div>
+    </div>
+  )
+}
+
 /** Inspector for the selected joint: precise limits, flip and swap. */
 function JointProperties({ fastenerId }: { fastenerId: string }) {
   const store = useStoreApi()
@@ -235,6 +276,7 @@ function JointProperties({ fastenerId }: { fastenerId: string }) {
           Slide →
         </button>
       </div>
+      <OffsetRow fastenerId={f.id} />
       {joint && (
         <div className="btn-row">
           <button

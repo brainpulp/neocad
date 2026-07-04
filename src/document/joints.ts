@@ -315,14 +315,23 @@ export function planJoint(
     // its roll about the edge is the hinge's own degree of freedom. (The
     // surface-contact rule here would flip the mover face-onto-face and STACK
     // it on top — a tower of flipped cubes, not a hinge line.)
+    // The edges land CENTERED on each other (midpoint to midpoint): where you
+    // clicked ALONG an edge is noise, and a short edge should sit centered on
+    // a long one. The inspector's offset control shifts it afterwards.
+    const edgeMid = (feat: JointFeature): Vec3 => {
+      const ax = normalize(feat.axis ?? [0, 1, 0])
+      return sub(feat.point, scale(ax, dot(feat.point, ax)))
+    }
     const dStat = normalize(localDirToWorld(tStat, statFeat.axis ?? [0, 1, 0]))
     const dMovNow = normalize(localDirToWorld(tMov, moverFeat.axis ?? [0, 1, 0]))
     const target = dot(dMovNow, dStat) >= 0 ? dStat : ([-dStat[0], -dStat[1], -dStat[2]] as Vec3)
     rotation = quatMultiply(quatFromTo(dMovNow, target), tMov.rotation)
-    const statPoint = localToWorld(tStat, statFeat.point)
-    position = sub(statPoint, quatRotate(rotation, moverFeat.point))
-    anchorMover = moverFeat.point
-    anchorStat = statFeat.point
+    const statMid = edgeMid(statFeat)
+    const movMid = edgeMid(moverFeat)
+    const statPoint = localToWorld(tStat, statMid)
+    position = sub(statPoint, quatRotate(rotation, movMid))
+    anchorMover = movMid
+    anchorStat = statMid
     jointAxis = dStat
   } else {
     // SURFACE CONTACT landing.
@@ -430,7 +439,7 @@ export function planJoint(
     // their edges should hinge open, not error out.
     let resolved = false
     if (moverFeat.kind === 'edge' && statFeat.kind === 'edge') {
-      const hingePoint = localToWorld(tStat, statFeat.point)
+      const hingePoint = localToWorld(tStat, anchorStat)
       for (let step = 1; step <= 12 && !resolved; step++) {
         for (const sign of [1, -1]) {
           const q = quatFromAxisAngle(jointAxis, sign * step * (Math.PI / 12))
