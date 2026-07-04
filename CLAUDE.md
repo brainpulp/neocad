@@ -55,8 +55,25 @@ Plans: `docs/superpowers/plans/` · Backlog: `docs/BACKLOG.md`
   but the motion axis is the clicked EDGE line projected into the contact plane
   (door swings on its edge, not the face normal). Slide stops now measured on
   the stationary guide. Drop-attach (resolveJoin) reordered: target stays,
-  dropped piece moves. 170 tests. NEXT: Opus batch per the spec — on-canvas
-  adjust handles, generic hardware trio, weld-chain compiler collapse.
+  dropped piece moves. BATCH 2 (from the user's 4-cube hinge-chain repro):
+  (1) GJK DEGENERACY — box-box makes coplanar supports → zero-area simplexes →
+  zero direction, which the naive loop misread as "origin inside" → FALSE
+  "would create a collision" vetoes on good landings (and the opposite bug:
+  degenerate line case returned false on real overlap). Fixed with edgeDir
+  perpendicular fallbacks + collinear-triangle fallback + duplicate-support
+  termination; only the tetra containment may answer "overlap". (2) EDGE-TO-
+  EDGE landing: two clicked edges bring the edge LINES together (lid-on-chest
+  hinge), preserving the mover's roll (it's the hinge DOF) — the old surface
+  rule flipped cubes face-onto-face and STACKED them into towers. (3) GROUP
+  MOVE: relocating a fastened piece carries its whole chain rigidly
+  (connectedPieceIds + plan.groupMoves; veto tests every moved member vs
+  outsiders); joining two already-connected pieces fastens WHERE THEY STAND
+  (loop closing). (4) UI: inspector is now a FLOATING card over the viewport
+  (Tinkercad-style, .inspector-float, absent when nothing selected); sidebar
+  unifies SCENE + WORKBENCH + FORCES + MATERIALS. 174 tests; browser-verified:
+  the 4-cube 3-edge-hinge scenario lands flush side-by-side and survives Run.
+  NEXT: Opus batch per the spec — on-canvas adjust handles, generic hardware
+  trio, weld-chain compiler collapse.
 - **M-JointEdit (Onshape-style joint adjust — actually moves the part) — DONE & browser-verified.**
   ROOT INSIGHT from researching Onshape mates: a mate isn't baked once — it has
   live offset/angle params that RE-SOLVE and MOVE the parts, plus a flip that

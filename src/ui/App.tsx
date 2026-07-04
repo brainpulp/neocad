@@ -3,7 +3,7 @@ import { createDocStore } from '../document/store'
 import { StoreContext, useDocStore } from './storeContext'
 import { Toolbar } from './Toolbar'
 import { Palette } from './Palette'
-import { Properties } from './Properties'
+import { Properties, WorkbenchSettings } from './Properties'
 import { MaterialsEditor } from './MaterialsEditor'
 import { EnvPanel } from './EnvPanel'
 import { SceneTree } from './SceneTree'
@@ -125,10 +125,15 @@ export function App() {
             <MarqueeOverlay />
             <JointNotice />
             <CoachMarks />
+            {/* Tinkercad-style floating inspector: appears beside the sidebar
+                only while a piece/joint/rope is selected. */}
+            <div className="inspector-float">
+              <Properties />
+            </div>
           </div>
           <div className="rightpanel">
             <SceneTree />
-            <Properties />
+            <WorkbenchSettings />
             <EnvPanel />
             <MaterialsEditor />
           </div>

@@ -5,6 +5,7 @@ import {
   length,
   localToWorld,
   normalize,
+  perpendicular,
   scale,
   sub,
   worldDirToLocal,
@@ -176,23 +177,45 @@ function supportWorld(piece: Piece, t: Transform, margin: number): Support {
 
 const neg = (v: Vec3): Vec3 => [-v[0], -v[1], -v[2]]
 
-/** GJK boolean intersection between two convex supports. */
+/**
+ * GJK boolean intersection between two convex supports.
+ *
+ * Robustness rules (learned the hard way — box-vs-box produces DEGENERATE
+ * simplexes constantly: coplanar supports → zero-area triangles → zero
+ * search direction, which a naive loop misreads as "origin inside"):
+ *  • zero direction from a degenerate simplex = touching boundary → NOT overlap
+ *    (the veto is for burial; a kiss must pass);
+ *  • a repeated support point = no progress possible → origin unreachable → NOT overlap;
+ *  • only the tetrahedron containment test may answer "overlap".
+ */
 function gjkIntersect(sa: Support, sb: Support): boolean {
   const support = (d: Vec3): Vec3 => sub(sa(d), sb(neg(d)))
   let dir: Vec3 = [1, 0, 0]
   const pts: Vec3[] = [support(dir)]
   dir = neg(pts[0])
   for (let iter = 0; iter < 48; iter++) {
-    if (length(dir) < 1e-10) return true // origin on the simplex boundary
+    if (length(dir) < 1e-8) return false // degenerate/boundary: touch, not burial
     const dn = normalize(dir)
     const a = support(dn)
     if (dot(a, dn) < 1e-9) return false // can't reach past the origin
+    if (pts.some((p) => length(sub(p, a)) < 1e-9)) return false // no progress
     pts.push(a)
     const res = nearestSimplex(pts)
     if (res.contains) return true
     dir = res.dir
   }
-  return true // no convergence: treat as touching (conservative)
+  return false // no convergence after 48 iters = grazing case; let it pass
+}
+
+/**
+ * Direction from an edge toward the origin: (AB × AO) × AB. When AO is
+ * PARALLEL to AB the triple cross vanishes — that does NOT mean the origin is
+ * on the edge (it can be far away along the edge line); probe any
+ * perpendicular so the search keeps moving instead of stalling on a zero.
+ */
+function edgeDir(AB: Vec3, AO: Vec3): Vec3 {
+  const d = cross(cross(AB, AO), AB)
+  return length(d) > 1e-12 ? d : perpendicular(AB)
 }
 
 function lineCase(pts: Vec3[], A: Vec3, B: Vec3, AO: Vec3): { contains: false; dir: Vec3 } {
@@ -200,7 +223,7 @@ function lineCase(pts: Vec3[], A: Vec3, B: Vec3, AO: Vec3): { contains: false; d
   if (dot(AB, AO) > 0) {
     pts.length = 0
     pts.push(B, A)
-    return { contains: false, dir: cross(cross(AB, AO), AB) }
+    return { contains: false, dir: edgeDir(AB, AO) }
   }
   pts.length = 0
   pts.push(A)
@@ -211,11 +234,16 @@ function triangleCase(pts: Vec3[], A: Vec3, B: Vec3, C: Vec3, AO: Vec3): { conta
   const AB = sub(B, A)
   const AC = sub(C, A)
   const n = cross(AB, AC)
+  // Degenerate (collinear) triangle: fall back to the longer edge as a line.
+  if (length(n) < 1e-12) {
+    const far = length(sub(B, A)) >= length(sub(C, A)) ? B : C
+    return lineCase(pts, A, far, AO)
+  }
   if (dot(cross(n, AC), AO) > 0) {
     if (dot(AC, AO) > 0) {
       pts.length = 0
       pts.push(C, A)
-      return { contains: false, dir: cross(cross(AC, AO), AC) }
+      return { contains: false, dir: edgeDir(AC, AO) }
     }
     return lineCase(pts, A, B, AO)
   }

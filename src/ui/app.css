@@ -116,6 +116,20 @@ body { font-family: system-ui, sans-serif; background: #f4f6f9; color: #22303f; 
   display: flex; align-items: center; gap: 5px; color: #66788c; font-size: 12px; cursor: pointer;
 }
 
+/* Floating inspector (Tinkercad-style): a card over the viewport's right edge,
+   present only while something is selected. Scene/workbench/forces stay in the
+   sidebar so object properties never mix with environment settings. */
+.inspector-float {
+  position: absolute; top: 12px; right: 12px; width: 232px; max-height: calc(100% - 24px);
+  overflow: auto; z-index: 40;
+}
+.inspector-float:empty { display: none; }
+.inspector-float .properties {
+  background: #ffffff; border: 1px solid #dbe2ea; border-radius: 10px;
+  padding: 10px 12px; box-shadow: 0 8px 28px rgba(24, 39, 58, 0.16);
+  border-top: 1px solid #dbe2ea;
+}
+
 /* Advisory when a join is refused (both fixed / would collide). */
 .joint-notice {
   position: absolute; left: 50%; bottom: 60px; transform: translateX(-50%);

@@ -110,6 +110,27 @@ describe('piecesOverlap (GJK, shrink-tolerant)', () => {
     expect(piecesOverlap(rod, at([0, 1, 0]), dowel, at([0.27, 1, 0], rotX(90)))).toBe(false)
   })
 
+  it('a 180°-flipped cube stacked in exact kiss is NOT overlap (degenerate-simplex regression)', () => {
+    // This exact configuration silently vetoed real joins: coplanar supports
+    // made zero-area simplexes whose zero direction was misread as "inside".
+    const a = makePiece('block', [0, 0, 0])
+    a.dimensions = { x: 0.9, y: 0.9, z: 0.9 }
+    const b = makePiece('block', [0, 0, 0])
+    b.dimensions = { x: 0.9, y: 0.9, z: 0.9 }
+    const z180: Transform['rotation'] = [0, 0, 1, 0]
+    expect(piecesOverlap(a, at([-1.2, 0.5, -0.8]), b, at([-1.2, 1.4, -0.8], z180))).toBe(false)
+    // …while a genuinely sunk flipped cube IS overlap.
+    expect(piecesOverlap(a, at([-1.2, 0.5, -0.8]), b, at([-1.2, 0.9, -0.8], z180))).toBe(true)
+  })
+
+  it('nearly coincident equal cubes ARE overlap (origin-on-segment regression)', () => {
+    const a = makePiece('block', [0, 0, 0])
+    a.dimensions = { x: 0.9, y: 0.9, z: 0.9 }
+    const b = makePiece('block', [0, 0, 0])
+    b.dimensions = { x: 0.9, y: 0.9, z: 0.9 }
+    expect(piecesOverlap(a, at([0, 0, 0]), b, at([0.05, 0, 0]))).toBe(true)
+  })
+
   it('sphere vs box: touching no, sunk yes', () => {
     const ball = makePiece('ball', [0, 0, 0]) // r 0.15
     const box = makePiece('block', [0, 0, 0])

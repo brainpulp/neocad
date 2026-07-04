@@ -116,15 +116,9 @@ export function Properties() {
   if (!piece && selectedFastener) return <JointProperties fastenerId={selectedFastener.id} />
   if (!piece && selectedRope) return <RopeProperties ropeId={selectedRope.id} />
 
-  if (!piece) {
-    return (
-      <div className="properties">
-        <div className="label">PROPERTIES</div>
-        <p className="muted">Nothing selected</p>
-        <WorkbenchSettings />
-      </div>
-    )
-  }
+  // Floating inspector: only exists when something IS selected (Tinkercad-
+  // style). Workbench/scene settings live in the sidebar, not here.
+  if (!piece) return null
 
   const update = (patch: Partial<Piece>) => store.getState().updatePiece(piece.id, patch)
 
@@ -571,8 +565,8 @@ function RopeProperties({ ropeId }: { ropeId: string }) {
   )
 }
 
-/** Sandbox size, shown when nothing is selected. */
-function WorkbenchSettings() {
+/** Sandbox size — scene-level, lives in the sidebar with SCENE and FORCES. */
+export function WorkbenchSettings() {
   const store = useStoreApi()
   const sandbox = useDocStore((s) => s.doc.ground.sandbox)
   if (!sandbox) return null

@@ -18,14 +18,14 @@ function renderWithSelected() {
   return { store, p }
 }
 
-it('shows nothing-selected text when no piece is selected', () => {
+it('renders nothing when no piece is selected (floating inspector is absent)', () => {
   const store = createDocStore()
-  render(
+  const { container } = render(
     <StoreContext.Provider value={store}>
       <Properties />
     </StoreContext.Provider>,
   )
-  expect(screen.getByText(/Nothing selected/i)).toBeInTheDocument()
+  expect(container).toBeEmptyDOMElement()
 })
 
 it('toggling Fixed-in-place updates the selected piece', () => {

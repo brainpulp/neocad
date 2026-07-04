@@ -2,47 +2,43 @@ import { it, expect, describe } from 'vitest'
 import { makePiece } from '../../src/document/catalog'
 import type { JointFeature } from '../../src/document/features'
 import { planJoint } from '../../src/document/joints'
-import { quatRotate } from '../../src/document/math'
-import type { Vec3 } from '../../src/document/types'
+import { localDirToWorld, localToWorld } from '../../src/document/math'
 
 /**
- * Flush engagement: aligning only the primary joint axis leaves the mover free
- * to be rolled about it, so an edge-to-edge joint could engage visibly twisted.
- * planJoint must also snap that roll so the pieces end up parallel.
+ * Edge-to-edge hinges: the two clicked edge LINES come together (axes
+ * parallel, points coincident). The roll ABOUT the edge is the hinge's own
+ * degree of freedom, so the mover's tilt is PRESERVED — an open lid stays
+ * open; it doesn't get slammed flat by the landing.
  */
 const slatEdge: JointFeature = { kind: 'edge', label: 'Edge', point: [0, -0.01, 0.045], axis: [1, 0, 0] }
 const joistTopEdge: JointFeature = { kind: 'edge', label: 'Edge', point: [0, 0.0225, 0.045], axis: [1, 0, 0] }
 
-const worldAxisAligned = (rot: [number, number, number, number]) => {
-  for (const u of [
-    [1, 0, 0],
-    [0, 1, 0],
-    [0, 0, 1],
-  ] as Vec3[]) {
-    const w = quatRotate(rot, u)
-    expect(Math.max(...w.map(Math.abs))).toBeGreaterThan(0.999)
-  }
-}
-
-describe('twist-snap: joints engage flush', () => {
-  it('a slat twisted about the joint axis is squared up to the guide', () => {
+describe('edge-to-edge landing (hinge at the meeting edges)', () => {
+  it('a tilted slat keeps its tilt; its edge line lands ON the joist edge', () => {
     const joist = makePiece('joist', [0, 0.05, 0])
     joist.anchored = true
     const slat = makePiece('slat', [0, 0.5, 0.3])
-    // Twist 25° about world-x — the joint axis itself, so the primary
-    // axis alignment alone cannot remove it.
+    // Tilt 25° about world-x — the hinge axis itself: a legitimate open pose.
     const half = Math.sin((12.5 / 180) * Math.PI)
     slat.state.transform.rotation = [half, 0, 0, Math.cos((12.5 / 180) * Math.PI)]
     slat.definition.transform.rotation = [...slat.state.transform.rotation]
 
     const plan = planJoint(slat, slatEdge, joist, joistTopEdge, 'pivot', 'f_test')
     expect(plan.moverId).toBe(slat.id)
-    // Every principal axis of the planned pose lies along a world axis: the
-    // 25° roll was snapped away and the pieces engage parallel.
-    worldAxisAligned(plan.moverTransform!.rotation)
+    // Roll preserved: edge axes were already parallel, so rotation is unchanged.
+    const [qx, , , qw] = plan.moverTransform!.rotation
+    expect(qx).toBeCloseTo(half, 5)
+    expect(qw).toBeCloseTo(Math.cos((12.5 / 180) * Math.PI), 5)
+    // The clicked edge points coincide: slat edge lands on the joist top edge.
+    const slatEdgeWorld = localToWorld(plan.moverTransform!, slatEdge.point)
+    const joistEdgeWorld = localToWorld(joist.state.transform, joistTopEdge.point)
+    for (let i = 0; i < 3; i++) expect(slatEdgeWorld[i]).toBeCloseTo(joistEdgeWorld[i], 5)
+    // And the hinge axis is the edge line.
+    const axisWorld = localDirToWorld(plan.moverTransform!, plan.fastener!.axisA!)
+    expect(Math.abs(axisWorld[0])).toBeCloseTo(1, 5)
   })
 
-  it('a piece already square is not twisted by the snap', () => {
+  it('a piece already square is not twisted by the landing', () => {
     const joist = makePiece('joist', [0, 0.05, 0])
     joist.anchored = true
     const slat = makePiece('slat', [0, 0.5, 0.3]) // identity rotation

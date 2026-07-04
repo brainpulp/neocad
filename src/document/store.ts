@@ -17,6 +17,7 @@ import { MECHANISMS } from './mechanisms'
 import { worldDirToLocal, worldToLocal } from './math'
 import { snapToFeature, suggestJoint, type JointFeature } from './features'
 import {
+  connectedPieceIds,
   halfExtentAlong,
   jointFrame,
   planJoint,
@@ -384,10 +385,18 @@ export function createDocStore(initial: Document = emptyDocument()) {
         const type = jointType // WYSIWYG: displayed type = applied type, always.
         // Land the second-clicked piece in surface contact against the first,
         // THEN constrain — the joint starts satisfied instead of yanking on Run.
+        // Fastened chains move (and collide) as one.
+        const byId = new Map(doc.pieces.map((p) => [p.id, p]))
+        const group = (id: string) =>
+          connectedPieceIds(doc.fasteners, id)
+            .map((pid) => byId.get(pid))
+            .filter((p): p is Piece => !!p)
         const plan = planJoint(pieceA, jointA.feature, piece, feature, type, nextFastenerId(), {
           clickA: jointA.local,
           clickB: local,
           allPieces: doc.pieces,
+          groupA: group(pieceA.id),
+          groupB: group(piece.id),
         })
         if (plan.veto || !plan.fastener) {
           set({
@@ -401,12 +410,13 @@ export function createDocStore(initial: Document = emptyDocument()) {
           return
         }
         const fastener = plan.fastener
+        const moves = plan.groupMoves ?? []
         commit((d) => {
           let next = d
-          if (plan.moverId && plan.moverTransform) {
-            next = ops.updatePiece(next, plan.moverId, {
-              definition: { transform: structuredClone(plan.moverTransform) },
-              state: { transform: structuredClone(plan.moverTransform) },
+          for (const mv of moves) {
+            next = ops.updatePiece(next, mv.id, {
+              definition: { transform: structuredClone(mv.transform) },
+              state: { transform: structuredClone(mv.transform) },
             })
           }
           return ops.addFastener(next, fastener)
@@ -440,10 +450,18 @@ export function createDocStore(initial: Document = emptyDocument()) {
             const localTarget = worldToLocal(b.state.transform, pendingJoin.point)
             const featDropped = snapToFeature(a, localDropped)
             const featTarget = snapToFeature(b, localTarget)
+            const d0 = get().doc
+            const byId = new Map(d0.pieces.map((p) => [p.id, p]))
+            const group = (id: string) =>
+              connectedPieceIds(d0.fasteners, id)
+                .map((pid) => byId.get(pid))
+                .filter((p): p is Piece => !!p)
             const plan = planJoint(b, featTarget, a, featDropped, type, nextFastenerId(), {
               clickA: localTarget,
               clickB: localDropped,
-              allPieces: get().doc.pieces,
+              allPieces: d0.pieces,
+              groupA: group(b.id),
+              groupB: group(a.id),
             })
             if (plan.veto || !plan.fastener) {
               set({
@@ -458,12 +476,13 @@ export function createDocStore(initial: Document = emptyDocument()) {
               return
             }
             const fastener = plan.fastener
+            const moves = plan.groupMoves ?? []
             commit((d) => {
               let next = d
-              if (plan.moverId && plan.moverTransform) {
-                next = ops.updatePiece(next, plan.moverId, {
-                  definition: { transform: structuredClone(plan.moverTransform) },
-                  state: { transform: structuredClone(plan.moverTransform) },
+              for (const mv of moves) {
+                next = ops.updatePiece(next, mv.id, {
+                  definition: { transform: structuredClone(mv.transform) },
+                  state: { transform: structuredClone(mv.transform) },
                 })
               }
               return ops.addFastener(next, fastener)
