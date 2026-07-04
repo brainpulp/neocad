@@ -25,9 +25,11 @@ export const FASTENERS: Record<FastenerType, FastenerDef> = {
   glue: { label: 'Glue', constraint: 'fixed', hint: 'rigid join', strength: 1200 },
   bolt: { label: 'Bolt', constraint: 'fixed', hint: 'rigid, removable', strength: 6000 },
   nail: { label: 'Nail', constraint: 'fixed', hint: 'rigid, quick', strength: 2000 },
-  pivot: { label: 'Pivot', constraint: 'hinge', hint: 'spins around the axis' },
-  cylindrical: { label: 'Cylindrical', constraint: 'cylindrical', hint: 'spins + slides along the axis' },
-  linear: { label: 'Linear', constraint: 'slider', hint: 'slides along the axis' },
+  // Maker vocabulary (Tinkercad's): the schema ids stay pivot/cylindrical/linear
+  // for document compatibility — only the labels speak hardware.
+  pivot: { label: 'Hinge', constraint: 'hinge', hint: 'swings around the axis, like a door hinge' },
+  cylindrical: { label: 'Axle', constraint: 'cylindrical', hint: 'spins like a shaft in a bearing (sliding optional)' },
+  linear: { label: 'Slider', constraint: 'slider', hint: 'slides along a rail, like a drawer' },
   spring: { label: 'Spring', constraint: 'distance', hint: 'elastic tether — stiffness & damping' },
 }
 

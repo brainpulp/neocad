@@ -31,6 +31,29 @@ Plans: `docs/superpowers/plans/` · Backlog: `docs/BACKLOG.md`
 
 ## Status
 
+- **M-JointIdentity (maker renames + per-type 3D glyphs) — DONE & browser-verified.**
+  Labels now speak hardware (schema ids unchanged): Pivot→**Hinge**,
+  Cylindrical→**Axle**, Linear→**Slider**. FastenerMarker.tsx renders a distinct
+  screen-scaled 3D glyph per type, aligned per-frame to the live joint axis:
+  hinge = swing ARC whose sweep mirrors angleMin/Max + axis pin; slider =
+  travel arrow with end-stop ticks; axle = translucent bearing sleeve + spin
+  ring; weld = bead disc; bolt = hex head; nail = pin; glue = droplet; spring =
+  coil tether (world-space sibling mesh). Color language: orange = rigid bond,
+  blue = motion, green = elastic; selected = hot orange. Rigid badges X-RAY
+  (depthTest off) because they sit exactly at the mating interface and would
+  be buried between flush faces; motion glyphs stay depth-tested. Glyphs are
+  the click target for the joint inspector. NEXT (agreed in discussion, see
+  chat + this order): (1) gear/rack/screw COUPLINGS between existing joints —
+  Jolt's GearConstraint + RackAndPinionConstraint ARE exported by this binding
+  (verified at runtime); a coupling references two fastener ids + ratio;
+  (2) ball joint (SwingTwistConstraint, also exported); (3) pin-slot joint;
+  (4) mechanism library craft rebuild on top (real gear train, screw jack).
+  The JOINING-FLOW redesign (make A→type→B "easy and concrete", motion
+  preview ghosts before commit) is reserved for a Fable session per user.
+  DESIGN DOCTRINE from the joint discussion: joints must pass the "can a
+  maker point at the hardware?" test — Onshape's planar/parallel/tangent/
+  width mates are constraint-solver substitutes for physics and are
+  deliberately OMITTED (NeoCad's live physics already does their job).
 - **M-Placement (context-aware placement, de-anchored mechanisms, rope elasticity)
   — DONE & browser-verified.** STOCK GHOST now rests ON the surface under the
   cursor (rest height = floor + half-height-down, floor = slabTop on the bench
