@@ -54,6 +54,26 @@ together* as they move them. Build a first-class snap system:
   the studs find their sockets. (Data lives on the part definition; the snap solver
   prefers connector-matches over raw geometry snaps.)
 
+## Later — Modeling & sim aids (agreed in joint-process discussion, 2026-07-04)
+
+Workbench-literal helpers. None of these solve the joint process itself — they make
+assembling and diagnosing easier around it:
+- **Clamps** — temporary holds ("clamp this while I work, release before/on Run"),
+  distinct from the permanent Fix property.
+- **Tape measure** — click two points/faces → distance (and angle between faces).
+- **Clash highlight** — while paused, tint interpenetrating parts red where they
+  overlap; passive twin of the joint-time collision veto (same check, always on).
+- **Settle** — run physics briefly for ONE selected piece (everything else held) so
+  gravity seats it on the surface below; least-abstract alignment tool possible.
+- **Slow motion + single-step** — 10% speed toggle and step-one-frame; failures
+  happen in 200 ms and are unreadable at full speed. Fixed-dt makes this trivial.
+- **Strain coloring** — breakable-bond loads are already computed per step; color
+  fastener markers green→yellow→red live so builds show what's about to fail.
+- **Hold-to-test** — hold a key: sim runs; release: spring back to build pose.
+  One-keystroke try-it/fix-it loop, no Reset / recovery ladder.
+- **Center-of-gravity plumb bob** — CG projected on the ground vs the support
+  footprint: "will it tip?" answered before running.
+
 ## Later — M-Library (rich, visual parts library)
 
 Today the palette is a short text list of stock. Grow it into a real library:
