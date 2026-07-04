@@ -214,13 +214,20 @@ export function clampAboveSlab(doc: Document, onlyIds?: string[]): Document {
     // center still on the bench) would teleport upward on every unrelated edit.
     if (onlyIds && !onlyIds.includes(p.id)) return p
     const lift = (t: Transform): Transform | null => {
-      const down = worldDirToLocal({ position: [0, 0, 0], rotation: t.rotation }, [0, 1, 0])
-      const half = halfExtentAlong(p, down)
-      const onSlab =
+      const rot = { position: [0, 0, 0] as Vec3, rotation: t.rotation }
+      const half = halfExtentAlong(p, worldDirToLocal(rot, [0, 1, 0]))
+      // Rest on the slab if the piece's FOOTPRINT overlaps it — not just its
+      // centre. A big cylinder whose centre sits just past the bench edge still
+      // overhangs onto the slab; clamping it to the ground buried that overhang
+      // 5 cm into the stage (the "clipping to stage" bug). Physics tips a real
+      // overhang off when the sim runs; the clamp just keeps it out of the slab.
+      const hx = halfExtentAlong(p, worldDirToLocal(rot, [1, 0, 0]))
+      const hz = halfExtentAlong(p, worldDirToLocal(rot, [0, 0, 1]))
+      const overlapsSlab =
         sb != null &&
-        Math.abs(t.position[0]) <= sb.size / 2 &&
-        Math.abs(t.position[2]) <= sb.size / 2
-      const floor = onSlab ? sb.thickness : 0
+        Math.abs(t.position[0]) - hx < sb.size / 2 &&
+        Math.abs(t.position[2]) - hz < sb.size / 2
+      const floor = overlapsSlab ? sb.thickness : 0
       const delta = floor - (t.position[1] - half)
       if (delta <= 1e-4) return null
       return {

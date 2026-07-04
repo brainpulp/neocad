@@ -47,8 +47,14 @@ Plans: `docs/superpowers/plans/` · Backlog: `docs/BACKLOG.md`
   drag — exactly ONE solid mesh + ONE inverted-hull outline per selected piece,
   NO duplicate geometry. The "ghosts" are drop-shadows of lifted pieces or two
   genuinely-overlapping solids (bad joint / stacked placement), not a render
-  bug. NEXT: gear/rack/screw couplings; the A→type→B joining GESTURE stays a
-  Fable task.
+  bug. CLIP-TO-STAGE (the real "its clipping to stage" bug): clampAboveSlab's
+  on-slab test used the piece CENTRE, so a wide piece whose centre sits just
+  past the bench edge got clamped to the GROUND (y=0) while its body overhung
+  back onto the raised slab — sinking the overhang into the stage. Now the
+  floor is the slab top whenever the piece's FOOTPRINT (|x|−hx, |z|−hz) overlaps
+  the bench, ground only when fully clear; physics still tips a real overhang
+  off on Run. NEXT: gear/rack/screw couplings; the A→type→B joining GESTURE
+  stays a Fable task.
 - **M-JointFix2 (mover-by-size, huge-label bug, collapsible SCENE) — DONE & browser-verified.**
   BAD-JOINT ROOT CAUSE: with both pieces free planJoint moved the FIRST-clicked
   one, so clicking a big cylinder first ROTATED+SLID the whole cylinder onto a

@@ -64,4 +64,29 @@ describe('clampAboveSlab on edit commits', () => {
     })
     expect(s.getState().doc.pieces[0].state.transform.position[1]).toBeCloseTo(0.15, 3)
   })
+
+  it('a piece whose FOOTPRINT overhangs the bench edge rests on the slab, not sunk into it', () => {
+    // The "clipping to stage" bug: a wide piece whose CENTER sits just past the
+    // bench edge still overhangs the slab. Clamping it to the ground (y=0) buried
+    // that overhang inside the raised slab. Footprint overlap must win.
+    const s = createDocStore()
+    const sb = s.getState().doc.ground.sandbox!
+    const edge = sb.size / 2
+    // A rod lying on its side (radius 0.6) with its center 0.1 m past the edge:
+    // its body spans back well onto the slab, so it must rest ON the slab top.
+    const rod = makePiece('rod', [edge + 0.1, 0.5, 0])
+    rod.dimensions = { ...rod.dimensions, radius: 0.6, height: 1.2 }
+    // Lay it down so its circular cross-section (radius 0.6) is the footprint.
+    const lieDown: [number, number, number, number] = [0, 0, 0.7071, 0.7071]
+    rod.definition.transform.rotation = lieDown
+    rod.state.transform.rotation = lieDown
+    s.getState().addPiece(rod)
+    s.getState().movePieceTransform(rod.id, {
+      position: [edge + 0.1, 0, 0], // sunk to ground level
+      rotation: lieDown,
+    })
+    const p = s.getState().doc.pieces[0]
+    // Rests on the slab top (thickness) + its radius, never below the slab surface.
+    expect(p.state.transform.position[1]).toBeGreaterThanOrEqual(sb.thickness + 0.6 - 1e-3)
+  })
 })
