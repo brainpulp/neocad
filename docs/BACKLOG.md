@@ -27,6 +27,25 @@ Spec: `specs/2026-06-18-neocad-builder-ux-design.md` (M-Transform section). Need
 - Auto-pause-on-grab (default) + a "✋ Grab" live-intervene toggle
 - Scale maps to `dimensions`; move snaps to grid; commits to Definition
 
+## Next up — M-Snap (a real snapping system)
+
+Placement and drag are free-floating today (stock rests on the surface under the
+cursor, joints snap only at the moment of joining). Makers expect things to *click
+together* as they move them. Build a first-class snap system:
+- **Grid snap** — translation snaps to a settable grid (default off-grid free; the
+  fixed 0.1 m grid mentioned in tech debt should become user-controllable).
+- **Feature/face snap** — while dragging a piece, highlight and snap to nearby faces,
+  edges, ends, bores, and centerlines of other pieces (reuse `document/features.ts`
+  candidates) so parts seat flush without a joint.
+- **Angle snap** — rotation snaps to 15° (already in the rotate ring); extend to
+  drag-rotate and make the increment settable.
+- **Snap-to-piece surfaces** — dropping/moving a piece onto another lands it ON the
+  surface (co-planar), not intersecting — the placement ghost should preview the snap.
+- **Controls in the UI** — grid size, snap on/off, angle increment (currently all
+  hardcoded). A modifier (e.g. hold Ctrl) temporarily disables snapping for free placement.
+- **Visual feedback** — snap guides/indicators (alignment lines, highlighted target
+  feature) so the user sees WHAT they're snapping to before releasing.
+
 ## Later — Guidance milestone (Rings 2 & 3) OR M3 (mechanisms)
 
 Guidance (from spec §13 amendment):
