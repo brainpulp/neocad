@@ -31,6 +31,21 @@ Plans: `docs/superpowers/plans/` · Backlog: `docs/BACKLOG.md`
 
 ## Status
 
+- **R1 (rendering upgrade phase 1: PBR environment lighting) — DONE &
+  browser-verified.** Spec: `docs/superpowers/specs/2026-07-04-hollow-holes-
+  rendering.md` (R1 → M-Hollow → M-Cuts; M-Cuts' SDF core is a Fable slice).
+  `StudioEnvironment` in Scene.tsx bakes three's procedural RoomEnvironment to
+  a PMREM probe → `scene.environment` (image-based lighting, NO external HDR,
+  app stays self-contained); background stays white (Tinkercad look). ACES
+  filmic tone mapping on the Canvas `gl` prop. New `Material.finish
+  {metalness, roughness, clearcoat}` with honest per-family values (metals
+  metalness 1; plastics/glazed-ceramic/polished-marble get a clearcoat lobe;
+  rubbers/woods matte); PieceMesh routes clearcoat finishes through
+  MeshPhysicalMaterial, everything else through MeshStandardMaterial;
+  `mergeLibraryMaterials` backfills `finish` onto old saves. Hemisphere fill
+  0.85→0.45 + key light 1.15→0.9 so the envmap's ambient doesn't blow out
+  metals. Metals now read as polished steel/brass/copper, not clay. NEXT:
+  M-Hollow (wall thickness + open-face, exact compound collision).
 - **M-Materials1 (materials become physics: magnets, real bounce, optics) —
   DONE & browser-verified.** Roadmap (4 phases, read before material work):
   `docs/superpowers/specs/2026-07-04-materials-roadmap.md`. SHIPPED: (1)
