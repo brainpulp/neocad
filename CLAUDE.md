@@ -31,6 +31,25 @@ Plans: `docs/superpowers/plans/` · Backlog: `docs/BACKLOG.md`
 
 ## Status
 
+- **M-ConcentricAxle (co-axial joins at any diameter + auto-axle) — DONE &
+  browser-verified.** Choosing the Axle joint on two circular features (rims/
+  bores/centrelines of cylinders) now engages them CO-AXIAL regardless of
+  diameter — `concentricAxle` broadens the `ringPair` exemption in planJoint
+  (type==='cylindrical' + both cylinders + shaftKinds). Huge tolerance: any
+  radial gap is allowed and ANNOUNCED (`JointPlan.advisory` → jointNotice on
+  success: "Joined concentric — N cm radial gap"). AUTO-AXLE: clicking two
+  real HOLES (`isHoleFeature` = bore on a cylinder) with Axle drops in a shaft
+  — `planAxleThroughBores` aligns B co-axial to A, spaces them along the axis,
+  spawns a thin `axle` (radius = min bore ×0.4 capped 3 cm; length spans both;
+  steel) and gives each part a cylindrical joint to it ("Added an axle to
+  connect the two holes"). B must be free (returns null if anchored). Store
+  jointClick routes to the auto-axle path before planJoint. Also: adjustJoint
+  gained a NEW-collision veto (fold a hinged cube into its neighbour → refused,
+  gear-on-axle inherent overlap still allowed); hollow selection outline traces
+  the OUTER silhouette not the wall shell (no more orange flaps); paused
+  Alt-drag no longer both duplicates AND rotates; ✨ Demo button loads a
+  showcase scene; editable material physics in MaterialsEditor. 195 tests.
+  NEXT: M-Cuts (Fable slice) or M-Soft.
 - **M-Hollow (wall-thickness property: boxes + tubes) — DONE & browser-verified.**
   Spec: `docs/superpowers/specs/2026-07-04-hollow-holes-rendering.md`. New
   `Piece.hollow {thickness, openFace}`. ONE shared decomposition

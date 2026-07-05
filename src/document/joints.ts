@@ -154,6 +154,8 @@ export interface JointPlan {
   fastener: Fastener | null
   /** Why the join was refused: both parts fixed, or the landing would collide. */
   veto?: 'fixed' | 'collision'
+  /** Informational note on a SUCCESSFUL join (e.g. a concentric radial gap). */
+  advisory?: string
 }
 
 /** Piece ids transitively connected to `rootId` through fasteners (incl. root). */
@@ -277,12 +279,23 @@ export function planJoint(
   // Shaft-into-ring: a bore meeting a cylinder shaft engages co-axially.
   const isCyl = (p: Piece) => STOCK[p.stockType].primitive === 'cylinder'
   const shaftKinds = new Set(['bore', 'axis', 'end'])
-  const ringPair =
-    (featA.kind === 'bore' || featB.kind === 'bore') &&
+  // CONCENTRIC AXLE: choosing the Axle joint on two circular features (rims /
+  // bores / centrelines of cylinders) engages them co-axially regardless of
+  // diameter — a thin dowel and a fat tube share one centreline. Any radial
+  // gap is allowed (announced below); no need for exactly-matching diameters.
+  const concentricAxle =
+    type === 'cylindrical' &&
     isCyl(pieceA) &&
     isCyl(pieceB) &&
     shaftKinds.has(featA.kind) &&
     shaftKinds.has(featB.kind)
+  const ringPair =
+    concentricAxle ||
+    ((featA.kind === 'bore' || featB.kind === 'bore') &&
+      isCyl(pieceA) &&
+      isCyl(pieceB) &&
+      shaftKinds.has(featA.kind) &&
+      shaftKinds.has(featB.kind))
 
   let rotation: Quat
   let position: Vec3
@@ -484,5 +497,92 @@ export function planJoint(
     fastener.slideMax = half - offset
   }
 
-  return { moverId: moverPiece.id, moverTransform, groupMoves, fastener }
+  // Concentric join with mismatched diameters: announce the radial gap so the
+  // user knows the shaft isn't a snug fit (they can drop in an axle to fill it).
+  let advisory: string | undefined
+  if (concentricAxle) {
+    const gap = Math.abs((pieceA.dimensions.radius ?? 0) - (pieceB.dimensions.radius ?? 0))
+    if (gap > 0.005) advisory = `Joined concentric — ${(gap * 100).toFixed(1)} cm radial gap.`
+  }
+
+  return { moverId: moverPiece.id, moverTransform, groupMoves, fastener, advisory }
+}
+
+/** True when a click landed on a real hole (a toothed part's bore). */
+export function isHoleFeature(piece: Piece, feat: JointFeature): boolean {
+  return feat.kind === 'bore' && STOCK[piece.stockType].primitive === 'cylinder'
+}
+
+export interface AxlePlan {
+  /** The new axle piece to add (its id/material are filled by the caller). */
+  axle: Piece
+  /** Pose to move the second part to, so it sits co-axial and spaced along the axle. */
+  moverId: string
+  moverTransform: Transform
+  fasteners: [Fastener, Fastener]
+  advisory: string
+}
+
+/**
+ * Join two circular HOLES that have nothing between them by dropping in an
+ * axle: it aligns the second part co-axial with the first, spaces them along
+ * the shared centreline, spawns a thin shaft through both bores, and gives
+ * each part a cylindrical (spin) joint to the shaft. Part A stays put; B moves.
+ * Caller supplies a pre-made `axle` piece (id + material) to fill in.
+ */
+export function planAxleThroughBores(
+  pieceA: Piece,
+  featA: JointFeature,
+  pieceB: Piece,
+  featB: JointFeature,
+  axle: Piece,
+  f1Id: string,
+  f2Id: string,
+): AxlePlan | null {
+  if (pieceB.anchored) return null // B must be free to bring onto the axle
+  const tA = pieceA.state.transform
+  const tB = pieceB.state.transform
+  const axisWorld = normalize(localDirToWorld(tA, featA.axis ?? [0, 1, 0]))
+  const boreA = localToWorld(tA, featA.point)
+  const halfA = halfExtentAlong(pieceA, worldDirToLocal(tA, axisWorld))
+  const halfB = halfExtentAlong(pieceB, featB.axis ?? [0, 1, 0])
+  const spacing = halfA + halfB + 0.02
+  const boreBTarget = add(boreA, scale(axisWorld, spacing))
+
+  // Move B: align its bore axis to the shared axis, seat its bore at the target.
+  const bAxisWorld = normalize(localDirToWorld(tB, featB.axis ?? [0, 1, 0]))
+  const rotB = quatMultiply(quatFromTo(bAxisWorld, axisWorld), tB.rotation)
+  const posB = sub(boreBTarget, quatRotate(rotB, featB.point))
+  const moverTransform: Transform = { position: posB, rotation: rotB }
+
+  // The axle: a thin shaft centred between the two bores, along the axis.
+  const rA = pieceA.dimensions.radius ?? 0.05
+  const rB = pieceB.dimensions.radius ?? 0.05
+  const radius = Math.max(0.008, Math.min(0.03, Math.min(rA, rB) * 0.4))
+  const length = spacing + halfA + halfB + 0.04
+  const center = add(boreA, scale(axisWorld, spacing / 2))
+  const axleRot = quatFromTo([0, 1, 0], axisWorld) // axle spins about local +y
+  axle.dimensions = { radius, height: length }
+  axle.definition.transform = { position: [...center], rotation: [...axleRot] }
+  axle.state.transform = { position: [...center], rotation: [...axleRot] }
+
+  const halfLen = length / 2
+  const mk = (id: string, part: Piece, feat: JointFeature, y: number): Fastener => ({
+    id,
+    type: 'cylindrical',
+    partA: axle.id,
+    partB: part.id,
+    anchorA: [0, y, 0],
+    anchorB: [...feat.point],
+    axisA: [0, 1, 0],
+    slideMin: -halfLen,
+    slideMax: halfLen,
+  })
+  return {
+    axle,
+    moverId: pieceB.id,
+    moverTransform,
+    fasteners: [mk(f1Id, pieceA, featA, -spacing / 2), mk(f2Id, pieceB, featB, spacing / 2)],
+    advisory: 'Added an axle to connect the two holes.',
+  }
 }

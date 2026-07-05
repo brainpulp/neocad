@@ -21,7 +21,9 @@ import { snapToFeature, suggestJoint, type JointFeature } from './features'
 import {
   connectedPieceIds,
   halfExtentAlong,
+  isHoleFeature,
   jointFrame,
+  planAxleThroughBores,
   planJoint,
   rotatePieceAboutAxis,
   slidePieceAlongAxis,
@@ -425,6 +427,45 @@ export function createDocStore(initial: Document = emptyDocument()) {
           return
         }
         const type = jointType // WYSIWYG: displayed type = applied type, always.
+        // AUTO-AXLE: choosing Axle on two holes with nothing between them drops
+        // in a shaft that connects them (and announces it).
+        if (
+          type === 'cylindrical' &&
+          isHoleFeature(pieceA, jointA.feature) &&
+          isHoleFeature(piece, feature)
+        ) {
+          const axle = makePiece('axle', [0, 0, 0])
+          const ax = planAxleThroughBores(
+            pieceA,
+            jointA.feature,
+            piece,
+            feature,
+            axle,
+            nextFastenerId(),
+            nextFastenerId(),
+          )
+          if (ax) {
+            commit((d) => {
+              let next = ops.updatePiece(d, ax.moverId, {
+                definition: { transform: structuredClone(ax.moverTransform) },
+                state: { transform: structuredClone(ax.moverTransform) },
+              })
+              next = ops.addPiece(next, ax.axle)
+              next = ops.addFastener(next, ax.fasteners[0])
+              next = ops.addFastener(next, ax.fasteners[1])
+              return next
+            })
+            set((s) => ({
+              jointA: null,
+              jointHover: null,
+              jointNotice: ax.advisory,
+              jointType: type,
+              tool: 'transform',
+              worldEpoch: s.worldEpoch + 1,
+            }))
+            return
+          }
+        }
         // Land the second-clicked piece in surface contact against the first,
         // THEN constrain — the joint starts satisfied instead of yanking on Run.
         // Fastened chains move (and collide) as one.
@@ -463,11 +504,12 @@ export function createDocStore(initial: Document = emptyDocument()) {
           }
           return ops.addFastener(next, fastener)
         })
-        // Joint placed: hand control straight back to the drag/Move tool.
+        // Joint placed: hand control straight back to the drag/Move tool. A
+        // successful join may still carry an advisory (e.g. a concentric gap).
         set((s) => ({
           jointA: null,
           jointHover: null,
-          jointNotice: null,
+          jointNotice: plan.advisory ?? null,
           jointType: type,
           tool: 'transform',
           worldEpoch: s.worldEpoch + 1,
