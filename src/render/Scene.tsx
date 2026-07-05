@@ -56,7 +56,12 @@ function structureKey(doc: import('../document/types').Document): string {
     )
     .join('|')
   const sb = doc.ground.sandbox
-  return `${pieces}#${fasteners}#r:${ropes}#sb:${sb ? `${sb.size},${sb.thickness}` : 'none'}`
+  // Material physics (friction/bounce/magnetism) feed body creation and the
+  // magnet roster, so editing them must rebuild the world — include a digest.
+  const mats = doc.materials
+    .map((m) => `${m.name}:${m.friction},${m.restitution},${m.magnetic ?? ''}`)
+    .join('|')
+  return `${pieces}#${fasteners}#r:${ropes}#sb:${sb ? `${sb.size},${sb.thickness}` : 'none'}#m:${mats}`
 }
 
 /** Param along a line (origin, unit dir) closest to a pointer ray. */
