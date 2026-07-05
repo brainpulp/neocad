@@ -18,6 +18,8 @@ export interface Material {
   magnetic?: 'magnet' | 'ferrous'
   /** See-through rendering: transmission 0..1, index of refraction, surface roughness. */
   optics?: { transmission: number; ior?: number; roughness?: number }
+  /** PBR surface finish: how the material catches environment light. */
+  finish?: { metalness?: number; roughness?: number; clearcoat?: number }
   // Reserved for the future FEA/failure evaluator. Unused by the M1 rigid-body sim,
   // declared now so adding the evaluator needs no document migration (spec §6c).
   youngsModulus?: number
@@ -180,33 +182,33 @@ export const DEFAULT_MATERIALS: Material[] = [
   { name: 'bamboo', density: 700, friction: 0.45, restitution: 0.25, color: '#d6c087' },
   { name: 'cork', density: 240, friction: 0.7, restitution: 0.3, color: '#c99e63' },
   { name: 'wood', density: 500, friction: 0.5, restitution: 0.2, color: '#b3854a' },
-  // Rubbers
-  { name: 'rubber-soft', density: 950, friction: 1.0, restitution: 0.85, color: '#3a3a3e' },
-  { name: 'rubber-hard', density: 1200, friction: 0.85, restitution: 0.6, color: '#2b2b2b' },
-  { name: 'rubber-tire', density: 1100, friction: 0.95, restitution: 0.7, color: '#1e1e22' },
-  { name: 'rubber', density: 1100, friction: 0.9, restitution: 0.8, color: '#2b2b2b' },
-  // Plastics
-  { name: 'plastic-abs', density: 1050, friction: 0.35, restitution: 0.3, color: '#e8b23a' },
+  // Rubbers (matte, non-metal — soak up light)
+  { name: 'rubber-soft', density: 950, friction: 1.0, restitution: 0.85, color: '#3a3a3e', finish: { metalness: 0, roughness: 0.95 } },
+  { name: 'rubber-hard', density: 1200, friction: 0.85, restitution: 0.6, color: '#2b2b2b', finish: { metalness: 0, roughness: 0.9 } },
+  { name: 'rubber-tire', density: 1100, friction: 0.95, restitution: 0.7, color: '#1e1e22', finish: { metalness: 0, roughness: 0.95 } },
+  { name: 'rubber', density: 1100, friction: 0.9, restitution: 0.8, color: '#2b2b2b', finish: { metalness: 0, roughness: 0.92 } },
+  // Plastics (clearcoat gives the injection-moulded sheen)
+  { name: 'plastic-abs', density: 1050, friction: 0.35, restitution: 0.3, color: '#e8b23a', finish: { metalness: 0, roughness: 0.4, clearcoat: 0.6 } },
   { name: 'plastic-acrylic', density: 1180, friction: 0.3, restitution: 0.25, color: '#7fd0e8', optics: { transmission: 0.75, ior: 1.49, roughness: 0.12 } },
-  { name: 'plastic-nylon', density: 1140, friction: 0.25, restitution: 0.3, color: '#e8e4da' },
-  { name: 'plastic', density: 1200, friction: 0.3, restitution: 0.3, color: '#3b82c4' },
-  { name: 'foam', density: 60, friction: 0.8, restitution: 0.4, color: '#eef0d8' },
-  // Metals
-  { name: 'steel', density: 7850, friction: 0.4, restitution: 0.1, color: '#8a8f98', magnetic: 'ferrous' },
-  { name: 'magnet', density: 7500, friction: 0.45, restitution: 0.05, color: '#c03a30', magnetic: 'magnet' },
-  { name: 'aluminum', density: 2700, friction: 0.4, restitution: 0.1, color: '#c9cdd3' },
-  { name: 'brass', density: 8500, friction: 0.35, restitution: 0.1, color: '#c9a53e' },
-  { name: 'copper', density: 8960, friction: 0.35, restitution: 0.1, color: '#c07347' },
-  { name: 'cast-iron', density: 7200, friction: 0.45, restitution: 0.08, color: '#4c4f54', magnetic: 'ferrous' },
-  { name: 'titanium', density: 4500, friction: 0.38, restitution: 0.1, color: '#a6adb8' },
-  { name: 'lead', density: 11340, friction: 0.5, restitution: 0.03, color: '#5a5f6a' },
+  { name: 'plastic-nylon', density: 1140, friction: 0.25, restitution: 0.3, color: '#e8e4da', finish: { metalness: 0, roughness: 0.5, clearcoat: 0.3 } },
+  { name: 'plastic', density: 1200, friction: 0.3, restitution: 0.3, color: '#3b82c4', finish: { metalness: 0, roughness: 0.4, clearcoat: 0.6 } },
+  { name: 'foam', density: 60, friction: 0.8, restitution: 0.4, color: '#eef0d8', finish: { metalness: 0, roughness: 1 } },
+  // Metals (metalness 1 — they glint under the environment)
+  { name: 'steel', density: 7850, friction: 0.4, restitution: 0.1, color: '#8a8f98', magnetic: 'ferrous', finish: { metalness: 1, roughness: 0.35 } },
+  { name: 'magnet', density: 7500, friction: 0.45, restitution: 0.05, color: '#c03a30', magnetic: 'magnet', finish: { metalness: 0.7, roughness: 0.4 } },
+  { name: 'aluminum', density: 2700, friction: 0.4, restitution: 0.1, color: '#c9cdd3', finish: { metalness: 1, roughness: 0.4 } },
+  { name: 'brass', density: 8500, friction: 0.35, restitution: 0.1, color: '#c9a53e', finish: { metalness: 1, roughness: 0.32 } },
+  { name: 'copper', density: 8960, friction: 0.35, restitution: 0.1, color: '#c07347', finish: { metalness: 1, roughness: 0.32 } },
+  { name: 'cast-iron', density: 7200, friction: 0.45, restitution: 0.08, color: '#4c4f54', magnetic: 'ferrous', finish: { metalness: 1, roughness: 0.55 } },
+  { name: 'titanium', density: 4500, friction: 0.38, restitution: 0.1, color: '#a6adb8', finish: { metalness: 1, roughness: 0.45 } },
+  { name: 'lead', density: 11340, friction: 0.5, restitution: 0.03, color: '#5a5f6a', finish: { metalness: 1, roughness: 0.6 } },
   // Mineral & brittle (rigid for now; the failure evaluator makes these breakable)
   { name: 'glass', density: 2500, friction: 0.5, restitution: 0.05, color: '#bcd8e2', optics: { transmission: 0.9, ior: 1.5, roughness: 0.06 }, youngsModulus: 70e9, yieldStrength: 33e6 },
-  { name: 'ceramic', density: 2400, friction: 0.6, restitution: 0.05, color: '#e8e3dc', youngsModulus: 300e9, yieldStrength: 25e6 },
+  { name: 'ceramic', density: 2400, friction: 0.6, restitution: 0.05, color: '#e8e3dc', finish: { metalness: 0, roughness: 0.3, clearcoat: 0.4 }, youngsModulus: 300e9, yieldStrength: 25e6 },
   { name: 'concrete', density: 2400, friction: 0.8, restitution: 0.05, color: '#9b9c96' },
   { name: 'brick', density: 1900, friction: 0.75, restitution: 0.05, color: '#a85a42' },
-  { name: 'granite', density: 2700, friction: 0.65, restitution: 0.08, color: '#75777c' },
-  { name: 'marble', density: 2700, friction: 0.5, restitution: 0.08, color: '#d9d7d2' },
+  { name: 'granite', density: 2700, friction: 0.65, restitution: 0.08, color: '#75777c', finish: { metalness: 0, roughness: 0.5 } },
+  { name: 'marble', density: 2700, friction: 0.5, restitution: 0.08, color: '#d9d7d2', finish: { metalness: 0, roughness: 0.25, clearcoat: 0.3 } },
   { name: 'ice', density: 917, friction: 0.03, restitution: 0.05, color: '#cfe8f5', optics: { transmission: 0.55, ior: 1.31, roughness: 0.4 } },
   { name: 'cardboard', density: 250, friction: 0.6, restitution: 0.15, color: '#b98f5c' },
   { name: 'hemp', density: 900, friction: 0.6, restitution: 0.1, color: '#b09468' },

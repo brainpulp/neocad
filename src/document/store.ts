@@ -229,6 +229,7 @@ export function mergeLibraryMaterials(doc: Document): Document {
     const patch: Partial<Material> = {}
     if (m.magnetic == null && lib.magnetic != null) patch.magnetic = lib.magnetic
     if (m.optics == null && lib.optics != null) patch.optics = structuredClone(lib.optics)
+    if (m.finish == null && lib.finish != null) patch.finish = structuredClone(lib.finish)
     if (Object.keys(patch).length === 0) return m
     changed = true
     return { ...m, ...patch }

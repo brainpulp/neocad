@@ -1,7 +1,18 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Canvas, useFrame, useThree } from '@react-three/fiber'
 import { GizmoHelper, GizmoViewcube, Grid, OrbitControls } from '@react-three/drei'
-import { DoubleSide, Group, IcosahedronGeometry, Quaternion, Vector3, type BufferGeometry, type Mesh } from 'three'
+import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js'
+import {
+  ACESFilmicToneMapping,
+  DoubleSide,
+  Group,
+  IcosahedronGeometry,
+  PMREMGenerator,
+  Quaternion,
+  Vector3,
+  type BufferGeometry,
+  type Mesh,
+} from 'three'
 import type { OrbitControls as OrbitControlsImpl } from 'three-stdlib'
 import { initJolt, type JoltModule } from '../physics/jolt'
 import { PhysicsWorld } from '../physics/integration'
@@ -1129,6 +1140,28 @@ function FitListener() {
   return null
 }
 
+/**
+ * Image-based lighting from three's procedural RoomEnvironment — a soft studio
+ * light probe generated on the GPU, no external HDR file (keeps the app
+ * self-contained). Set as scene.environment so PBR materials pick up real
+ * reflections; the background stays white (Tinkercad look).
+ */
+function StudioEnvironment() {
+  const { gl, scene } = useThree()
+  useEffect(() => {
+    const pmrem = new PMREMGenerator(gl)
+    const envTex = pmrem.fromScene(new RoomEnvironment(), 0.04).texture
+    const prev = scene.environment
+    scene.environment = envTex
+    return () => {
+      scene.environment = prev
+      envTex.dispose()
+      pmrem.dispose()
+    }
+  }, [gl, scene])
+  return null
+}
+
 export function Scene() {
   // Load Jolt once; render the simulation only after the WASM module is ready.
   const joltRef = useRef<JoltModule | null>(null)
@@ -1142,6 +1175,10 @@ export function Scene() {
     <Canvas
       shadows
       camera={{ position: [3.5, 2.6, 4.5], fov: 45 }}
+      // ACES filmic tone mapping: highlights on metal/glass roll off like a
+      // photo instead of clipping to white. (three color management is on by
+      // default in r155+.)
+      gl={{ toneMapping: ACESFilmicToneMapping, toneMappingExposure: 1.0 }}
       onPointerMissed={() => {
         store.getState().select(null)
         store.getState().selectFastener(null)
@@ -1152,10 +1189,13 @@ export function Scene() {
       {/* Tinkercad-style presentation: white background, soft sky light, one
           gentle key light with soft shadows, and a light blue-grey grid. */}
       <color attach="background" args={['#ffffff']} />
-      <hemisphereLight args={['#ffffff', '#b8c0cc', 0.85]} />
+      <StudioEnvironment />
+      {/* Hemisphere fill trimmed now that the envmap carries ambient light,
+          so metals aren't blown out. The key light still casts the shadows. */}
+      <hemisphereLight args={['#ffffff', '#b8c0cc', 0.45]} />
       <directionalLight
         position={[6, 10, 4]}
-        intensity={1.15}
+        intensity={0.9}
         castShadow
         // Tight frustum + high-res map: ~2.5mm/texel so contact shadows actually
         // touch small pieces (a wide span left a visible gap under objects).

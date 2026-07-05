@@ -51,7 +51,9 @@ export const PieceMesh = forwardRef<Mesh, Props>(function PieceMesh(
   ref,
 ) {
   const v = pieceVisual(piece, materials)
-  const optics = materials.find((m) => m.name === piece.material)?.optics
+  const mat = materials.find((m) => m.name === piece.material)
+  const optics = mat?.optics
+  const finish = mat?.finish
 
   // Mechanical stock renders a custom silhouette (teeth, groove, lobe) and the
   // wedge a triangular prism; rebuilt only when dimensions change, disposed when replaced.
@@ -119,12 +121,25 @@ export const PieceMesh = forwardRef<Mesh, Props>(function PieceMesh(
           thickness={Math.min(0.3, maxExtent(piece) * 0.4)}
           metalness={0}
         />
+      ) : finish?.clearcoat ? (
+        // Clearcoat finishes (plastics, glazed ceramic, polished marble) need
+        // the physical material for the second specular lobe.
+        <meshPhysicalMaterial
+          color={v.color}
+          map={textureFor(piece.material) ?? undefined}
+          roughness={finish.roughness ?? 0.5}
+          metalness={finish.metalness ?? 0}
+          clearcoat={finish.clearcoat}
+          clearcoatRoughness={0.15}
+        />
       ) : (
         <meshStandardMaterial
           color={v.color}
           map={textureFor(piece.material) ?? undefined}
-          roughness={0.75}
-          metalness={0.05}
+          // Metals catch the environment; matte families keep the clay-free
+          // default. Honest per-material finish, envmap does the rest.
+          roughness={finish?.roughness ?? 0.75}
+          metalness={finish?.metalness ?? 0.05}
         />
       )}
       {showOutline && (
