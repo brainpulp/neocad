@@ -3,7 +3,7 @@ import { createDocStore } from '../../src/document/store'
 import { makePiece } from '../../src/document/catalog'
 import { snapToFeature } from '../../src/document/features'
 import { planJoint, planAxleThroughBores } from '../../src/document/joints'
-import { localDirToWorld, localToWorld, worldToLocal } from '../../src/document/math'
+import { localDirToWorld, localToWorld } from '../../src/document/math'
 
 describe('concentric axle join (any diameter)', () => {
   it('a thin dowel joins co-axial to a fat rod end regardless of diameter, with a gap advisory', () => {
