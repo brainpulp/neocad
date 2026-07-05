@@ -6,7 +6,7 @@ import {
   LAYER_WALLS,
   type JoltModule,
 } from './jolt'
-import { makeShape } from './shapes'
+import { makeHollowShape, makeShape } from './shapes'
 import { FASTENERS, STOCK } from '../document/catalog'
 import { localDirToWorld, localToWorld, perpendicular, quatConjugate, quatRotate } from '../document/math'
 import type { Document, Fastener, Material, Piece, Rope, Vec3 } from '../document/types'
@@ -591,7 +591,8 @@ export class PhysicsWorld {
 
   private createPieceBody(piece: Piece, materials: Material[]): void {
     const J = this.Jolt
-    const shape = makeShape(J, STOCK[piece.stockType].primitive, piece.dimensions)
+    const shape =
+      makeHollowShape(J, piece) ?? makeShape(J, STOCK[piece.stockType].primitive, piece.dimensions)
     const [px, py, pz] = piece.state.transform.position
     const [qx, qy, qz, qw] = piece.state.transform.rotation
     const isStatic = piece.anchored

@@ -31,6 +31,26 @@ Plans: `docs/superpowers/plans/` · Backlog: `docs/BACKLOG.md`
 
 ## Status
 
+- **M-Hollow (wall-thickness property: boxes + tubes) — DONE & browser-verified.**
+  Spec: `docs/superpowers/specs/2026-07-04-hollow-holes-rendering.md`. New
+  `Piece.hollow {thickness, openFace}`. ONE shared decomposition
+  (`document/hollow.ts` → `hollowBricks`) feeds BOTH physics and render, so the
+  visible walls ARE the collision walls: box → 6 (closed) or 5 (open-face)
+  non-overlapping BoxShape walls in a Jolt `StaticCompoundShapeSettings`
+  (works for dynamic bodies); cylinder → 12 box segments (tube = no caps, cup =
+  one cap). GOTCHA: `CompoundShapeSettings.AddShape` wants a ShapeSettings
+  (BoxShapeSettings, not a built BoxShape) + a userData arg. RENDER: boxes use
+  the merged brick BoxGeometries (exact); cylinders render a smooth
+  `LatheGeometry` of the wall cross-section (round tube/cup — physics keeps the
+  12-gon ring, <1% radial gap) — `render/hollowGeometry.ts`. `pieceVolume`
+  subtracts the cavity (weight chip + magnetism volume follow). Inspector
+  HOLLOW section: checkbox + wall-thickness slider/number (cm) + open-face
+  dropdown (box: 6 faces or closed; cylinder: tube / open-top cup / open-bottom
+  cup). structureKey includes hollow (world rebuilds on change); serialize
+  round-trips it (plain field); glTF/STL export emits the real walls. 188 tests
+  incl. a ball contained in an open-top box + a dowel dropping through a tube
+  bore against real Jolt. NEXT per spec: M-Cuts (Tinkercad negative shapes,
+  SDF-meshed) — the geometry core is a Fable slice.
 - **R1 (rendering upgrade phase 1: PBR environment lighting) — DONE &
   browser-verified.** Spec: `docs/superpowers/specs/2026-07-04-hollow-holes-
   rendering.md` (R1 → M-Hollow → M-Cuts; M-Cuts' SDF core is a Fable slice).

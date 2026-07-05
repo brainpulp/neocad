@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { FASTENERS, STOCK, formatMass, pieceMass } from '../document/catalog'
+import { hollowable, type FaceId } from '../document/hollow'
 import { flipJointAxis, swapJointEnds } from '../document/joints'
 import { isJointType, type Piece } from '../document/types'
 import { useDocStore, useStoreApi } from './storeContext'
@@ -183,7 +184,96 @@ export function Properties() {
       {Object.keys(piece.dimensions).map((key) => (
         <DimRow key={`${piece.id}:${key}`} piece={piece} dimKey={key} />
       ))}
+
+      <HollowControls piece={piece} />
     </div>
+  )
+}
+
+/** Face options for a box's open side; cylinders open a cap (cup) or neither (tube). */
+const BOX_FACES: { id: FaceId; label: string }[] = [
+  { id: '+y', label: 'Top' },
+  { id: '-y', label: 'Bottom' },
+  { id: '+x', label: 'Right' },
+  { id: '-x', label: 'Left' },
+  { id: '+z', label: 'Front' },
+  { id: '-z', label: 'Back' },
+]
+
+/** Hollow (wall-thickness) controls for box/cylinder stock. */
+function HollowControls({ piece }: { piece: Piece }) {
+  const store = useStoreApi()
+  if (!hollowable(piece)) return null
+  const primitive = STOCK[piece.stockType].primitive
+  const h = piece.hollow
+  const update = (hollow: Piece['hollow']) => store.getState().updatePiece(piece.id, { hollow })
+  const thicknessCm = Math.round((h?.thickness ?? 0.02) * 1000) / 10
+
+  return (
+    <>
+      <div className="label" style={{ marginTop: 12 }}>
+        HOLLOW
+      </div>
+      <label className="field checkbox" title="Hollow the piece out to a shell with walls">
+        <input
+          type="checkbox"
+          checked={!!h}
+          onChange={(e) => update(e.target.checked ? { thickness: 0.02 } : undefined)}
+        />
+        Hollow out
+      </label>
+      {h && (
+        <>
+          <div className="dim-row">
+            <div className="dim-label">Wall thickness</div>
+            <input
+              type="range"
+              aria-label="Wall thickness"
+              min={0.2}
+              max={20}
+              step={0.1}
+              value={thicknessCm}
+              onChange={(e) => update({ ...h, thickness: parseFloat(e.target.value) / 100 })}
+            />
+            <div className="dim-value">
+              <input
+                type="number"
+                value={thicknessCm}
+                step={0.5}
+                onChange={(e) => update({ ...h, thickness: parseFloat(e.target.value) / 100 })}
+              />
+              <span className="dim-unit">cm</span>
+            </div>
+          </div>
+          <label className="field">
+            {primitive === 'cylinder' ? 'Open end' : 'Open face'}
+            <select
+              value={h.openFace ?? ''}
+              onChange={(e) =>
+                update({ ...h, openFace: (e.target.value || undefined) as FaceId | undefined })
+              }
+            >
+              {primitive === 'cylinder' ? (
+                <>
+                  <option value="">Tube (both ends open)</option>
+                  <option value="+y">Cup — open top</option>
+                  <option value="-y">Cup — open bottom</option>
+                </>
+              ) : (
+                <>
+                  <option value="">Closed (all walls)</option>
+                  {BOX_FACES.map((f) => (
+                    <option key={f.id} value={f.id}>
+                      Open {f.label}
+                    </option>
+                  ))}
+                </>
+              )}
+            </select>
+          </label>
+        </>
+      )}
+    </>
   )
 }
 

@@ -59,6 +59,8 @@ export interface Piece {
   /** Live pose, advanced by physics, frozen on pause, persisted on save. */
   state: { transform: Transform }
   anchored: boolean
+  /** Hollowed with wall thickness (box/cylinder). See document/hollow.ts. */
+  hollow?: import('./hollow').Hollow
 }
 
 export interface Ground {

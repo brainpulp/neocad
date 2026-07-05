@@ -1,5 +1,7 @@
 import type { JoltModule } from './jolt'
 import type { Primitive } from '../document/catalog'
+import { hollowBricks } from '../document/hollow'
+import type { Piece } from '../document/types'
 
 /**
  * Collision-edge rounding ("the Clavicula lesson"): SDF modelers feel organic
@@ -13,6 +15,29 @@ import type { Primitive } from '../document/catalog'
  */
 function edgeRadius(...halfExtents: number[]): number {
   return Math.min(0.005, 0.25 * Math.min(...halfExtents))
+}
+
+/**
+ * Compound shape from hollow wall bricks (box/tube). The SAME brick list the
+ * renderer meshes, so collision matches the visible walls exactly: a ball
+ * dropped into an open-top box is really contained; a dowel really passes
+ * through a tube's bore. Works for dynamic bodies too (the compound is rigid,
+ * only the arrangement is fixed).
+ */
+export function makeHollowShape(Jolt: JoltModule, piece: Piece): any | null {
+  const bricks = hollowBricks(piece)
+  if (!bricks || bricks.length === 0) return null
+  const settings = new Jolt.StaticCompoundShapeSettings()
+  const noRot = new Jolt.Quat(0, 0, 0, 1)
+  for (const b of bricks) {
+    const r = edgeRadius(b.half[0], b.half[1], b.half[2])
+    // AddShape wants a ShapeSettings (not a built Shape) + a userData arg.
+    const wall = new Jolt.BoxShapeSettings(new Jolt.Vec3(b.half[0], b.half[1], b.half[2]), r)
+    settings.AddShape(new Jolt.Vec3(b.center[0], b.center[1], b.center[2]), noRot, wall, 0)
+  }
+  const result = settings.Create()
+  if (result.HasError()) throw new Error(`hollow compound: ${result.GetError().c_str()}`)
+  return result.Get()
 }
 
 // Document dimensions are full extents; Jolt wants half-extents / radii.

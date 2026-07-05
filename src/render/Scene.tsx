@@ -40,7 +40,11 @@ const BLOW_DIR = new Vector3()
  */
 function structureKey(doc: import('../document/types').Document): string {
   const pieces = doc.pieces
-    .map((p) => `${p.id}:${p.anchored ? 1 : 0}:${p.material}:${Object.values(p.dimensions).join(',')}`)
+    .map(
+      (p) =>
+        `${p.id}:${p.anchored ? 1 : 0}:${p.material}:${Object.values(p.dimensions).join(',')}` +
+        `:${p.hollow ? `${p.hollow.thickness},${p.hollow.openFace ?? ''}` : ''}`,
+    )
     .join('|')
   const fasteners = doc.fasteners.map((f) => f.id).join('|')
   const ropes = (doc.ropes ?? [])

@@ -8,6 +8,7 @@ import {
   type BufferGeometry,
 } from 'three'
 import { geometryFor } from '../render/geometry'
+import { hollowGeometry } from '../render/hollowGeometry'
 import { wedgeGeometry } from '../render/mechanical'
 import { STOCK } from '../document/catalog'
 import type { Document, Piece } from '../document/types'
@@ -15,6 +16,9 @@ import type { Document, Piece } from '../document/types'
 const FALLBACK_COLOR = '#cccccc'
 
 function geometryObject(piece: Piece): BufferGeometry {
+  // Hollow pieces export their real walls (so a printed tube is actually hollow).
+  const hollow = hollowGeometry(piece)
+  if (hollow) return hollow
   const g = geometryFor(STOCK[piece.stockType].primitive, piece.dimensions)
   switch (g.kind) {
     case 'box':

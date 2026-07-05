@@ -5,6 +5,7 @@ import { Html } from '@react-three/drei'
 import { STOCK, formatMass, pieceMass } from '../document/catalog'
 import { maxExtent, pieceVisual } from './geometry'
 import { buildVisual, wedgeGeometry } from './mechanical'
+import { hollowGeometry } from './hollowGeometry'
 import { textureFor } from './textures'
 import type { Material, Piece } from '../document/types'
 
@@ -55,18 +56,24 @@ export const PieceMesh = forwardRef<Mesh, Props>(function PieceMesh(
   const optics = mat?.optics
   const finish = mat?.finish
 
-  // Mechanical stock renders a custom silhouette (teeth, groove, lobe) and the
-  // wedge a triangular prism; rebuilt only when dimensions change, disposed when replaced.
+  // Mechanical stock renders a custom silhouette (teeth, groove, lobe), the
+  // wedge a triangular prism, and a hollow piece its merged wall bricks (same
+  // shape physics collides). Rebuilt only when dimensions/hollow change.
   const dimsKey = Object.values(piece.dimensions).join(',')
+  const hollowKey = piece.hollow
+    ? `${piece.hollow.thickness}:${piece.hollow.openFace ?? ''}`
+    : ''
   const customGeo = useMemo<BufferGeometry | null>(
     () =>
-      v.visual
-        ? buildVisual(v.visual, piece.dimensions)
-        : v.kind === 'wedge'
-          ? wedgeGeometry(piece.dimensions.x, piece.dimensions.y, piece.dimensions.z)
-          : null,
+      piece.hollow
+        ? hollowGeometry(piece) // hollow wins: walls replace the solid shape
+        : v.visual
+          ? buildVisual(v.visual, piece.dimensions)
+          : v.kind === 'wedge'
+            ? wedgeGeometry(piece.dimensions.x, piece.dimensions.y, piece.dimensions.z)
+            : null,
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [v.visual, v.kind, dimsKey],
+    [v.visual, v.kind, dimsKey, hollowKey],
   )
   useEffect(() => () => customGeo?.dispose(), [customGeo])
 

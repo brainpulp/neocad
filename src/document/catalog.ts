@@ -1,3 +1,4 @@
+import { hollowVolume } from './hollow'
 import type { FastenerType, Piece, StockType, Vec3 } from './types'
 
 export type Primitive = 'box' | 'cylinder' | 'sphere' | 'wedge'
@@ -78,8 +79,13 @@ export const STOCK_GROUPS: { group: StockGroup; label: string }[] = [
   { group: 'mechanical', label: 'MECHANICAL' },
 ]
 
-/** Volume (m³) of a piece's collision primitive. */
+/** Volume (m³) of a piece's collision primitive (walls only, if hollowed). */
 export function pieceVolume(piece: Piece): number {
+  if (piece.hollow) {
+    // Wall volume from the shared brick decomposition (0 if not hollowable).
+    const walls = hollowVolume(piece)
+    if (walls > 0) return walls
+  }
   const d = piece.dimensions
   switch (STOCK[piece.stockType].primitive) {
     case 'box':
