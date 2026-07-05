@@ -534,6 +534,18 @@ function JointProperties({ fastenerId }: { fastenerId: string }) {
                 />
                 <span className="dim-unit">{f.motor.velocity.toFixed(2)}</span>
               </div>
+              <div className="btn-row">
+                <button
+                  title="Reverse the direction the motor drives"
+                  onClick={() =>
+                    store.getState().updateFastener(f.id, {
+                      motor: { ...f.motor!, velocity: -f.motor!.velocity },
+                    })
+                  }
+                >
+                  ⇄ Invert direction
+                </button>
+              </div>
               <div className="dim-row">
                 <div className="dim-label">Strength</div>
                 <input
