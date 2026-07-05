@@ -128,6 +128,13 @@ interface PausedDrag {
   centerY: number
   planeY: number
   grabOffY: number
+  /**
+   * Whether Alt was held when the gesture STARTED. Alt-at-start means this is
+   * an Alt-duplicate drag (just move the clone); Alt pressed MID-drag means
+   * rotate-in-place. Without this flag a paused Alt-click both duplicated AND
+   * rotated the same piece.
+   */
+  altAtStart: boolean
   axis?: Vector3
   startParam?: number
   startPos?: Vector3
@@ -555,6 +562,7 @@ function Sim({ Jolt }: { Jolt: JoltModule }) {
       centerY: py,
       planeY: e.point.y,
       grabOffY: e.point.y - py,
+      altAtStart: e.nativeEvent.altKey,
     }
     // Ctrl/Cmd = relocate the whole fastened assembly rigidly (SolidWorks'
     // "move component" vs the default articulate-along-the-joint). A drag on
@@ -684,8 +692,10 @@ function Sim({ Jolt }: { Jolt: JoltModule }) {
       return
     }
     // free
-    if (e.nativeEvent.altKey) {
-      // Alt mid-drag = rotate in place (horizontal motion; +Shift tilts).
+    if (e.nativeEvent.altKey && !pd.altAtStart) {
+      // Alt pressed MID-drag = rotate in place (horizontal motion; +Shift
+      // tilts). If Alt was held at the START it was an Alt-duplicate gesture —
+      // that just moves the clone, it must not also rotate it.
       const dx = e.nativeEvent.movementX ?? 0
       const axis = e.nativeEvent.shiftKey ? horizontalRight() : UP
       mesh.quaternion.premultiply(new Quaternion().setFromAxisAngle(axis, dx * 0.012))
