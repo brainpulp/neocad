@@ -1,8 +1,8 @@
-import { forwardRef, useEffect, useMemo, useRef } from 'react'
-import { BackSide, Vector3, type BufferGeometry, type Mesh } from 'three'
-import { useFrame, type ThreeEvent } from '@react-three/fiber'
-import { Html } from '@react-three/drei'
-import { STOCK, formatMass, pieceMass } from '../document/catalog'
+import { forwardRef, useEffect, useMemo } from 'react'
+import { type BufferGeometry, type Mesh } from 'three'
+import { type ThreeEvent } from '@react-three/fiber'
+import { Html, Outlines } from '@react-three/drei'
+import { formatMass, pieceMass } from '../document/catalog'
 import { maxExtent, pieceVisual } from './geometry'
 import { buildVisual, wedgeGeometry } from './mechanical'
 import { hollowGeometry } from './hollowGeometry'
@@ -24,28 +24,6 @@ interface Props {
 // never altered — the outline is the whole signal.
 const SELECT_COLOR = '#ff8a00'
 const HIGHLIGHT_COLOR = '#2ecc71'
-const OUTLINE_TMP = new Vector3()
-
-/**
- * Per-axis scale that expands the piece by a uniform world-space rim `t` on every
- * side (an even outline on thin panels and long rods alike, where a single uniform
- * scale would be lopsided).
- */
-function outlineScale(piece: Piece, t: number): [number, number, number] {
-  const d = piece.dimensions
-  switch (STOCK[piece.stockType].primitive) {
-    case 'wedge':
-    case 'box':
-      return [(d.x + 2 * t) / d.x, (d.y + 2 * t) / d.y, (d.z + 2 * t) / d.z]
-    case 'cylinder':
-      return [(d.radius + t) / d.radius, (d.height + 2 * t) / d.height, (d.radius + t) / d.radius]
-    case 'sphere': {
-      const s = (d.radius + t) / d.radius
-      return [s, s, s]
-    }
-  }
-}
-
 /** Renders one piece. The mesh ref lets the physics loop drive its transform imperatively. */
 export const PieceMesh = forwardRef<Mesh, Props>(function PieceMesh(
   { piece, materials, selected, highlighted, onPointerDown, onPointerMove, onPointerUp, onPointerOut },
@@ -95,19 +73,8 @@ export const PieceMesh = forwardRef<Mesh, Props>(function PieceMesh(
     analyticGeoJsx
   )
 
-  // Outline rim: screen-constant (~2px) so a ball and a long dowel read with the
-  // same line weight at any zoom. Updated per frame from camera distance.
-  const rim = Math.min(0.005, Math.max(0.0015, maxExtent(piece) * 0.008))
   const showOutline = selected || highlighted
-  const outlineRef = useRef<Mesh>(null)
-  useFrame(({ camera }) => {
-    const o = outlineRef.current
-    if (!o?.parent) return
-    o.parent.getWorldPosition(OUTLINE_TMP)
-    const t = Math.min(0.03, Math.max(0.002, camera.position.distanceTo(OUTLINE_TMP) * 0.0035))
-    const [sx, sy, sz] = outlineScale(piece, t)
-    o.scale.set(sx, sy, sz)
-  })
+  const outlineColor = selected ? SELECT_COLOR : HIGHLIGHT_COLOR
 
   return (
     <mesh
@@ -155,15 +122,20 @@ export const PieceMesh = forwardRef<Mesh, Props>(function PieceMesh(
           metalness={finish?.metalness ?? 0.05}
         />
       )}
-      {showOutline && (
-        // Inverted-hull outline: expanded geometry, back faces only. A HOLLOW
-        // piece outlines its OUTER silhouette (the solid box/cylinder), not its
-        // wall shell — scaling the multi-wall shell splays each wall outward
-        // into orange flaps. Mechanical/wedge pieces still outline their own
-        // custom geometry.
-        <mesh ref={outlineRef} scale={outlineScale(piece, rim)} raycast={() => null}>
-          {piece.hollow ? analyticGeoJsx : geometryJsx}
-          <meshBasicMaterial color={selected ? SELECT_COLOR : HIGHLIGHT_COLOR} side={BackSide} />
+      {/* Selection outline: drei Outlines is a normal-offset shell with a
+          SCREENSPACE thickness — a thin, constant ~few-px line at any zoom
+          (Tinkercad-style), and it hugs a gear's teeth cleanly instead of the
+          old scaled-hull's splayed flaps. Non-hollow pieces outline the main
+          mesh's geometry directly; hollow pieces outline their OUTER analytic
+          silhouette on a separate invisible mesh (the wall shell would splay). */}
+      {showOutline && !piece.hollow && (
+        <Outlines thickness={0.025} color={outlineColor} screenspace transparent toneMapped={false} />
+      )}
+      {showOutline && piece.hollow && (
+        <mesh raycast={() => null}>
+          {analyticGeoJsx}
+          <meshBasicMaterial transparent opacity={0} depthWrite={false} />
+          <Outlines thickness={0.025} color={outlineColor} screenspace transparent toneMapped={false} />
         </mesh>
       )}
       {selected && (

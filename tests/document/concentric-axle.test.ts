@@ -60,6 +60,10 @@ describe('auto-axle through two holes', () => {
     const boreWorld = localToWorld(movedG2.state.transform, [0, 0, 0])
     expect(boreWorld[0]).toBeCloseTo(0, 2)
     expect(boreWorld[2]).toBeCloseTo(0, 2)
+    // The two gears are spaced along the shaft, not jammed together.
+    const g1p = st.doc.pieces.find((p) => p.id === g1.id)!.state.transform.position
+    const dist = Math.hypot(...g1p.map((v, i) => v - movedG2.state.transform.position[i]))
+    expect(dist).toBeGreaterThan(0.05)
   })
 
   it('planAxleThroughBores refuses when the second part is anchored', () => {

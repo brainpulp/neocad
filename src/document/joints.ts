@@ -546,7 +546,12 @@ export function planAxleThroughBores(
   const boreA = localToWorld(tA, featA.point)
   const halfA = halfExtentAlong(pieceA, worldDirToLocal(tA, axisWorld))
   const halfB = halfExtentAlong(pieceB, featB.axis ?? [0, 1, 0])
-  const spacing = halfA + halfB + 0.02
+  // Clear the two parts along the shaft — the face gap scales with their size
+  // so two big gears read as distinct on the axle, not jammed together.
+  const rA = pieceA.dimensions.radius ?? 0.05
+  const rB = pieceB.dimensions.radius ?? 0.05
+  const faceGap = Math.max(0.03, (rA + rB) * 0.5)
+  const spacing = halfA + halfB + faceGap
   const boreBTarget = add(boreA, scale(axisWorld, spacing))
 
   // Move B: align its bore axis to the shared axis, seat its bore at the target.
@@ -556,8 +561,6 @@ export function planAxleThroughBores(
   const moverTransform: Transform = { position: posB, rotation: rotB }
 
   // The axle: a thin shaft centred between the two bores, along the axis.
-  const rA = pieceA.dimensions.radius ?? 0.05
-  const rB = pieceB.dimensions.radius ?? 0.05
   const radius = Math.max(0.008, Math.min(0.03, Math.min(rA, rB) * 0.4))
   const length = spacing + halfA + halfB + 0.04
   const center = add(boreA, scale(axisWorld, spacing / 2))
