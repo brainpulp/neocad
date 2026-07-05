@@ -1,5 +1,6 @@
 import { JOINT_TYPES, type JointType } from '../document/types'
 import { FASTENERS } from '../document/catalog'
+import { showcaseDocument } from '../document/demoScene'
 import { playBeep } from '../audio/impacts'
 import { useDocStore, useStoreApi } from './storeContext'
 
@@ -106,6 +107,22 @@ export function Toolbar({ onSave, onOpen, onExportGLTF, onExportSTL }: ToolbarPr
         }}
       >
         {soundOn ? '🔊' : '🔇'}
+      </button>
+      <span className="sep" />
+      <button
+        title="Load a showcase scene (metals, glass, magnets, hollow shapes, a hinge)"
+        onClick={() => {
+          if (
+            store.getState().doc.pieces.length > 0 &&
+            !window.confirm('Load the showcase scene? This replaces the current build.')
+          )
+            return
+          store.getState().loadDoc(showcaseDocument())
+          store.getState().setRunning(false)
+          setTimeout(() => window.dispatchEvent(new Event('neocad:fit')), 50)
+        }}
+      >
+        ✨ Demo
       </button>
       <span className="sep" />
       <button onClick={onSave}>💾 Save</button>
