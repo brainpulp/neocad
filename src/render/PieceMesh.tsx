@@ -77,9 +77,10 @@ export const PieceMesh = forwardRef<Mesh, Props>(function PieceMesh(
   )
   useEffect(() => () => customGeo?.dispose(), [customGeo])
 
-  const geometryJsx = customGeo ? (
-    <primitive object={customGeo} attach="geometry" />
-  ) : (
+  // The analytic solid shape (outer box/cylinder/sphere). Used for the SELECTION
+  // OUTLINE of hollow pieces so the rim traces the outer silhouette, not the
+  // splayed wall shell.
+  const analyticGeoJsx = (
     <>
       {v.kind === 'box' && <boxGeometry args={v.args as [number, number, number]} />}
       {v.kind === 'cylinder' && (
@@ -87,6 +88,11 @@ export const PieceMesh = forwardRef<Mesh, Props>(function PieceMesh(
       )}
       {v.kind === 'sphere' && <sphereGeometry args={v.args as [number, number, number]} />}
     </>
+  )
+  const geometryJsx = customGeo ? (
+    <primitive object={customGeo} attach="geometry" />
+  ) : (
+    analyticGeoJsx
   )
 
   // Outline rim: screen-constant (~2px) so a ball and a long dowel read with the
@@ -150,9 +156,13 @@ export const PieceMesh = forwardRef<Mesh, Props>(function PieceMesh(
         />
       )}
       {showOutline && (
-        // Inverted-hull outline: same geometry, expanded, back faces only.
+        // Inverted-hull outline: expanded geometry, back faces only. A HOLLOW
+        // piece outlines its OUTER silhouette (the solid box/cylinder), not its
+        // wall shell — scaling the multi-wall shell splays each wall outward
+        // into orange flaps. Mechanical/wedge pieces still outline their own
+        // custom geometry.
         <mesh ref={outlineRef} scale={outlineScale(piece, rim)} raycast={() => null}>
-          {customGeo ? <primitive object={customGeo} attach="geometry" /> : geometryJsx}
+          {piece.hollow ? analyticGeoJsx : geometryJsx}
           <meshBasicMaterial color={selected ? SELECT_COLOR : HIGHLIGHT_COLOR} side={BackSide} />
         </mesh>
       )}

@@ -13,6 +13,7 @@ import {
   type Vec3,
 } from './types'
 import * as ops from './document'
+import { piecesOverlap } from './contact'
 import { makePiece, nextFastenerId } from './catalog'
 import { MECHANISMS } from './mechanisms'
 import { worldDirToLocal, worldToLocal } from './math'
@@ -352,6 +353,20 @@ export function createDocStore(initial: Document = emptyDocument()) {
         let tr = move.state.transform
         if (opts.rotate) tr = rotatePieceAboutAxis({ ...move, state: { transform: tr } }, pivot, axis, opts.rotate)
         if (opts.slide) tr = slidePieceAlongAxis({ ...move, state: { transform: tr } }, axis, opts.slide)
+        // Refuse a fold/slide that would drive the part INTO another one — the
+        // "crossed joints" bug: rotating a cube about its hinge used to bury it
+        // in its neighbour. Veto only a NEW collision: a gear already overlaps
+        // its axle (mechanical stock collides as solid cylinders — an inherent
+        // overlap), so we only stop when a pair that was CLEAR becomes buried.
+        const moved: Piece = { ...move, state: { ...move.state, transform: tr } }
+        for (const other of doc.pieces) {
+          if (other.id === move.id) continue
+          const overlapNow = piecesOverlap(move, move.state.transform, other, other.state.transform)
+          if (!overlapNow && piecesOverlap(moved, tr, other, other.state.transform)) {
+            set({ jointNotice: 'Can’t move it there — it would hit another part.' })
+            return
+          }
+        }
         get().movePieceTransform(move.id, tr)
       },
       setSandboxSizeTransient: (size) =>

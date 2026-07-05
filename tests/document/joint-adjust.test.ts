@@ -58,4 +58,27 @@ describe('adjustJoint — modify a joint by moving the loose piece', () => {
     const after = s.getState().doc.pieces.find((p) => p.id === armId)!.state.transform.position[2]
     expect(after - before).toBeCloseTo(0.1, 3)
   })
+
+  it('refuses to fold a hinged cube INTO its neighbour (crossed-joints veto)', () => {
+    const s = createDocStore()
+    const a = makePiece('block', [0, 0.15, 0])
+    a.dimensions = { x: 0.9, y: 0.9, z: 0.9 }
+    a.anchored = true
+    const b = makePiece('block', [0.9, 0.15, 0])
+    b.dimensions = { x: 0.9, y: 0.9, z: 0.9 }
+    s.getState().addPiece(a)
+    s.getState().addPiece(b)
+    s.getState().setTool('joint')
+    s.getState().setJointType('pivot')
+    // Hinge on the facing top edges → cubes land flush side by side.
+    s.getState().jointClick(a.id, [0.44, 0.6, 0])
+    s.getState().jointClick(b.id, [0.46, 0.6, 0])
+    const fid = s.getState().doc.fasteners[0].id
+    const before = s.getState().doc.pieces.find((p) => p.id === b.id)!.state.transform.position
+    // Folding B back toward A (negative rotation) drives it into A → refused.
+    s.getState().adjustJoint(fid, { rotate: -Math.PI / 2 })
+    const after = s.getState().doc.pieces.find((p) => p.id === b.id)!.state.transform.position
+    expect(after).toEqual(before) // did not move
+    expect(s.getState().jointNotice).toMatch(/hit another part/i)
+  })
 })
