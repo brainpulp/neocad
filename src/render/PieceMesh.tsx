@@ -1,17 +1,6 @@
-import { forwardRef, useEffect, useMemo, useRef } from 'react'
-import {
-  BackSide,
-  BoxGeometry,
-  Color,
-  CylinderGeometry,
-  PerspectiveCamera,
-  ShaderMaterial,
-  SphereGeometry,
-  Vector3,
-  type BufferGeometry,
-  type Mesh,
-} from 'three'
-import { useFrame, type ThreeEvent } from '@react-three/fiber'
+import { forwardRef, useEffect, useMemo } from 'react'
+import { type BufferGeometry, type Mesh } from 'three'
+import { type ThreeEvent } from '@react-three/fiber'
 import { Html } from '@react-three/drei'
 import { formatMass, pieceMass } from '../document/catalog'
 import { maxExtent, pieceVisual } from './geometry'
@@ -19,70 +8,6 @@ import { buildVisual, wedgeGeometry } from './mechanical'
 import { hollowGeometry } from './hollowGeometry'
 import { textureFor } from './textures'
 import type { Material, Piece } from '../document/types'
-
-const SELECT_COLOR = 0xff8a00 // orange
-const HIGHLIGHT_COLOR = 0x2ecc71 // green
-const HULL_TMP = new Vector3()
-
-/**
- * Selection/highlight outline as a back-face hull: the piece geometry rendered
- * again inside-out with every vertex pushed OUT along its normal, so a thin
- * shell peeks around the whole silhouette — gear teeth included, with no
- * concave drop-outs (a screen-space normal offset would gap in the notches).
- * The push distance is recomputed each frame from the piece's camera distance
- * so the line stays a constant ~2px at any zoom (the Tinkercad look), and it
- * renders in the normal scene pass (no offscreen buffers).
- */
-function OutlineHull({
-  geometry,
-  color,
-  thicknessPx = 2.4,
-}: {
-  geometry: BufferGeometry
-  color: number
-  thicknessPx?: number
-}) {
-  const ref = useRef<Mesh>(null)
-  const material = useMemo(
-    () =>
-      new ShaderMaterial({
-        uniforms: {
-          uOffset: { value: 0.01 },
-          uColor: { value: new Color(color) },
-        },
-        vertexShader: /* glsl */ `
-          uniform float uOffset;
-          void main() {
-            vec3 tn = normalize(normalMatrix * normal);
-            vec4 mv = modelViewMatrix * vec4(position, 1.0);
-            mv.xyz += tn * uOffset; // push out along the normal in view space
-            gl_Position = projectionMatrix * mv;
-          }
-        `,
-        fragmentShader: /* glsl */ `
-          uniform vec3 uColor;
-          void main() { gl_FragColor = vec4(uColor, 1.0); }
-        `,
-        side: BackSide,
-        depthWrite: false,
-        toneMapped: false,
-      }),
-    [color],
-  )
-  useEffect(() => () => material.dispose(), [material])
-  useFrame(({ camera, size }) => {
-    const m = ref.current
-    if (!m) return
-    const dist = camera.position.distanceTo(m.getWorldPosition(HULL_TMP))
-    // World units per screen pixel at this distance (perspective camera).
-    const fov = ((camera as PerspectiveCamera).fov ?? 45) * (Math.PI / 180)
-    const worldPerPx = (2 * Math.tan(fov / 2) * dist) / size.height
-    material.uniforms.uOffset.value = thicknessPx * worldPerPx
-  })
-  return (
-    <mesh ref={ref} geometry={geometry} material={material} renderOrder={2} raycast={() => null} />
-  )
-}
 
 interface Props {
   piece: Piece
@@ -97,16 +22,7 @@ interface Props {
 
 /** Renders one piece. The mesh ref lets the physics loop drive its transform imperatively. */
 export const PieceMesh = forwardRef<Mesh, Props>(function PieceMesh(
-  {
-    piece,
-    materials,
-    selected,
-    highlighted,
-    onPointerDown,
-    onPointerMove,
-    onPointerUp,
-    onPointerOut,
-  },
+  { piece, materials, selected, onPointerDown, onPointerMove, onPointerUp, onPointerOut },
   ref,
 ) {
   const v = pieceVisual(piece, materials)
@@ -153,32 +69,10 @@ export const PieceMesh = forwardRef<Mesh, Props>(function PieceMesh(
     analyticGeoJsx
   )
 
-  // Geometry the outline hull traces. A hollow piece outlines its OUTER solid
-  // silhouette (box/cylinder), not the wall shell; mechanical/wedge stock reuse
-  // their custom silhouette geometry (shared, so no clone); plain stock builds
-  // the analytic solid. Only built while the piece is actually outlined.
-  const outline = selected || highlighted
-  const ownOutlineGeo = useMemo<BufferGeometry | null>(() => {
-    if (!outline) return null
-    if (customGeo && !piece.hollow) return null // reuse customGeo directly
-    if (v.kind === 'box') {
-      const [x, y, z] = v.args as [number, number, number]
-      return new BoxGeometry(x, y, z)
-    }
-    if (v.kind === 'cylinder') {
-      const [rt, rb, h, seg] = v.args as [number, number, number, number]
-      return new CylinderGeometry(rt, rb, h, seg)
-    }
-    if (v.kind === 'sphere') {
-      const [r, ws, hs] = v.args as [number, number, number]
-      return new SphereGeometry(r, ws, hs)
-    }
-    return null
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [outline, v.kind, dimsKey, hollowKey, customGeo, piece.hollow])
-  useEffect(() => () => ownOutlineGeo?.dispose(), [ownOutlineGeo])
-  const outlineGeo =
-    ownOutlineGeo ?? (customGeo && !piece.hollow ? customGeo : null)
+  // The selection/highlight outline is a screen-space edge pass in Scene.tsx
+  // (SelectionEffects, postprocessing OutlineEffect) — a true constant-px
+  // silhouette that traces corners, the ground edge and hollow openings
+  // cleanly. PieceMesh only supplies the geometry it outlines.
   return (
     <mesh
       ref={ref}
@@ -223,12 +117,6 @@ export const PieceMesh = forwardRef<Mesh, Props>(function PieceMesh(
           // default. Honest per-material finish, envmap does the rest.
           roughness={finish?.roughness ?? 0.75}
           metalness={finish?.metalness ?? 0.05}
-        />
-      )}
-      {outline && outlineGeo && (
-        <OutlineHull
-          geometry={outlineGeo}
-          color={selected ? SELECT_COLOR : HIGHLIGHT_COLOR}
         />
       )}
       {selected && (

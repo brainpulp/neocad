@@ -1,12 +1,15 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState, type MutableRefObject } from 'react'
 import { Canvas, useFrame, useThree } from '@react-three/fiber'
 import { GizmoHelper, GizmoViewcube, Grid, OrbitControls } from '@react-three/drei'
+import { EffectComposer, Outline, ToneMapping } from '@react-three/postprocessing'
+import { ToneMappingMode } from 'postprocessing'
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js'
 import {
-  ACESFilmicToneMapping,
   DoubleSide,
   Group,
   IcosahedronGeometry,
+  NoToneMapping,
+  Object3D,
   PMREMGenerator,
   Quaternion,
   Vector3,
@@ -730,6 +733,7 @@ function Sim({ Jolt }: { Jolt: JoltModule }) {
 
   return (
     <>
+      <SelectionEffects meshes={meshes} />
       {doc.pieces.map((piece) => (
         <PieceMesh
           key={piece.id}
@@ -1181,6 +1185,68 @@ function StudioEnvironment() {
   return null
 }
 
+/**
+ * Selection/highlight outline as a SCREEN-SPACE edge pass (postprocessing
+ * OutlineEffect). Unlike a geometry shell it traces a true constant-pixel
+ * silhouette — hard corners stay connected, the ground edge isn't clipped, and
+ * a hollow piece's opening isn't painted over. Tone mapping rides in the same
+ * composer (ACES) to keep the R1 look. Two Outline effects (distinct selection
+ * layers) so a selection reads orange and a proximity/join target reads green.
+ *
+ * NOTE: this edge pass renders offscreen mask/depth buffers that the headless
+ * SwiftShader GL used in CI/tests refuses to draw — verify in a real browser.
+ */
+function SelectionEffects({ meshes }: { meshes: MutableRefObject<Map<string, Mesh>> }) {
+  const selectedId = useDocStore((s) => s.selectedId)
+  const selectedIds = useDocStore((s) => s.selectedIds)
+  const proximityTarget = useDocStore((s) => s.proximityTarget)
+  const jointAId = useDocStore((s) => s.jointA?.pieceId ?? null)
+  const pieceCount = useDocStore((s) => s.doc.pieces.length)
+  const [selected, setSelected] = useState<Object3D[]>([])
+  const [highlighted, setHighlighted] = useState<Object3D[]>([])
+
+  useEffect(() => {
+    const pick = (ids: (string | null | undefined)[]) => {
+      const seen = new Set<string>()
+      const out: Object3D[] = []
+      for (const id of ids) {
+        if (!id || seen.has(id)) continue
+        seen.add(id)
+        const m = meshes.current.get(id)
+        if (m) out.push(m)
+      }
+      return out
+    }
+    setSelected(pick([selectedId, ...selectedIds]))
+    setHighlighted(pick([proximityTarget, jointAId]))
+    // pieceCount is a dep so late-mounted meshes are picked up on selection.
+  }, [selectedId, selectedIds, proximityTarget, jointAId, pieceCount, meshes])
+
+  return (
+    <EffectComposer autoClear={false} multisampling={4}>
+      <Outline
+        selection={selected}
+        selectionLayer={10}
+        visibleEdgeColor={0xff8a00}
+        hiddenEdgeColor={0xff8a00}
+        edgeStrength={6}
+        blur={false}
+        xRay={false}
+      />
+      <Outline
+        selection={highlighted}
+        selectionLayer={11}
+        visibleEdgeColor={0x2ecc71}
+        hiddenEdgeColor={0x2ecc71}
+        edgeStrength={6}
+        blur={false}
+        xRay={false}
+      />
+      <ToneMapping mode={ToneMappingMode.ACES_FILMIC} />
+    </EffectComposer>
+  )
+}
+
 export function Scene() {
   // Load Jolt once; render the simulation only after the WASM module is ready.
   const joltRef = useRef<JoltModule | null>(null)
@@ -1194,10 +1260,10 @@ export function Scene() {
     <Canvas
       shadows
       camera={{ position: [3.5, 2.6, 4.5], fov: 45 }}
-      // ACES filmic tone mapping: highlights on metal/glass roll off like a
-      // photo instead of clipping to white. (three color management is on by
-      // default in r155+.)
-      gl={{ toneMapping: ACESFilmicToneMapping }}
+      // ACES filmic tone mapping runs as a ToneMapping EFFECT in the composer
+      // (so the selection-outline edge pass composites correctly); the renderer
+      // itself must NOT also tone-map or it would double-apply.
+      gl={{ toneMapping: NoToneMapping }}
       onPointerMissed={() => {
         store.getState().select(null)
         store.getState().selectFastener(null)

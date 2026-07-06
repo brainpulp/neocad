@@ -31,27 +31,25 @@ Plans: `docs/superpowers/plans/` · Backlog: `docs/BACKLOG.md`
 
 ## Status
 
-- **M-Outline (selection outline that actually works — thin, zoom-invariant,
-  wraps a gear all the way around) — DONE & browser-verified.** The outline is a
-  per-piece back-face HULL in `render/PieceMesh.tsx` (`OutlineHull`): the piece
-  geometry rendered again with `side: BackSide` and every vertex pushed OUT
-  along its normal in view space, so a thin shell peeks around the whole
-  silhouette — gear teeth included, NO concave drop-outs (a screen-space normal
-  offset gaps in the notches; uniform scale splays the teeth). The push distance
-  is recomputed each frame from the piece's camera distance
-  (`uOffset = 2.4px * worldUnitsPerPixel`) so the line stays ~2px at any zoom
-  (Tinkercad look). Hollow pieces outline their OUTER analytic solid (box/
-  cylinder), not the wall shell (no orange flaps); mechanical/wedge stock reuse
-  their custom silhouette geometry. Renders in the MAIN scene pass — deliberately
-  NOT a postprocessing screen-space edge pass: that needs an offscreen render-
-  target mask, and the headless SwiftShader GL used to verify refuses to draw
-  offscreen subsets (camera-layer filter, visibility isolation, reparent-to-mask
-  ALL render nothing; the stock postprocessing `OutlineEffect` also draws
-  nothing there). GOTCHA that ate a whole session: selecting a piece that sits
-  behind a DOM panel (inspector/palette) makes the outline look "missing" —
-  verify with a piece in the clear centre. R1 tone mapping went back to native
-  `gl={{ toneMapping: ACESFilmicToneMapping }}` (no composer, dropped the
-  `@react-three/postprocessing` + `postprocessing` deps). 195 tests.
+- **M-Outline (selection outline — SCREEN-SPACE edge pass) — SHIPPED, USER TO
+  VERIFY IN BROWSER.** `SelectionEffects` in `render/Scene.tsx` runs the
+  postprocessing `OutlineEffect` (via `@react-three/postprocessing` EffectComposer)
+  over the selected/target meshes — a true constant-pixel silhouette that keeps
+  hard corners connected, doesn't clip at the ground, and doesn't paint over a
+  hollow opening (the failures of the earlier back-face-HULL approach: a box
+  vertex has 3 normals so the shell tears at corners; the hull traces the outer
+  solid so it fills a cavity with orange). Two Outline effects on distinct
+  selection layers (10 = orange selected, 11 = green proximity/join target);
+  ACES tone mapping rides the same composer (Canvas `gl` = `NoToneMapping` so it
+  isn't double-applied). CAVEAT the user accepted: a silhouette edge pass won't
+  draw the INNER rim of a hollow cup (that's an interior fold, not a mask
+  boundary — a separate normal/depth-discontinuity outline, deferred). ⚠️ CANNOT
+  BE VERIFIED HEADLESS: this pass renders offscreen mask/depth buffers that the
+  SwiftShader GL in CI/Playwright refuses to draw (proven: OutlineEffect,
+  camera-layer, visibility, and reparent isolation ALL render nothing there),
+  so screenshots from the test harness show NO outline even when it's correct —
+  verify in a real browser. The prior back-face-hull attempt (torn corners,
+  cavity fill) is removed. 195 tests.
 - **M-ConcentricAxle (co-axial joins at any diameter + auto-axle) — DONE &
   browser-verified.** Choosing the Axle joint on two circular features (rims/
   bores/centrelines of cylinders) now engages them CO-AXIAL regardless of
