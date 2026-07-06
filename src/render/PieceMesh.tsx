@@ -129,13 +129,13 @@ export const PieceMesh = forwardRef<Mesh, Props>(function PieceMesh(
           mesh's geometry directly; hollow pieces outline their OUTER analytic
           silhouette on a separate invisible mesh (the wall shell would splay). */}
       {showOutline && !piece.hollow && (
-        <Outlines thickness={0.025} color={outlineColor} screenspace transparent toneMapped={false} />
+        <Outlines thickness={0.015} color={outlineColor} screenspace transparent toneMapped={false} />
       )}
       {showOutline && piece.hollow && (
         <mesh raycast={() => null}>
           {analyticGeoJsx}
           <meshBasicMaterial transparent opacity={0} depthWrite={false} />
-          <Outlines thickness={0.025} color={outlineColor} screenspace transparent toneMapped={false} />
+          <Outlines thickness={0.015} color={outlineColor} screenspace transparent toneMapped={false} />
         </mesh>
       )}
       {selected && (
