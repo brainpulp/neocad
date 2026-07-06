@@ -1197,7 +1197,7 @@ export function Scene() {
       // ACES filmic tone mapping: highlights on metal/glass roll off like a
       // photo instead of clipping to white. (three color management is on by
       // default in r155+.)
-      gl={{ toneMapping: ACESFilmicToneMapping, toneMappingExposure: 1.0 }}
+      gl={{ toneMapping: ACESFilmicToneMapping }}
       onPointerMissed={() => {
         store.getState().select(null)
         store.getState().selectFastener(null)
