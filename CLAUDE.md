@@ -31,25 +31,31 @@ Plans: `docs/superpowers/plans/` · Backlog: `docs/BACKLOG.md`
 
 ## Status
 
-- **M-Outline (selection outline — SCREEN-SPACE edge pass) — SHIPPED, USER TO
-  VERIFY IN BROWSER.** `SelectionEffects` in `render/Scene.tsx` runs the
-  postprocessing `OutlineEffect` (via `@react-three/postprocessing` EffectComposer)
-  over the selected/target meshes — a true constant-pixel silhouette that keeps
-  hard corners connected, doesn't clip at the ground, and doesn't paint over a
-  hollow opening (the failures of the earlier back-face-HULL approach: a box
-  vertex has 3 normals so the shell tears at corners; the hull traces the outer
-  solid so it fills a cavity with orange). Two Outline effects on distinct
-  selection layers (10 = orange selected, 11 = green proximity/join target);
-  ACES tone mapping rides the same composer (Canvas `gl` = `NoToneMapping` so it
-  isn't double-applied). CAVEAT the user accepted: a silhouette edge pass won't
-  draw the INNER rim of a hollow cup (that's an interior fold, not a mask
-  boundary — a separate normal/depth-discontinuity outline, deferred). ⚠️ CANNOT
-  BE VERIFIED HEADLESS: this pass renders offscreen mask/depth buffers that the
-  SwiftShader GL in CI/Playwright refuses to draw (proven: OutlineEffect,
-  camera-layer, visibility, and reparent isolation ALL render nothing there),
-  so screenshots from the test harness show NO outline even when it's correct —
-  verify in a real browser. The prior back-face-hull attempt (torn corners,
-  cavity fill) is removed. 195 tests.
+- **M-Outline (selection outline — back-face hull with SMOOTHED normals) — DONE
+  & browser-verified (headless).** `OutlineHull` in `render/PieceMesh.tsx`: the
+  piece geometry rendered again `side: BackSide` with every vertex pushed OUT
+  along its normal in view space (`uOffset = 2.4px * worldUnitsPerPixel`,
+  recomputed each frame from camera distance → constant ~2px at any zoom). Two
+  fixes over the first hull attempt (which the user rejected — torn corners,
+  ground clip, solid orange patch over a hollow opening): (1) the outline
+  geometry is `mergeVertices()` + `computeVertexNormals()` (`outlineGeometryFrom`)
+  so a hard box corner is ONE welded vertex with an averaged (diagonal) normal
+  and the shell stays CONNECTED at corners instead of tearing (a raw
+  BoxGeometry corner is tripled with 3 face normals that push apart); (2) the
+  hull traces the piece's ACTUAL render geometry — for a hollow piece that's the
+  wall geometry (`hollowGeometry`), so the cavity/opening is outlined and NOT
+  painted over by a solid box's top face. Verified in the headless browser on
+  the exact cases the user flagged: solid box (connected corners + ground edge),
+  gear (all teeth), hollow open-top box (cavity traced, no fill). Renders in the
+  MAIN scene pass on purpose — a postprocessing screen-space `OutlineEffect`
+  draws NOTHING under the SwiftShader GL used to verify AND (found the hard way)
+  drew nothing in the user's real browser either, so it was abandoned. GOTCHA
+  that ate a session: a piece selected behind a DOM panel (inspector/palette)
+  looks like it has no outline — verify with a piece in the clear centre.
+  KNOWN LIMIT: the inner cavity walls get some orange bleed (back-face shell of
+  the inner walls), not a single clean rim line. R1 tone mapping is native
+  `gl={{ toneMapping: ACESFilmicToneMapping }}` (no composer/postprocessing dep).
+  195 tests.
 - **M-ConcentricAxle (co-axial joins at any diameter + auto-axle) — DONE &
   browser-verified.** Choosing the Axle joint on two circular features (rims/
   bores/centrelines of cylinders) now engages them CO-AXIAL regardless of
