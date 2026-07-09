@@ -31,6 +31,21 @@ Plans: `docs/superpowers/plans/` · Backlog: `docs/BACKLOG.md`
 
 ## Status
 
+- **SDF-core (parallel branch `sdf-core`, no physics) — Phase 1 DONE &
+  browser-verified.** A signed-distance-field geometry core for cuts/booleans
+  (M-Cuts) and later freeform, built in isolation from the physics builder.
+  Spec: `docs/superpowers/specs/2026-07-07-sdf-modeler.md`. `src/sdf/`:
+  `tree.ts` (pure SDF node tree — sphere/box/roundBox/cylinder/torus/plane +
+  union/subtract/intersect + smooth variants + transform, with code-reading
+  builder helpers), `eval.ts` (CPU evaluator `sdf(node,p)` + `sdfNormal`),
+  `glsl.ts` (`sdfToGlsl` → GLSL `map(vec3)` for raymarching; SAME formulas as
+  the CPU eval so they stay in lockstep). `SdfViewer.tsx` raymarches a demo tree
+  full-screen (rounded box smooth-unioned with a sphere, a cylinder bore
+  subtracted) — reached via `?sdf` in the URL (main.tsx branch), fully isolated,
+  no shared store. 17 tests (13 eval + 4 glsl codegen). NEXT per spec: Phase 2
+  viewer polish, Phase 3 surface-nets mesher (`sdfToGeometry`), Phase 4
+  integration slice (an `sdf`/cut body type back on the builder — concave
+  dynamic bodies need convex decomposition for Jolt, budgeted for then).
 - **M-Outline (selection outline — back-face hull with SMOOTHED normals) — DONE
   & browser-verified (headless).** `OutlineHull` in `render/PieceMesh.tsx`: the
   piece geometry rendered again `side: BackSide` with every vertex pushed OUT
