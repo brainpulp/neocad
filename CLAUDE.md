@@ -31,6 +31,31 @@ Plans: `docs/superpowers/plans/` · Backlog: `docs/BACKLOG.md`
 
 ## Status
 
+- **M-Cuts slice 1b (drilled holes are REAL in physics + export) — DONE &
+  verified against the real WASM kernels.** The hole an anchored piece shows is
+  now the hole it COLLIDES as, and the hole it EXPORTS/prints. `render/csg.ts`
+  caches the manifold toplevel synchronously on init and adds `csgMeshSync(node)`
+  (piece-local triangle soup, null until the kernel loads) + `onCsgReady`/
+  `csgReady`. `physics/shapes.ts` `makeCutShape` → a Jolt `MeshShape` from those
+  triangles; `integration.ts` chains it before hollow/base FOR ANCHORED PIECES
+  ONLY (Jolt MeshShapes are static-only — a dynamic drilled piece keeps its solid
+  base shape until convex decomposition lands, a later slice). `structureKey`
+  gained `cutsKey`; `Scene.tsx` kicks off `initCsg` and bumps `worldEpoch` on
+  `onCsgReady` so a piece compiled before the WASM was ready gets ONE rebuild
+  with its real mesh (the kernel loads once, so no per-tick thrash). Export
+  (`export/scene.ts` + `exporters.ts`, now async) meshes cut pieces through
+  manifold so the printed part is really bored. VERIFIED against real Jolt: a
+  ball drops straight through a bored anchored plate while a ball too fat for the
+  bore rests on the rim (Ø0.24 ball on a Ø0.12 bore → centre parks at 1.144 =
+  1.04+√(0.12²−0.06²)); real manifold: a drilled block exports more tris than a
+  plain box. GOTCHA: a thin static MeshShape has NO continuous collision, so a
+  high-speed drop tunnels the rim — the fat-ball test drops from just above the
+  plate (real limitation, not a bug; dynamic-piece CCD is future). 203 tests
+  (+2 cut-physics, +1 export). Production build emits the wasm + compiles the
+  init path. ⚠️ STILL NOT: dynamic (unanchored) drilled pieces collide as the
+  uncut base shape; slice 1c = click-a-face drilling gesture. Only box/cylinder
+  stock is drillable.
+
 - **M-Cuts slice 1a (drilling in the builder — render + inspector) — DONE &
   browser-verified.** A piece can carry subtractive `cuts` (bores) that mesh to
   an EXACT watertight solid via manifold-3d. Buy-vs-build was benchmarked on the
