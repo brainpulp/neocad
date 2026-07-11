@@ -4,22 +4,66 @@ import { OrbitControls } from '@react-three/drei'
 import { BufferAttribute, BufferGeometry, Matrix4, type ShaderMaterial } from 'three'
 import { sdfToGlsl } from './glsl'
 import {
+  box,
   cylinder,
+  intersect,
   roundBox,
   smoothUnion,
   sphere,
   subtract,
+  torus,
   translate,
   type SdfNode,
 } from './tree'
 
-/** A showcase tree: a rounded box smooth-blended with a sphere, with a vertical
- * bore drilled through it — exercises primitives, a smooth union, and a
- * boolean subtract (the M-Cuts case). */
-const DEMO: SdfNode = subtract(
-  smoothUnion(roundBox([1, 1, 1], 0.18), translate([1.05, 0.65, 0], sphere(0.72)), 0.35),
-  cylinder(0.42, 5),
-)
+/**
+ * A handful of showcase trees, switchable from the URL: `?sdf=<name>`.
+ * Each exercises a different corner of the core; `blend-bore` is the default.
+ */
+export const DEMOS: Record<string, { title: string; node: SdfNode }> = {
+  'blend-bore': {
+    title: 'rounded box + blended sphere − bore',
+    node: subtract(
+      smoothUnion(roundBox([1, 1, 1], 0.18), translate([1.05, 0.65, 0], sphere(0.72)), 0.35),
+      cylinder(0.42, 5),
+    ),
+  },
+  scoop: {
+    title: 'box − sphere (a spherical scoop)',
+    node: subtract(box([1, 1, 1]), translate([0, 1, 0], sphere(1.15))),
+  },
+  pipe: {
+    title: 'cylinder − cylinder (a tube)',
+    node: subtract(cylinder(1, 2.2), cylinder(0.72, 3)),
+  },
+  dome: {
+    title: 'box ∩ sphere (a rounded cap)',
+    node: intersect(box([1, 0.6, 1]), sphere(1.15)),
+  },
+  ring: {
+    title: 'torus + smooth-blended bead',
+    node: smoothUnion(torus(1, 0.32), translate([1, 0, 0], sphere(0.5)), 0.25),
+  },
+  dice: {
+    title: 'rounded box − pip bores',
+    node: [
+      [0.55, 0.55],
+      [-0.55, 0.55],
+      [0.55, -0.55],
+      [-0.55, -0.55],
+      [0, 0],
+    ].reduce<SdfNode>(
+      (solid, [x, z]) => subtract(solid, translate([x, 1, z], sphere(0.28))),
+      roundBox([1, 1, 1], 0.18),
+    ),
+  },
+}
+
+function pickDemo(): { title: string; node: SdfNode; name: string } {
+  const q = new URLSearchParams(window.location.search).get('sdf') || ''
+  const name = DEMOS[q] ? q : 'blend-bore'
+  return { name, ...DEMOS[name] }
+}
 
 // Fullscreen triangle in clip space; the fragment reconstructs camera rays.
 const VERT = /* glsl */ `
@@ -124,8 +168,10 @@ function Raymarcher({ node }: { node: SdfNode }) {
   )
 }
 
-/** Dev-only SDF preview. Reached via `?sdf` in the URL (see main.tsx). */
+/** Dev-only SDF preview. Reached via `?sdf` (default demo) or `?sdf=<name>`. */
 export function SdfApp() {
+  const demo = useMemo(() => pickDemo(), [])
+  const names = Object.keys(DEMOS)
   return (
     <div style={{ position: 'fixed', inset: 0, background: '#111' }}>
       <div
@@ -135,15 +181,34 @@ export function SdfApp() {
           left: 14,
           zIndex: 10,
           color: '#cfd6e4',
-          font: '13px/1.4 system-ui, sans-serif',
-          pointerEvents: 'none',
+          font: '13px/1.5 system-ui, sans-serif',
         }}
       >
         <strong>NeoCad · SDF preview</strong>
-        <div style={{ opacity: 0.7 }}>raymarched · drag to orbit · scroll to zoom</div>
+        <div style={{ opacity: 0.7 }}>
+          {demo.name} — {demo.title}
+        </div>
+        <div style={{ opacity: 0.55, marginTop: 6 }}>
+          raymarched · drag to orbit · scroll to zoom
+        </div>
+        <div style={{ marginTop: 8, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+          {names.map((n) => (
+            <a
+              key={n}
+              href={`?sdf=${n}`}
+              style={{
+                color: n === demo.name ? '#ffcf87' : '#9fb0c8',
+                textDecoration: 'none',
+                borderBottom: n === demo.name ? '1px solid #ffcf87' : '1px solid transparent',
+              }}
+            >
+              {n}
+            </a>
+          ))}
+        </div>
       </div>
       <Canvas camera={{ position: [3.2, 2.4, 3.6], fov: 45 }}>
-        <Raymarcher node={DEMO} />
+        <Raymarcher node={demo.node} />
         <OrbitControls makeDefault />
       </Canvas>
     </div>
