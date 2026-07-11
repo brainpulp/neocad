@@ -9,8 +9,8 @@ function baseName(doc: Document): string {
 }
 
 /** One-way glTF export of the current posed geometry (for Blender / web viewers). */
-export function exportGLTF(doc: Document): void {
-  const scene = buildExportScene(doc)
+export async function exportGLTF(doc: Document): Promise<void> {
+  const scene = await buildExportScene(doc)
   new GLTFExporter().parse(
     scene,
     (result) => {
@@ -26,8 +26,8 @@ export function exportGLTF(doc: Document): void {
 }
 
 /** One-way STL export of the current posed geometry (for slicers / 3D printing). */
-export function exportSTL(doc: Document): void {
-  const scene = buildExportScene(doc)
+export async function exportSTL(doc: Document): Promise<void> {
+  const scene = await buildExportScene(doc)
   const stl = new STLExporter().parse(scene)
   downloadBlob(new Blob([stl], { type: 'model/stl' }), `${baseName(doc)}.stl`)
 }

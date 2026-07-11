@@ -1,6 +1,8 @@
 import type { JoltModule } from './jolt'
 import type { Primitive } from '../document/catalog'
 import { hollowBricks } from '../document/hollow'
+import { pieceToCsg } from '../document/cuts'
+import { csgMeshSync } from '../render/csg'
 import type { Piece } from '../document/types'
 
 /**
@@ -37,6 +39,38 @@ export function makeHollowShape(Jolt: JoltModule, piece: Piece): any | null {
   }
   const result = settings.Create()
   if (result.HasError()) throw new Error(`hollow compound: ${result.GetError().c_str()}`)
+  return result.Get()
+}
+
+/**
+ * A drilled piece's collision as the EXACT hole-punched triangle mesh, so a ball
+ * really drops through a bored plate. Built from the same manifold CSG the
+ * renderer shows (`csgMeshSync`, piece-local triangles) → a Jolt `MeshShape`.
+ *
+ * MeshShapes are non-convex and Jolt only allows them on STATIC bodies, so this
+ * is used for anchored pieces only; a dynamic drilled piece keeps its solid base
+ * shape until convex decomposition lands (a later slice). Returns null when the
+ * piece has no cuts, isn't drillable, or the CSG kernel hasn't loaded yet — in
+ * which case the caller falls back to the solid shape and rebuilds on
+ * `onCsgReady`.
+ */
+export function makeCutShape(Jolt: JoltModule, piece: Piece): any | null {
+  const node = pieceToCsg(piece)
+  if (!node) return null
+  const mesh = csgMeshSync(node)
+  if (!mesh) return null
+  const { positions, indices } = mesh
+  const verts = new Jolt.VertexList()
+  for (let i = 0; i < positions.length; i += 3) {
+    verts.push_back(new Jolt.Float3(positions[i], positions[i + 1], positions[i + 2]))
+  }
+  const tris = new Jolt.IndexedTriangleList()
+  for (let i = 0; i < indices.length; i += 3) {
+    tris.push_back(new Jolt.IndexedTriangle(indices[i], indices[i + 1], indices[i + 2], 0))
+  }
+  const settings = new Jolt.MeshShapeSettings(verts, tris, new Jolt.PhysicsMaterialList())
+  const result = settings.Create()
+  if (result.HasError()) throw new Error(`cut mesh: ${result.GetError().c_str()}`)
   return result.Get()
 }
 

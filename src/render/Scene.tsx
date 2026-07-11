@@ -26,6 +26,9 @@ import { RotateRing } from './RotateRing'
 import { JointEditor } from './JointEditor'
 import { localDirToWorld, localToWorld, worldToLocal } from '../document/math'
 import { isJointType, type Vec3 } from '../document/types'
+import { cutsKey } from '../document/cuts'
+import { initCsg, onCsgReady } from './csg'
+import manifoldWasmUrl from 'manifold-3d/manifold.wasm?url'
 import { maxExtent } from './geometry'
 import { playImpact } from '../audio/impacts'
 
@@ -43,7 +46,8 @@ function structureKey(doc: import('../document/types').Document): string {
     .map(
       (p) =>
         `${p.id}:${p.anchored ? 1 : 0}:${p.material}:${Object.values(p.dimensions).join(',')}` +
-        `:${p.hollow ? `${p.hollow.thickness},${p.hollow.openFace ?? ''}` : ''}`,
+        `:${p.hollow ? `${p.hollow.thickness},${p.hollow.openFace ?? ''}` : ''}` +
+        `:${cutsKey(p)}`,
     )
     .join('|')
   const fasteners = doc.fasteners.map((f) => f.id).join('|')
@@ -240,6 +244,22 @@ function Sim({ Jolt }: { Jolt: JoltModule }) {
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
   }, [camera, store])
+  // Kick off the CSG kernel and rebuild the world once it's ready, so an
+  // anchored drilled piece — which compiles to its solid base shape until the
+  // WASM loads — gets its real hole-punched MeshShape. Fires at most once.
+  useEffect(() => {
+    let alive = true
+    initCsg(manifoldWasmUrl)
+    onCsgReady(() => {
+      if (alive && store.getState().doc.pieces.some((p) => p.cuts?.length && p.anchored)) {
+        store.getState().bumpWorldEpoch()
+      }
+    })
+    return () => {
+      alive = false
+    }
+  }, [store])
+
   const key = `${structureKey(doc)}#${worldEpoch}`
   // The key the live world was built from. When the doc changes, the world is
   // stale until the rebuild effect runs — the frame loop must NOT step or sync

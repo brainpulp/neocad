@@ -113,8 +113,8 @@ export function App() {
         <Toolbar
           onSave={onSave}
           onOpen={onOpen}
-          onExportGLTF={() => exportGLTF(store.getState().doc)}
-          onExportSTL={() => exportSTL(store.getState().doc)}
+          onExportGLTF={() => void exportGLTF(store.getState().doc).catch((e) => console.error('glTF export failed', e))}
+          onExportSTL={() => void exportSTL(store.getState().doc).catch((e) => console.error('STL export failed', e))}
         />
         <div className="body">
           <Palette />

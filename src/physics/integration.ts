@@ -6,7 +6,7 @@ import {
   LAYER_WALLS,
   type JoltModule,
 } from './jolt'
-import { makeHollowShape, makeShape } from './shapes'
+import { makeCutShape, makeHollowShape, makeShape } from './shapes'
 import { FASTENERS, STOCK } from '../document/catalog'
 import { localDirToWorld, localToWorld, perpendicular, quatConjugate, quatRotate } from '../document/math'
 import type { Document, Fastener, Material, Piece, Rope, Vec3 } from '../document/types'
@@ -591,8 +591,15 @@ export class PhysicsWorld {
 
   private createPieceBody(piece: Piece, materials: Material[]): void {
     const J = this.Jolt
+    // A drilled ANCHORED piece collides as its exact hole-punched mesh (a ball
+    // drops through the bore). MeshShapes are static-only in Jolt, so a dynamic
+    // drilled piece falls through to its solid base shape for now. `makeCutShape`
+    // also returns null until the CSG kernel loads — the world rebuilds via
+    // `onCsgReady` once it does.
     const shape =
-      makeHollowShape(J, piece) ?? makeShape(J, STOCK[piece.stockType].primitive, piece.dimensions)
+      (piece.anchored ? makeCutShape(J, piece) : null) ??
+      makeHollowShape(J, piece) ??
+      makeShape(J, STOCK[piece.stockType].primitive, piece.dimensions)
     const [px, py, pz] = piece.state.transform.position
     const [qx, qy, qz, qw] = piece.state.transform.rotation
     const isStatic = piece.anchored
