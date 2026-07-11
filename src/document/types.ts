@@ -61,6 +61,8 @@ export interface Piece {
   anchored: boolean
   /** Hollowed with wall thickness (box/cylinder). See document/hollow.ts. */
   hollow?: import('./hollow').Hollow
+  /** Subtractive cuts (drilled bores, slots). See document/cuts.ts. */
+  cuts?: import('./cuts').CutOp[]
 }
 
 export interface Ground {

@@ -1,4 +1,4 @@
-import { forwardRef, useEffect, useMemo, useRef } from 'react'
+import { forwardRef, useEffect, useMemo, useRef, useState } from 'react'
 import {
   BackSide,
   BoxGeometry,
@@ -14,8 +14,12 @@ import {
 import { mergeVertices } from 'three/examples/jsm/utils/BufferGeometryUtils.js'
 import { useFrame, type ThreeEvent } from '@react-three/fiber'
 import { Html } from '@react-three/drei'
+// Vite serves manifold's wasm; we hand its URL to the CSG mesher.
+import manifoldWasmUrl from 'manifold-3d/manifold.wasm?url'
 import { formatMass, pieceMass } from '../document/catalog'
+import { cutsKey, pieceToCsg } from '../document/cuts'
 import { maxExtent, pieceVisual } from './geometry'
+import { csgToGeometry } from './csg'
 import { buildVisual, wedgeGeometry } from './mechanical'
 import { hollowGeometry } from './hollowGeometry'
 import { textureFor } from './textures'
@@ -148,6 +152,32 @@ export const PieceMesh = forwardRef<Mesh, Props>(function PieceMesh(
   )
   useEffect(() => () => customGeo?.dispose(), [customGeo])
 
+  // Cut (drilled) geometry: exact watertight base−bores via manifold-3d, meshed
+  // async off the main thread's critical path. Re-meshes when the cuts or the
+  // piece dimensions change; falls back to the solid shape while pending.
+  const cKey = cutsKey(piece)
+  const [cutGeo, setCutGeo] = useState<BufferGeometry | null>(null)
+  useEffect(() => {
+    const node = pieceToCsg(piece)
+    if (!node) {
+      setCutGeo(null)
+      return
+    }
+    let alive = true
+    csgToGeometry(node, manifoldWasmUrl).then((g) => {
+      if (alive) setCutGeo((prev) => (prev?.dispose(), g))
+      else g.dispose()
+    })
+    return () => {
+      alive = false
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cKey, dimsKey])
+  useEffect(() => () => cutGeo?.dispose(), [cutGeo])
+
+  // What the mesh actually renders: a drilled solid wins over the plain shape.
+  const renderGeo = cutGeo ?? customGeo
+
   // The analytic solid shape (outer box/cylinder/sphere). Used for the SELECTION
   // OUTLINE of hollow pieces so the rim traces the outer silhouette, not the
   // splayed wall shell.
@@ -160,8 +190,8 @@ export const PieceMesh = forwardRef<Mesh, Props>(function PieceMesh(
       {v.kind === 'sphere' && <sphereGeometry args={v.args as [number, number, number]} />}
     </>
   )
-  const geometryJsx = customGeo ? (
-    <primitive object={customGeo} attach="geometry" />
+  const geometryJsx = renderGeo ? (
+    <primitive object={renderGeo} attach="geometry" />
   ) : (
     analyticGeoJsx
   )
@@ -173,7 +203,7 @@ export const PieceMesh = forwardRef<Mesh, Props>(function PieceMesh(
   const outline = selected || highlighted
   const outlineGeo = useMemo<BufferGeometry | null>(() => {
     if (!outline) return null
-    if (customGeo) return outlineGeometryFrom(customGeo)
+    if (renderGeo) return outlineGeometryFrom(renderGeo)
     if (v.kind === 'box') {
       const [x, y, z] = v.args as [number, number, number]
       return outlineGeometryFrom(new BoxGeometry(x, y, z))
@@ -188,7 +218,7 @@ export const PieceMesh = forwardRef<Mesh, Props>(function PieceMesh(
     }
     return null
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [outline, v.kind, dimsKey, hollowKey, customGeo])
+  }, [outline, v.kind, dimsKey, hollowKey, customGeo, cutGeo])
   useEffect(() => () => outlineGeo?.dispose(), [outlineGeo])
 
   return (

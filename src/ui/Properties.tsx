@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { FASTENERS, STOCK, formatMass, pieceMass } from '../document/catalog'
+import { nextCutId, type CutOp } from '../document/cuts'
 import { hollowable, type FaceId } from '../document/hollow'
 import { flipJointAxis, swapJointEnds } from '../document/joints'
 import { isJointType, type Piece } from '../document/types'
@@ -186,7 +187,83 @@ export function Properties() {
       ))}
 
       <HollowControls piece={piece} />
+      <CutsControls piece={piece} />
     </div>
+  )
+}
+
+/** Drill bores through box/cylinder stock — exact watertight cuts (manifold-3d).
+ * Each bore runs along a principal axis at a settable diameter + position. */
+function CutsControls({ piece }: { piece: Piece }) {
+  const store = useStoreApi()
+  const d = piece.dimensions
+  const drillable = ('x' in d && 'y' in d && 'z' in d) || ('radius' in d && 'height' in d)
+  if (!drillable) return null
+  const cuts = piece.cuts ?? []
+  const half = Math.max(...Object.values(d)) / 2
+  const set = (next: CutOp[]) =>
+    store.getState().updatePiece(piece.id, { cuts: next.length ? next : undefined })
+  const upd = (i: number, patch: Partial<CutOp>) =>
+    set(cuts.map((c, j) => (j === i ? { ...c, ...patch } : c)))
+
+  return (
+    <>
+      <div className="label" style={{ marginTop: 12 }}>
+        DRILL
+      </div>
+      {cuts.map((c, i) => (
+        <div key={c.id} className="dim-row" style={{ flexWrap: 'wrap', gap: 6 }}>
+          <select
+            aria-label="Bore axis"
+            value={c.axis}
+            onChange={(e) => upd(i, { axis: e.target.value as 'x' | 'y' | 'z' })}
+          >
+            <option value="x">X</option>
+            <option value="y">Y</option>
+            <option value="z">Z</option>
+          </select>
+          <div className="dim-value">
+            <input
+              type="number"
+              aria-label="Bore diameter"
+              step={0.5}
+              value={Math.round(c.radius * 200 * 10) / 10}
+              onChange={(e) => upd(i, { radius: Math.max(0.001, parseFloat(e.target.value) / 200) })}
+            />
+            <span className="dim-unit">Ø cm</span>
+          </div>
+          <input
+            type="range"
+            aria-label="Bore across"
+            min={-half}
+            max={half}
+            step={0.005}
+            value={c.offset[0]}
+            onChange={(e) => upd(i, { offset: [parseFloat(e.target.value), c.offset[1]] })}
+          />
+          <input
+            type="range"
+            aria-label="Bore along"
+            min={-half}
+            max={half}
+            step={0.005}
+            value={c.offset[1]}
+            onChange={(e) => upd(i, { offset: [c.offset[0], parseFloat(e.target.value)] })}
+          />
+          <button title="Remove this bore" onClick={() => set(cuts.filter((_, j) => j !== i))}>
+            ✕
+          </button>
+        </div>
+      ))}
+      <button
+        className="secondary"
+        onClick={() =>
+          set([...cuts, { id: nextCutId(), tool: 'bore', radius: 0.02, axis: 'y', offset: [0, 0] }])
+        }
+      >
+        ＋ Drill bore
+      </button>
+    </>
   )
 }
 

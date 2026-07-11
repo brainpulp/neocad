@@ -31,6 +31,25 @@ Plans: `docs/superpowers/plans/` · Backlog: `docs/BACKLOG.md`
 
 ## Status
 
+- **M-Cuts slice 1a (drilling in the builder — render + inspector) — DONE &
+  browser-verified.** A piece can carry subtractive `cuts` (bores) that mesh to
+  an EXACT watertight solid via manifold-3d. Buy-vs-build was benchmarked on the
+  sdf-core branch (manifold beat surface-nets + three-bvh-csg — see
+  `docs/superpowers/specs/2026-07-07-sdf-modeler.md`); this slice brings it into
+  the real app. `document/cuts.ts` (pure): `CutOp` (bore = radius+axis+2D
+  offset), `CsgNode` tree, `pieceToCsg(piece)` (base box/cylinder − oriented
+  cylinder bores), `cutsKey`. `render/csg.ts`: manifold WASM singleton
+  (`?url` wasm for Vite, on-disk for Node) + `csgToGeometry(node)` → welded
+  `BufferGeometry` with `toCreasedNormals` (crisp box edges, round bore walls).
+  `PieceMesh` async-meshes cut pieces (falls back to the plain shape while
+  pending) and the selection outline traces the drilled shape. Inspector DRILL
+  section: ＋ Drill bore, per-bore axis/Ø/position/remove; live re-cut via
+  `updatePiece({cuts})` (undoable). `Piece.cuts?` round-trips through serialize
+  (plain field). 200 tests (5 new cuts). ⚠️ NOT YET: physics still collides as
+  the UNCUT base shape (hole is visual/model-only) and export doesn't emit the
+  hole — slice 1b = static Jolt `MeshShape` + async export; slice 1c =
+  click-a-face drilling gesture. Only box/cylinder stock is drillable so far.
+
 - **M-Outline (selection outline — back-face hull with SMOOTHED normals) — DONE
   & browser-verified (headless).** `OutlineHull` in `render/PieceMesh.tsx`: the
   piece geometry rendered again `side: BackSide` with every vertex pushed OUT
