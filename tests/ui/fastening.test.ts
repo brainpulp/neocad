@@ -37,7 +37,7 @@ it('selecting a fasten tool clears the stock tool and vice-versa', () => {
   expect(s.getState().fastenTool).toBeNull()
 })
 
-it('commitHeldAt with a proximity target also welds the new piece to that target', () => {
+it('commitHeldAt with a proximity target asks how to attach (pendingJoin) instead of auto-welding', () => {
   const s = createDocStore()
   const top = makePiece('panel', [0, 1, 0])
   s.getState().addPiece(top)
@@ -45,7 +45,10 @@ it('commitHeldAt with a proximity target also welds the new piece to that target
   s.getState().setProximityTarget(top.id)
   s.getState().commitHeldAt([0, 0.5, 0])
   expect(s.getState().doc.pieces).toHaveLength(2)
-  expect(s.getState().doc.fasteners).toHaveLength(1)
-  expect(s.getState().doc.fasteners[0].type).toBe('weld') // default join
+  expect(s.getState().doc.fasteners).toHaveLength(0)
+  expect(s.getState().pendingJoin?.targetId).toBe(top.id)
   expect(s.getState().proximityTarget).toBeNull()
+  s.getState().resolveJoin('weld')
+  expect(s.getState().doc.fasteners).toHaveLength(1)
+  expect(s.getState().doc.fasteners[0].type).toBe('weld')
 })

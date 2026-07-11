@@ -14,6 +14,12 @@ export interface Material {
   friction: number
   restitution: number
   color: string
+  /** 'magnet' pieces emit a dipole field; 'ferrous' pieces are attracted to it. */
+  magnetic?: 'magnet' | 'ferrous'
+  /** See-through rendering: transmission 0..1, index of refraction, surface roughness. */
+  optics?: { transmission: number; ior?: number; roughness?: number }
+  /** PBR surface finish: how the material catches environment light. */
+  finish?: { metalness?: number; roughness?: number; clearcoat?: number }
   // Reserved for the future FEA/failure evaluator. Unused by the M1 rigid-body sim,
   // declared now so adding the evaluator needs no document migration (spec §6c).
   youngsModulus?: number
@@ -30,6 +36,15 @@ export type StockType =
   | 'panel'
   | 'block'
   | 'ball'
+  // Mechanical stock: all collide as cylinders for now; teeth/grooves are visual.
+  | 'gear'
+  | 'pinion'
+  | 'axle'
+  | 'pin'
+  | 'pulley'
+  | 'cam'
+  | 'ratchet'
+  | 'wedge'
 
 export interface Piece {
   id: string
@@ -44,22 +59,105 @@ export interface Piece {
   /** Live pose, advanced by physics, frozen on pause, persisted on save. */
   state: { transform: Transform }
   anchored: boolean
+  /** Hollowed with wall thickness (box/cylinder). See document/hollow.ts. */
+  hollow?: import('./hollow').Hollow
 }
 
 export interface Ground {
   gravity: Vec3
+  /**
+   * The workbench: a visible square slab where the action happens. Invisible
+   * walls at its edge keep physics from throwing pieces off into the distance;
+   * paused (user) moves are unaffected.
+   */
+  sandbox?: { size: number; thickness: number }
 }
 
-// Rigid fasteners only in M2. All compile to a Jolt fixed constraint and behave
-// identically; they ship as distinct names because their strengths diverge once
-// the failure/FEA evaluator arrives (spec §6b). Articulated fasteners + motors are M3.
-export type FastenerType = 'weld' | 'glue' | 'bolt' | 'nail'
+export const DEFAULT_SANDBOX = { size: 4, thickness: 0.05 }
+
+// Rigid fasteners compile to a Jolt fixed constraint and behave identically; they
+// ship as distinct names because their strengths diverge once the failure/FEA
+// evaluator arrives (spec §6b).
+export type RigidFastenerType = 'weld' | 'glue' | 'bolt' | 'nail'
+// Articulated joints, placed point-A → type → point-B with the Joint tool.
+// pivot = rotates around the axis; linear = slides along it; cylindrical = both;
+// spring = elastic tether between the two points (stiffness + damping).
+export type JointType = 'pivot' | 'cylindrical' | 'linear' | 'spring'
+export type FastenerType = RigidFastenerType | JointType
+
+export const JOINT_TYPES: JointType[] = ['pivot', 'cylindrical', 'linear', 'spring']
+export function isJointType(t: FastenerType): t is JointType {
+  return (JOINT_TYPES as FastenerType[]).includes(t)
+}
 
 export interface Fastener {
   id: string
   type: FastenerType
   partA: string
   partB: string
+  /** Joint anchor in partA's local frame (joints only; rigid fasteners auto-detect). */
+  anchorA?: Vec3
+  /** Joint anchor in partB's local frame (joints only). */
+  anchorB?: Vec3
+  /** Joint axis in partA's local frame (joints only). */
+  axisA?: Vec3
+  /**
+   * Slide range along the axis for linear/cylindrical joints (meters, relative
+   * to the anchors' initial coincidence). Keeps a gear from sliding off the end
+   * of its axle — real shafts have ends.
+   */
+  slideMin?: number
+  slideMax?: number
+  /**
+   * Drive the joint: pivots get a rotational motor (velocity in rad/s, torque
+   * limit in N·m), linear joints a linear one (velocity m/s, force N).
+   */
+  motor?: { enabled: boolean; velocity: number; maxForce: number }
+  /** Spring joints: stiffness (Hz), damping ratio, and rest length (m). */
+  spring?: { frequency: number; damping: number; restLength: number }
+  /** Pivot swing limits (radians), e.g. a gate that only opens 90°. */
+  angleMin?: number
+  angleMax?: number
+  /** Cylindrical joints: each freedom can be switched off in the inspector. */
+  canSpin?: boolean
+  canSlide?: boolean
+  /** Bond strength override (N) for rigid fasteners; the join breaks past this force. */
+  strength?: number
+}
+
+/** A rope end tied to a piece (anchor in that piece's local frame). */
+export interface RopeAttachment {
+  pieceId: string
+  anchor: Vec3
+}
+
+/**
+ * A rope: simulated as a Jolt soft body (particle chain). Rest geometry +
+ * parameters live here; the live particle positions are evaluation state and
+ * are never persisted (Reset regenerates the rope from this definition).
+ */
+export interface Rope {
+  id: string
+  name: string
+  /** World rest endpoints (used when an end isn't attached). */
+  start: Vec3
+  end: Vec3
+  segments: number
+  radius: number
+  /** Rest-length multiplier: 1 = taut line, >1 hangs slack. */
+  slack: number
+  /** 0..1 — how hard the rope resists stretching. */
+  stiffness: number
+  /**
+   * 0..1 springiness: 0 = an inextensible rope/chain, higher = a bungee that
+   * stretches under load. Real rope is ~0; this is opt-in elasticity.
+   */
+  elasticity?: number
+  /** Closed loop (belt) instead of an open strand. */
+  looped: boolean
+  attachStart?: RopeAttachment | null
+  attachEnd?: RopeAttachment | null
+  material: string
 }
 
 export interface Document {
@@ -68,16 +166,54 @@ export interface Document {
   materials: Material[]
   pieces: Piece[]
   fasteners: Fastener[]
+  ropes: Rope[]
   ground: Ground
   camera?: unknown
 }
 
+// The workshop material library: honest densities (kg/m³), friction and
+// restitution. Rigid-body only for now — glass/ceramic are rigid but flagged
+// brittle for the future failure evaluator (spec §6c).
 export const DEFAULT_MATERIALS: Material[] = [
-  { name: 'steel', density: 7850, friction: 0.4, restitution: 0.1, color: '#8a8f98' },
-  { name: 'aluminum', density: 2700, friction: 0.4, restitution: 0.1, color: '#c9cdd3' },
+  // Woods
+  { name: 'pine', density: 450, friction: 0.5, restitution: 0.2, color: '#c9a36a' },
+  { name: 'oak', density: 720, friction: 0.5, restitution: 0.18, color: '#a87d47' },
+  { name: 'walnut', density: 650, friction: 0.48, restitution: 0.18, color: '#6b4a2f' },
+  { name: 'plywood', density: 550, friction: 0.5, restitution: 0.2, color: '#d3b184' },
+  { name: 'mdf', density: 750, friction: 0.55, restitution: 0.15, color: '#c8ab7e' },
+  { name: 'bamboo', density: 700, friction: 0.45, restitution: 0.25, color: '#d6c087' },
+  { name: 'cork', density: 240, friction: 0.7, restitution: 0.3, color: '#c99e63' },
   { name: 'wood', density: 500, friction: 0.5, restitution: 0.2, color: '#b3854a' },
-  { name: 'plastic', density: 1200, friction: 0.3, restitution: 0.3, color: '#3b82c4' },
-  { name: 'rubber', density: 1100, friction: 0.9, restitution: 0.8, color: '#2b2b2b' },
+  // Rubbers (matte, non-metal — soak up light)
+  { name: 'rubber-soft', density: 950, friction: 1.0, restitution: 0.85, color: '#3a3a3e', finish: { metalness: 0, roughness: 0.95 } },
+  { name: 'rubber-hard', density: 1200, friction: 0.85, restitution: 0.6, color: '#2b2b2b', finish: { metalness: 0, roughness: 0.9 } },
+  { name: 'rubber-tire', density: 1100, friction: 0.95, restitution: 0.7, color: '#1e1e22', finish: { metalness: 0, roughness: 0.95 } },
+  { name: 'rubber', density: 1100, friction: 0.9, restitution: 0.8, color: '#2b2b2b', finish: { metalness: 0, roughness: 0.92 } },
+  // Plastics (clearcoat gives the injection-moulded sheen)
+  { name: 'plastic-abs', density: 1050, friction: 0.35, restitution: 0.3, color: '#e8b23a', finish: { metalness: 0, roughness: 0.4, clearcoat: 0.6 } },
+  { name: 'plastic-acrylic', density: 1180, friction: 0.3, restitution: 0.25, color: '#7fd0e8', optics: { transmission: 0.75, ior: 1.49, roughness: 0.12 } },
+  { name: 'plastic-nylon', density: 1140, friction: 0.25, restitution: 0.3, color: '#e8e4da', finish: { metalness: 0, roughness: 0.5, clearcoat: 0.3 } },
+  { name: 'plastic', density: 1200, friction: 0.3, restitution: 0.3, color: '#3b82c4', finish: { metalness: 0, roughness: 0.4, clearcoat: 0.6 } },
+  { name: 'foam', density: 60, friction: 0.8, restitution: 0.4, color: '#eef0d8', finish: { metalness: 0, roughness: 1 } },
+  // Metals (metalness 1 — they glint under the environment)
+  { name: 'steel', density: 7850, friction: 0.4, restitution: 0.1, color: '#8a8f98', magnetic: 'ferrous', finish: { metalness: 1, roughness: 0.35 } },
+  { name: 'magnet', density: 7500, friction: 0.45, restitution: 0.05, color: '#c03a30', magnetic: 'magnet', finish: { metalness: 0.7, roughness: 0.4 } },
+  { name: 'aluminum', density: 2700, friction: 0.4, restitution: 0.1, color: '#c9cdd3', finish: { metalness: 1, roughness: 0.4 } },
+  { name: 'brass', density: 8500, friction: 0.35, restitution: 0.1, color: '#c9a53e', finish: { metalness: 1, roughness: 0.32 } },
+  { name: 'copper', density: 8960, friction: 0.35, restitution: 0.1, color: '#c07347', finish: { metalness: 1, roughness: 0.32 } },
+  { name: 'cast-iron', density: 7200, friction: 0.45, restitution: 0.08, color: '#4c4f54', magnetic: 'ferrous', finish: { metalness: 1, roughness: 0.55 } },
+  { name: 'titanium', density: 4500, friction: 0.38, restitution: 0.1, color: '#a6adb8', finish: { metalness: 1, roughness: 0.45 } },
+  { name: 'lead', density: 11340, friction: 0.5, restitution: 0.03, color: '#5a5f6a', finish: { metalness: 1, roughness: 0.6 } },
+  // Mineral & brittle (rigid for now; the failure evaluator makes these breakable)
+  { name: 'glass', density: 2500, friction: 0.5, restitution: 0.05, color: '#bcd8e2', optics: { transmission: 0.9, ior: 1.5, roughness: 0.06 }, youngsModulus: 70e9, yieldStrength: 33e6 },
+  { name: 'ceramic', density: 2400, friction: 0.6, restitution: 0.05, color: '#e8e3dc', finish: { metalness: 0, roughness: 0.3, clearcoat: 0.4 }, youngsModulus: 300e9, yieldStrength: 25e6 },
+  { name: 'concrete', density: 2400, friction: 0.8, restitution: 0.05, color: '#9b9c96' },
+  { name: 'brick', density: 1900, friction: 0.75, restitution: 0.05, color: '#a85a42' },
+  { name: 'granite', density: 2700, friction: 0.65, restitution: 0.08, color: '#75777c', finish: { metalness: 0, roughness: 0.5 } },
+  { name: 'marble', density: 2700, friction: 0.5, restitution: 0.08, color: '#d9d7d2', finish: { metalness: 0, roughness: 0.25, clearcoat: 0.3 } },
+  { name: 'ice', density: 917, friction: 0.03, restitution: 0.05, color: '#cfe8f5', optics: { transmission: 0.55, ior: 1.31, roughness: 0.4 } },
+  { name: 'cardboard', density: 250, friction: 0.6, restitution: 0.15, color: '#b98f5c' },
+  { name: 'hemp', density: 900, friction: 0.6, restitution: 0.1, color: '#b09468' },
 ]
 
 export function emptyDocument(): Document {
@@ -87,6 +223,7 @@ export function emptyDocument(): Document {
     materials: structuredClone(DEFAULT_MATERIALS),
     pieces: [],
     fasteners: [],
-    ground: { gravity: [0, -9.81, 0] },
+    ropes: [],
+    ground: { gravity: [0, -9.81, 0], sandbox: { ...DEFAULT_SANDBOX } },
   }
 }

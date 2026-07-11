@@ -1,22 +1,31 @@
 import { useEffect, useMemo } from 'react'
 import { createDocStore } from '../document/store'
-import { StoreContext } from './storeContext'
+import { StoreContext, useDocStore } from './storeContext'
 import { Toolbar } from './Toolbar'
 import { Palette } from './Palette'
-import { Properties } from './Properties'
+import { Properties, WorkbenchSettings } from './Properties'
 import { MaterialsEditor } from './MaterialsEditor'
+import { EnvPanel } from './EnvPanel'
 import { SceneTree } from './SceneTree'
+import { JoinDialog } from './JoinDialog'
+import { CoachMarks } from './CoachMarks'
 import { StatusBar } from './StatusBar'
 import { Scene } from '../render/Scene'
 import { EmptyState } from '../render/EmptyState'
 import { isEditableTarget, keyToAction } from './keyboard'
 import { loadDoc, saveDoc } from '../persistence/autosave'
+import { ensureAudio } from '../audio/impacts'
 import { downloadDocument, pickDocument } from '../persistence/file'
 import { exportGLTF, exportSTL } from '../export/exporters'
 import './app.css'
 
 export function App() {
   const store = useMemo(() => createDocStore(), [])
+
+  // Dev-only hook so e2e scripts can read/drive the document store.
+  if (import.meta.env.DEV) {
+    ;(window as unknown as Record<string, unknown>).__neocadStore = store
+  }
 
   // Restore the last working document on launch.
   useEffect(() => {
@@ -45,6 +54,21 @@ export function App() {
     }
   }, [store])
 
+  // Browsers gate audio behind a user gesture: (re-)arm the impact-sound engine
+  // on every pointer press — a single attempt can lose the race with stricter
+  // autoplay policies, and resume() is a no-op once running.
+  useEffect(() => {
+    const arm = () => void ensureAudio()
+    // Keydown too: the spacebar slingshot may be the FIRST gesture that should
+    // make noise, and it never goes through pointerdown.
+    window.addEventListener('pointerdown', arm)
+    window.addEventListener('keydown', arm)
+    return () => {
+      window.removeEventListener('pointerdown', arm)
+      window.removeEventListener('keydown', arm)
+    }
+  }, [])
+
   // Global keyboard shortcuts (ignored while typing in form fields).
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -54,15 +78,23 @@ export function App() {
       e.preventDefault()
       const s = store.getState()
       if (action === 'delete') {
-        if (s.selectedId) s.removePiece(s.selectedId)
+        if (s.selectedIds.length > 1) s.removePieces(s.selectedIds)
+        else if (s.selectedId) s.removePiece(s.selectedId)
       } else if (action === 'cancel') {
+        if (s.pendingJoin) s.resolveJoin(null) // Esc on the attach dialog = don't attach
         s.setActiveTool(null)
         s.setFastenTool(null)
+        s.setPlacingMechanism(null)
+        s.cancelJoint()
         s.select(null)
+        s.selectFastener(null)
       } else if (action === 'undo') {
         s.undo()
       } else if (action === 'redo') {
         s.redo()
+      } else if (action === 'fix') {
+        const piece = s.doc.pieces.find((p) => p.id === s.selectedId)
+        if (piece) s.updatePiece(piece.id, { anchored: !piece.anchored })
       }
     }
     window.addEventListener('keydown', onKey)
@@ -89,15 +121,54 @@ export function App() {
           <div className="viewport">
             <Scene />
             <EmptyState />
+            <JoinDialog />
+            <MarqueeOverlay />
+            <JointNotice />
+            <CoachMarks />
+            {/* Tinkercad-style floating inspector: appears beside the sidebar
+                only while a piece/joint/rope is selected. */}
+            <div className="inspector-float">
+              <Properties />
+            </div>
           </div>
           <div className="rightpanel">
             <SceneTree />
-            <Properties />
+            <WorkbenchSettings />
+            <EnvPanel />
             <MaterialsEditor />
           </div>
         </div>
         <StatusBar />
       </div>
     </StoreContext.Provider>
+  )
+}
+
+/** Advisory from a refused join ("both parts fixed" / "would collide"). */
+function JointNotice() {
+  const notice = useDocStore((s) => s.jointNotice)
+  const clear = useDocStore((s) => s.clearJointNotice)
+  if (!notice) return null
+  return (
+    <div className="joint-notice" role="alert">
+      <span>⚠ {notice}</span>
+      <button onClick={clear} aria-label="Dismiss">
+        ✕
+      </button>
+    </div>
+  )
+}
+
+/** The marquee rectangle (Shift+drag on empty ground while paused). */
+function MarqueeOverlay() {
+  const m = useDocStore((s) => s.marquee)
+  if (!m) return null
+  const left = Math.min(m.x0, m.x1)
+  const top = Math.min(m.y0, m.y1)
+  return (
+    <div
+      className="marquee"
+      style={{ left, top, width: Math.abs(m.x1 - m.x0), height: Math.abs(m.y1 - m.y0) }}
+    />
   )
 }
