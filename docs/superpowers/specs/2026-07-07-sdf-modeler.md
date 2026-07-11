@@ -61,6 +61,39 @@ A subtracted shape is **concave**. Jolt takes concave as a static `MeshShape` fi
 *dynamic* cut body needs **convex decomposition**. Isolating the core sidesteps this until
 we choose to pay it.
 
+## Decision: manifold-3d is the M-Cuts engine (not hand-rolled SDF meshing)
+
+After Phase 1, we benchmarked buy-vs-build on the canonical M-Cut (a 2×2×2 block
+with a Ø0.5 bore) across three libraries, measured in Node:
+
+| | manifold-3d | three-bvh-csg | isosurface (SDF→surface nets) |
+|---|---|---|---|
+| Watertight / 2-manifold | **100%** | ~37% (T-junctions) | 100% |
+| Boundary (crack) edges | **0** | ~980 | 0 |
+| Triangles | **272** | 715 | 9.6k @32³ · 39k @64³ |
+| Time | 13 ms | 68 ms | 63–250 ms |
+| Edges | exact sharp | sharp *visually*, non-manifold | rounded |
+| three coupling | none | needs three ≥0.179 (we're on 0.169) | none |
+| Bundle | 532 KB wasm | native | ~5 KB |
+
+**Chosen: manifold-3d.** Exact watertight booleans → physics + STL "just work";
+~35× fewer triangles than surface-nets; edges stay sharp (a drilled hole *looks*
+drilled). `three-bvh-csg` is fast but emits non-manifold T-junction meshes (bad
+for slicing/physics) and would force a three upgrade. SDF surface-nets rounds
+sharp edges — a *feature* for freeform, a *bug* for machined stock.
+
+**Role split (they coexist, unified at the mesh):** manifold-3d is the exact
+"machinist" trunk (cuts/unions/watertight solids → export/physics); the SDF core
+is the "sculptor" branch for smooth blends / offsets-shells / freeform, which
+*meshes into* manifold when mixed. Only mixing paradigms inside one part crosses
+a lossy field↔mesh seam; pure-cut and pure-blend chains stay exact.
+
+`src/sdf/csg.ts` — manifold-3d wrapper: op-tree (box/cylinder(Y-axis)/sphere +
+subtract/union/intersect + transform) → watertight `BufferGeometry`, singleton
+WASM init (`locateFile` for Vite, on-disk for Node). `CsgViewer.tsx` renders real
+lit meshes at `?csg` (flat-shaded for crisp facets). 2 tests assert the drilled
+block is 2-manifold, <1000 tris, sharp 2×2×2.
+
 ## Verification
 
 - Unit tests on CPU eval (known distances: point outside/inside/on-surface of each

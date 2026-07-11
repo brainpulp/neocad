@@ -42,10 +42,21 @@ Plans: `docs/superpowers/plans/` · Backlog: `docs/BACKLOG.md`
   the CPU eval so they stay in lockstep). `SdfViewer.tsx` raymarches a demo tree
   full-screen (rounded box smooth-unioned with a sphere, a cylinder bore
   subtracted) — reached via `?sdf` in the URL (main.tsx branch), fully isolated,
-  no shared store. 17 tests (13 eval + 4 glsl codegen). NEXT per spec: Phase 2
-  viewer polish, Phase 3 surface-nets mesher (`sdfToGeometry`), Phase 4
-  integration slice (an `sdf`/cut body type back on the builder — concave
-  dynamic bodies need convex decomposition for Jolt, budgeted for then).
+  no shared store. 17 SDF tests (13 eval + 4 glsl codegen).
+  **BUY-VS-BUILD DECISION (benchmarked, see spec table): M-Cuts is built on
+  manifold-3d, NOT hand-rolled SDF meshing.** Exact watertight booleans (drilled
+  block: 272 tris, 100% 2-manifold, sharp edges) beat surface-nets (10k–40k tris,
+  rounded edges) and three-bvh-csg (non-manifold T-junctions + forces a three
+  upgrade). Role split: **manifold = machinist trunk** (cuts/unions → export/
+  physics); **SDF = sculptor branch** (smooth blends/offsets/freeform), meshes
+  INTO manifold when mixed; they unify at the mesh. `src/sdf/csg.ts` — manifold
+  op-tree (box/cylinder-Y/sphere + subtract/union/intersect + transform) →
+  watertight `BufferGeometry`; singleton WASM init (`locateFile` for Vite,
+  on-disk for Node). `CsgViewer.tsx` renders real lit flat-shaded meshes at
+  `?csg` (demos: drill/scoop/cross/dice). 2 CSG tests (watertight/2-manifold/
+  <1000 tris/sharp). 214 tests total. NEXT: builder-integration slice (a `cut`
+  body type feeding render + Jolt MeshShape (concave) + STL, and the drilling
+  gesture) — lands on the BUILDER branch, not here.
 - **M-Outline (selection outline — back-face hull with SMOOTHED normals) — DONE
   & browser-verified (headless).** `OutlineHull` in `render/PieceMesh.tsx`: the
   piece geometry rendered again `side: BackSide` with every vertex pushed OUT
