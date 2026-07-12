@@ -71,6 +71,14 @@ function build(top: ManifoldToplevel, node: CsgNode): Manifold {
       b.delete()
       return r
     }
+    case 'union': {
+      // Batch boolean-OR: assemble many parts (a stair's treads/risers) into one
+      // watertight solid in a single pass, then free the inputs.
+      const parts = node.children.map((c) => build(top, c))
+      const r = M.union(parts)
+      parts.forEach((p) => p.delete())
+      return r
+    }
     case 'transform': {
       let m = build(top, node.child)
       if (node.rotate) {

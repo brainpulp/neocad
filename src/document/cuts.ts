@@ -24,6 +24,7 @@ export type CsgNode =
   | { kind: 'cylinder'; radius: number; height: number } // Y-axis, centered
   | { kind: 'sphere'; radius: number }
   | { kind: 'subtract'; a: CsgNode; b: CsgNode }
+  | { kind: 'union'; children: CsgNode[] } // batch boolean-OR (assembling many parts, e.g. a stair)
   | { kind: 'transform'; translate?: [number, number, number]; rotate?: [number, number, number]; child: CsgNode } // rotate = Euler degrees
 
 const csgSubtract = (a: CsgNode, b: CsgNode): CsgNode => ({ kind: 'subtract', a, b })
