@@ -204,7 +204,7 @@ export function StairApp() {
 
         <div style={{ margin: '14px 0 6px', fontSize: 12, textTransform: 'uppercase', opacity: 0.6 }}>Stringers (sidings)</div>
         <div style={{ display: 'flex', gap: 4, marginBottom: 6 }}>
-          {(['none', 'two-side', 'mono'] as StringerKind[]).map((k) => (
+          {(['none', 'two-side', 'closed', 'mono'] as StringerKind[]).map((k) => (
             <button key={k} style={spec.stringer.kind === k ? segOn : seg} onClick={() => setStringer({ kind: k })}>{k}</button>
           ))}
         </div>

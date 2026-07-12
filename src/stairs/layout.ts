@@ -134,6 +134,10 @@ export function layoutStair(spec: StairSpec): StairLayout {
   const Tr = spec.riserThickness
   const No = spec.nosing
   const turns = spec.turns
+  // Closed-string: treads/risers are housed BEHIND the side boards, so they're
+  // inset by the stringer thickness and the step profile is hidden from the side.
+  const sideInset = spec.stringer.kind === 'closed' ? spec.stringer.thickness : 0
+  const stepW = W - 2 * sideInset
   const flightCount = turns.length + 1
   const winderTotal = turns.reduce((s, t) => s + (t.kind === 'winder' ? Math.max(1, t.winderSteps) : 0), 0)
   const straightSteps = Math.max(flightCount, N - winderTotal)
@@ -151,13 +155,13 @@ export function layoutStair(spec: StairSpec): StairLayout {
       if (spec.riserMode === 'closed') {
         const along = (k - 1) * G + Tr / 2
         const c = add(base, scale(f, along))
-        parts.push({ kind: 'riser', shape: 'box', center: [c[0], base[1] + (k - 1) * rise + rise / 2, c[2]], size: [W, rise, Tr], rotYDeg: walk.heading })
+        parts.push({ kind: 'riser', shape: 'box', center: [c[0], base[1] + (k - 1) * rise + rise / 2, c[2]], size: [stepW, rise, Tr], rotYDeg: walk.heading })
       }
       const isFlightTop = k === steps
       if (!isFloorTop && !(isFlightTop && toppedByLanding)) {
         const along = ((2 * k - 1) * G - No) / 2
         const c = add(base, scale(f, along))
-        parts.push({ kind: 'tread', shape: 'box', center: [c[0], base[1] + k * rise - Tt / 2, c[2]], size: [W, Tt, G + No], rotYDeg: walk.heading })
+        parts.push({ kind: 'tread', shape: 'box', center: [c[0], base[1] + k * rise - Tt / 2, c[2]], size: [stepW, Tt, G + No], rotYDeg: walk.heading })
       }
     }
     emitFlightStringers(parts, spec, base, walk.heading, steps, rise)
@@ -341,10 +345,13 @@ function emitFlightRailing(parts: Part[], spec: StairSpec, base: Vec3, heading: 
     // Handrail — a raked bar above the nosing line (same pitch as the flight).
     const rc = add(add(base, scale(f, run / 2)), lat)
     parts.push({ kind: 'rail', shape: 'box', center: [rc[0], base[1] + climb / 2 + Hr, rc[2]], size: [ps, ps, hyp], rotYDeg: heading, pitchDeg })
-    // Balusters — spaced no wider than the code gap, vertical to the rail.
-    const count = Math.max(steps, Math.ceil(run / Math.max(0.02, R.balusterGap)))
+    // Balusters — an integer number PER TREAD so they line up with the steps,
+    // with the per-tread spacing (a divisor of the going) kept ≤ the code gap.
+    const perTread = Math.max(1, Math.ceil(G / Math.max(0.02, R.balusterGap)))
+    const spacing = G / perTread
+    const count = steps * perTread
     for (let i = 0; i < count; i++) {
-      const along = ((i + 0.5) * run) / count
+      const along = (i + 0.5) * spacing
       const nosingY = base[1] + (along / run) * climb
       const bc = add(add(base, scale(f, along)), lat)
       parts.push({ kind: 'baluster', shape: 'box', center: [bc[0], nosingY + Hr / 2, bc[2]], size: [bs, Hr, bs], rotYDeg: heading })

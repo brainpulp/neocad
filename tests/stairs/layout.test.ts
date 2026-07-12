@@ -199,7 +199,7 @@ describe('stairs/layout — turns', () => {
     expect(none.parts.filter((p) => ['rail', 'baluster', 'post'].includes(p.kind))).toHaveLength(0)
   })
 
-  it('balusters respect the max gap (more than one per tread when going is wide)', () => {
+  it('balusters are an integer count per tread, spaced a divisor of the going', () => {
     const spec: StairSpec = {
       ...defaultStairSpec(),
       stringer: { kind: 'none', thickness: 0.04, depth: 0.25 },
@@ -208,8 +208,27 @@ describe('stairs/layout — turns', () => {
       railing: { sides: 'right', height: 0.9, postSize: 0.08, balusterSize: 0.03, balusterGap: 0.1 },
     }
     const balusters = layoutStair(spec).parts.filter((p) => p.kind === 'baluster').length
-    const run = 10 * 0.3 // (N-1) goings
-    expect(balusters).toBeGreaterThanOrEqual(Math.ceil(run / 0.1))
+    // going 300 mm, gap ≤ 100 mm → 3 balusters per tread; 11 flight steps → 33
+    expect(balusters).toBe(11 * 3)
+  })
+
+  it('closed-string houses the treads behind the boards (narrower treads)', () => {
+    const base: StairSpec = {
+      ...defaultStairSpec(),
+      width: 1,
+      railing: { sides: 'none', height: 0.9, postSize: 0.08, balusterSize: 0.03, balusterGap: 0.1 },
+      sizing: { mode: 'byCount', count: 12 },
+    }
+    const th = 0.04
+    const open = layoutStair({ ...base, stringer: { kind: 'two-side', thickness: th, depth: 0.25 } })
+    const closed = layoutStair({ ...base, stringer: { kind: 'closed', thickness: th, depth: 0.25 } })
+    const width = (l: typeof open) => {
+      const t = l.parts.find((p) => p.kind === 'tread' && p.shape === 'box')!
+      if (t.shape !== 'box') throw new Error()
+      return t.size[0]
+    }
+    expect(width(open)).toBeCloseTo(1, 6) // full width
+    expect(width(closed)).toBeCloseTo(1 - 2 * th, 6) // inset by a board thickness each side
   })
 
   it('two winders (a U made of two quarter-turns) both fan', () => {

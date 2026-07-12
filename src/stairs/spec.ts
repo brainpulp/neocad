@@ -34,8 +34,14 @@ export interface TurnSpec {
   winderSteps: number
 }
 
-/** The side members that carry the treads ("sidings"). */
-export type StringerKind = 'none' | 'two-side' | 'mono'
+/**
+ * The side members that carry the treads ("sidings").
+ * - two-side: a raked board each side (cut/open-string look — steps show).
+ * - closed:   solid side boards with the treads HOUSED behind them, so the step
+ *             profile is hidden from the side (a closed-/housed-string stair).
+ * - mono:     a single central beam.
+ */
+export type StringerKind = 'none' | 'two-side' | 'closed' | 'mono'
 export interface StringerSpec {
   kind: StringerKind
   /** Board thickness (two-side) / central beam width (mono), m. */
