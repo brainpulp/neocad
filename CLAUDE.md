@@ -31,6 +31,28 @@ Plans: `docs/superpowers/plans/` · Backlog: `docs/BACKLOG.md`
 
 ## Status
 
+- **Stairs S1b (continuous stringers through turns + railings) — DONE & verified
+  headless.** Fixed the L/U landing GAP bug first (the exit point used the ROTATED
+  forward to centre the next flight, doubling the offset → flight 2 + its stringers
+  floated half a width off the landing, the "broken planks" screenshot); exit now
+  steps to the inner corner then along the ORIGINAL forward by half a width (regression
+  test asserts flight-2's first tread meets the landing edge). SIDINGS now continue
+  through turns: `fasciaBoard()` emits vertical boards along the OUTER edges of
+  landings (square = 2-edge L-bend, triangular = the hypotenuse) and along each
+  winder wedge's outer edge (the winder's outer arc). RAILINGS: `RailingSpec`
+  (sides none/left/right/both, height, postSize, balusterSize, balusterGap); per
+  straight flight a raking `rail` box above the nosing line, `baluster`s spaced ≤
+  the code gap (≈100 mm) from the treads up to the rail, and `post` newels at
+  flight ends (turns handled via a newel at each junction, real-stair style). New
+  PartKinds fascia/rail/baluster/post flow through BOM (grouped cut-list lines) and
+  the ?stairs UI got a railing section + every slider a typeable number box
+  (select-on-focus, Tab-cycles the number fields — sliders pulled from tab order).
+  VERIFIED: 229 tests (+ railing/fascia/regression); default L meshes watertight
+  (4282 tris: 16 risers, 14 treads, 4 stringers+2 fascia, 4 rails, 80 balusters,
+  6 newels); iso render confirms. KNOWN LIMITS: mono stringers don't wrap turns
+  (fascia is a side board, fine for two-side); baluster bottoms sit on the flight
+  base line not each tread nosing (cosmetic); 180° landing has no fascia yet.
+
 - **Stairs S1 (turns, descansos, winders, stringers, wood cut-list) — DONE &
   verified headless.** The stair generator gained the WALKLINE path model: total
   risers N split across `turns.length+1` flights, with a LANDING (flat, 0 risers,

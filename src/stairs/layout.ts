@@ -13,7 +13,7 @@
 import type { StairSpec, TurnSpec } from './spec'
 
 type Vec3 = [number, number, number]
-export type PartKind = 'tread' | 'riser' | 'landing' | 'stringer'
+export type PartKind = 'tread' | 'riser' | 'landing' | 'stringer' | 'fascia' | 'rail' | 'baluster' | 'post'
 
 export type Part =
   | { kind: PartKind; shape: 'box'; center: Vec3; size: Vec3; rotYDeg: number; pitchDeg?: number }
@@ -68,6 +68,23 @@ function signedArea(poly: [number, number][]): number {
 /** Manifold's extruder fills CCW; return the polygon wound CCW in the (x,z) plane. */
 function ensureCCW(poly: [number, number][]): [number, number][] {
   return signedArea(poly) < 0 ? [...poly].reverse() : poly
+}
+/** Heading (deg) of a plan direction (dx,dz): 0 = +Z, +90 = +X. */
+function headingOf(dx: number, dz: number): number {
+  return (Math.atan2(dx, dz) * 180) / Math.PI
+}
+/** A vertical board hanging `depth` below `top`, running plan-edge P0→P1. */
+function fasciaBoard(kind: PartKind, P0: Vec3, P1: Vec3, top: number, depth: number, th: number): Part {
+  const dx = P1[0] - P0[0]
+  const dz = P1[2] - P0[2]
+  const len = Math.hypot(dx, dz)
+  return {
+    kind,
+    shape: 'box',
+    center: [(P0[0] + P1[0]) / 2, top - depth / 2, (P0[2] + P1[2]) / 2],
+    size: [th, depth, len],
+    rotYDeg: headingOf(dx, dz),
+  }
 }
 
 // ---- sizing ----------------------------------------------------------------
@@ -144,6 +161,7 @@ export function layoutStair(spec: StairSpec): StairLayout {
       }
     }
     emitFlightStringers(parts, spec, base, walk.heading, steps, rise)
+    emitFlightRailing(parts, spec, base, walk.heading, steps, rise, walk.climbed === 0)
     walk.pos = add(add(base, [0, steps * rise, 0]), scale(f, steps * G))
     walk.climbed += steps
   }
@@ -166,6 +184,8 @@ export function layoutStair(spec: StairSpec): StairLayout {
     const entryOuter = add(A, scale(r, -s * half))
     const entryInner = add(A, scale(r, s * half))
     const farInner = add(entryInner, scale(f, W))
+    const farOuter = add(entryOuter, scale(f, W))
+    const str = spec.stringer
     if (t.landingShape === 'triangular') {
       parts.push({
         kind: 'landing',
@@ -178,9 +198,16 @@ export function layoutStair(spec: StairSpec): StairLayout {
         bottom: top - Tt,
         top,
       })
+      // Fascia along the hypotenuse (the outer edge) — continues the sidings.
+      if (str.kind !== 'none') parts.push(fasciaBoard('fascia', farInner, entryOuter, top, str.depth, str.thickness))
     } else {
       const center = add(A, scale(f, half))
       parts.push({ kind: 'landing', shape: 'box', center: [center[0], top - Tt / 2, center[2]], size: [W, Tt, W], rotYDeg: walk.heading })
+      // Fascia around the two OUTER edges (the L-bend) — continues the sidings.
+      if (str.kind !== 'none') {
+        parts.push(fasciaBoard('fascia', entryOuter, farOuter, top, str.depth, str.thickness))
+        parts.push(fasciaBoard('fascia', farOuter, farInner, top, str.depth, str.thickness))
+      }
     }
     // Flight 2 departs from the MIDDLE of the turn-side edge of the landing:
     // step to the inner corner, then along the ORIGINAL forward by half a width
@@ -202,6 +229,7 @@ export function layoutStair(spec: StairSpec): StairLayout {
     // with their apex at the pivot, fanning to the outer edge (radius W).
     const pivot: Vec3 = [A[0] + r0[0] * s * (W / 2), A[1], A[2] + r0[2] * s * (W / 2)]
     const eOuter = add(A, scale(r0, -s * (W / 2)))
+    const str = spec.stringer
     for (let i = 1; i <= w; i++) {
       const [ox0, oz0] = rotAbout(eOuter[0], eOuter[2], pivot[0], pivot[2], s * per * (i - 1))
       const [ox1, oz1] = rotAbout(eOuter[0], eOuter[2], pivot[0], pivot[2], s * per * i)
@@ -217,6 +245,8 @@ export function layoutStair(spec: StairSpec): StairLayout {
         bottom: top - Tt,
         top,
       })
+      // Fascia along this wedge's outer edge — the winder's outer stringer arc.
+      if (str.kind !== 'none') parts.push(fasciaBoard('fascia', [ox0, top, oz0], [ox1, top, oz1], top, str.depth, str.thickness))
     }
     const [mx, mz] = rotAbout(A[0], A[2], pivot[0], pivot[2], s * t.angle)
     walk.pos = [mx, A[1] + w * rise, mz]
@@ -276,5 +306,51 @@ function emitFlightStringers(parts: Part[], spec: StairSpec, base: Vec3, heading
       rotYDeg: heading,
       pitchDeg,
     })
+  }
+}
+
+// ---- railings (handrail + balusters + newel posts) -------------------------
+/**
+ * Per straight flight: a raking handrail above the nosing line, balusters spaced
+ * ≤ the code gap from the treads up to the rail, and newel posts at the flight
+ * ends. Turns are handled the way real stairs do — a newel post at each flight
+ * end (i.e. at every landing/winder junction), with the rail restarting past it.
+ */
+function emitFlightRailing(parts: Part[], spec: StairSpec, base: Vec3, heading: number, steps: number, rise: number, isFirst: boolean) {
+  const R = spec.railing
+  if (R.sides === 'none' || steps <= 0) return
+  const f = forward(heading)
+  const r = right(heading)
+  const G = spec.going
+  const W = spec.width
+  const run = steps * G
+  const climb = steps * rise
+  const hyp = Math.hypot(run, climb)
+  const pitchDeg = (Math.atan2(climb, run) * 180) / Math.PI
+  const sides = R.sides === 'both' ? [1, -1] : R.sides === 'right' ? [1] : [-1]
+  const ps = R.postSize
+  const bs = R.balusterSize
+  const Hr = R.height
+  for (const side of sides) {
+    const lat = scale(r, side * (W / 2 - ps / 2))
+    // Handrail — a raked bar above the nosing line (same pitch as the flight).
+    const rc = add(add(base, scale(f, run / 2)), lat)
+    parts.push({ kind: 'rail', shape: 'box', center: [rc[0], base[1] + climb / 2 + Hr, rc[2]], size: [ps, ps, hyp], rotYDeg: heading, pitchDeg })
+    // Balusters — spaced no wider than the code gap, vertical to the rail.
+    const count = Math.max(steps, Math.ceil(run / Math.max(0.02, R.balusterGap)))
+    for (let i = 0; i < count; i++) {
+      const along = ((i + 0.5) * run) / count
+      const nosingY = base[1] + (along / run) * climb
+      const bc = add(add(base, scale(f, along)), lat)
+      parts.push({ kind: 'baluster', shape: 'box', center: [bc[0], nosingY + Hr / 2, bc[2]], size: [bs, Hr, bs], rotYDeg: heading })
+    }
+    // Newel posts — foot (first flight only) and top of every flight.
+    if (isFirst) {
+      const fc = add(base, lat)
+      const postH = Hr + rise
+      parts.push({ kind: 'post', shape: 'box', center: [fc[0], base[1] + postH / 2, fc[2]], size: [ps, postH, ps], rotYDeg: heading })
+    }
+    const tc = add(add(base, scale(f, run)), lat)
+    parts.push({ kind: 'post', shape: 'box', center: [tc[0], base[1] + climb + Hr / 2, tc[2]], size: [ps, Hr + ps, ps], rotYDeg: heading })
   }
 }

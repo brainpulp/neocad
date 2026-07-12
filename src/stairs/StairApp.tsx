@@ -140,6 +140,7 @@ export function StairApp() {
 
   const set = (patch: Partial<StairSpec>) => setSpec((s) => ({ ...s, ...patch }))
   const setStringer = (patch: Partial<StairSpec['stringer']>) => setSpec((s) => ({ ...s, stringer: { ...s.stringer, ...patch } }))
+  const setRailing = (patch: Partial<StairSpec['railing']>) => setSpec((s) => ({ ...s, railing: { ...s.railing, ...patch } }))
   const addTurn = () => set({ turns: [...spec.turns, newTurn()] })
   const updateTurn = (i: number, t: TurnSpec) => set({ turns: spec.turns.map((x, j) => (j === i ? t : x)) })
   const removeTurn = (i: number) => set({ turns: spec.turns.filter((_, j) => j !== i) })
@@ -211,6 +212,21 @@ export function StairApp() {
           <>
             <Slider label="Stringer thickness" value={spec.stringer.thickness} min={0.02} max={0.08} step={0.002} onChange={(v) => setStringer({ thickness: v })} />
             <Slider label="Stringer depth" value={spec.stringer.depth} min={0.1} max={0.4} step={0.005} unit="mm" onChange={(v) => setStringer({ depth: v })} />
+          </>
+        )}
+
+        <div style={{ margin: '14px 0 6px', fontSize: 12, textTransform: 'uppercase', opacity: 0.6 }}>Railings</div>
+        <div style={{ display: 'flex', gap: 4, marginBottom: 6 }}>
+          {(['none', 'left', 'right', 'both'] as StairSpec['railing']['sides'][]).map((k) => (
+            <button key={k} style={spec.railing.sides === k ? segOn : seg} onClick={() => setRailing({ sides: k })}>{k}</button>
+          ))}
+        </div>
+        {spec.railing.sides !== 'none' && (
+          <>
+            <Slider label="Handrail height" value={spec.railing.height} min={0.7} max={1.2} step={0.01} onChange={(v) => setRailing({ height: v })} />
+            <Slider label="Newel post size" value={spec.railing.postSize} min={0.04} max={0.15} step={0.005} onChange={(v) => setRailing({ postSize: v })} />
+            <Slider label="Baluster size" value={spec.railing.balusterSize} min={0.015} max={0.06} step={0.002} onChange={(v) => setRailing({ balusterSize: v })} />
+            <Slider label="Max baluster gap" value={spec.railing.balusterGap} min={0.06} max={0.2} step={0.005} onChange={(v) => setRailing({ balusterGap: v })} />
           </>
         )}
 

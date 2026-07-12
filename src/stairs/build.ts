@@ -35,6 +35,8 @@ export function stairKey(spec: StairSpec): string {
     .map((t) => `${t.angle}${t.direction[0]}${t.kind[0]}${t.landingShape[0]}${t.winderSteps}`)
     .join(',')
   const str = `${spec.stringer.kind}:${spec.stringer.thickness}:${spec.stringer.depth}`
+  const R = spec.railing
+  const rail = `${R.sides}:${R.height}:${R.postSize}:${R.balusterSize}:${R.balusterGap}`
   return [
     spec.totalRise,
     spec.width,
@@ -46,5 +48,6 @@ export function stairKey(spec: StairSpec): string {
     sizing,
     turns,
     str,
+    rail,
   ].join('|')
 }

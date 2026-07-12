@@ -44,6 +44,20 @@ export interface StringerSpec {
   depth: number
 }
 
+/** Handrail / balustrade. */
+export type RailingSides = 'none' | 'left' | 'right' | 'both'
+export interface RailingSpec {
+  sides: RailingSides
+  /** Handrail height above the nosing line (m). */
+  height: number
+  /** Newel post cross-section (m). */
+  postSize: number
+  /** Baluster (spindle) cross-section (m). */
+  balusterSize: number
+  /** Max clear gap between balusters (m); code ≈ 100 mm. */
+  balusterGap: number
+}
+
 export interface StairSpec {
   /** Floor-to-floor height the stair must climb (m). */
   totalRise: number
@@ -65,6 +79,8 @@ export interface StairSpec {
   turns: TurnSpec[]
   /** Side stringers ("sidings"). */
   stringer: StringerSpec
+  /** Handrail / balustrade. */
+  railing: RailingSpec
   /** Wood/material name (for the cut list). */
   material: string
 }
@@ -81,6 +97,7 @@ export function defaultStairSpec(): StairSpec {
     sizing: { mode: 'byRise', targetRise: 0.18 },
     turns: [],
     stringer: { kind: 'two-side', thickness: 0.04, depth: 0.25 },
+    railing: { sides: 'both', height: 0.9, postSize: 0.08, balusterSize: 0.03, balusterGap: 0.1 },
     material: 'pine',
   }
 }

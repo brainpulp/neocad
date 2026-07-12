@@ -68,6 +68,10 @@ const KIND_LABEL: Record<PartKind, string> = {
   riser: 'Riser',
   landing: 'Landing',
   stringer: 'Stringer',
+  fascia: 'Fascia board',
+  rail: 'Handrail',
+  baluster: 'Baluster',
+  post: 'Newel post',
 }
 
 interface Group {

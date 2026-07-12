@@ -136,6 +136,55 @@ describe('stairs/layout — turns', () => {
     expect(metrics.rise).toBeCloseTo(spec.totalRise / 15, 6)
   })
 
+  it('a landing turn adds fascia so the sidings continue through the corner', () => {
+    const withStr: StairSpec = {
+      ...defaultStairSpec(),
+      railing: { sides: 'none', height: 0.9, postSize: 0.08, balusterSize: 0.03, balusterGap: 0.1 },
+      sizing: { mode: 'byCount', count: 16 },
+      turns: [newTurn({ angle: 90, direction: 'right', kind: 'landing', landingShape: 'square' })],
+    }
+    const fascia = layoutStair(withStr).parts.filter((p) => p.kind === 'fascia')
+    expect(fascia.length).toBe(2) // the two outer edges of the square landing (the L-bend)
+    // …and none when stringers are off
+    const noStr = layoutStair({ ...withStr, stringer: { kind: 'none', thickness: 0.04, depth: 0.25 } })
+    expect(noStr.parts.filter((p) => p.kind === 'fascia')).toHaveLength(0)
+  })
+
+  it('railings emit a rail, balusters and newel posts per flight/side', () => {
+    const spec: StairSpec = {
+      ...defaultStairSpec(),
+      stringer: { kind: 'none', thickness: 0.04, depth: 0.25 },
+      sizing: { mode: 'byCount', count: 16 },
+      railing: { sides: 'both', height: 0.9, postSize: 0.08, balusterSize: 0.03, balusterGap: 0.1 },
+      turns: [newTurn({ angle: 90, direction: 'right', kind: 'landing', landingShape: 'square' })],
+    }
+    const parts = layoutStair(spec).parts
+    // two flights × two sides = 2 rails/flight-side
+    expect(parts.filter((p) => p.kind === 'rail')).toHaveLength(4)
+    // posts: foot (first flight, both sides = 2) + top of each flight (2 flights × 2 sides = 4)
+    expect(parts.filter((p) => p.kind === 'post')).toHaveLength(6)
+    expect(parts.filter((p) => p.kind === 'baluster').length).toBeGreaterThan(0)
+    // 'right' only halves the rail count
+    const rightOnly = layoutStair({ ...spec, railing: { ...spec.railing, sides: 'right' } })
+    expect(rightOnly.parts.filter((p) => p.kind === 'rail')).toHaveLength(2)
+    // 'none' removes all railing parts
+    const none = layoutStair({ ...spec, railing: { ...spec.railing, sides: 'none' } })
+    expect(none.parts.filter((p) => ['rail', 'baluster', 'post'].includes(p.kind))).toHaveLength(0)
+  })
+
+  it('balusters respect the max gap (more than one per tread when going is wide)', () => {
+    const spec: StairSpec = {
+      ...defaultStairSpec(),
+      stringer: { kind: 'none', thickness: 0.04, depth: 0.25 },
+      going: 0.3,
+      sizing: { mode: 'byCount', count: 11 },
+      railing: { sides: 'right', height: 0.9, postSize: 0.08, balusterSize: 0.03, balusterGap: 0.1 },
+    }
+    const balusters = layoutStair(spec).parts.filter((p) => p.kind === 'baluster').length
+    const run = 10 * 0.3 // (N-1) goings
+    expect(balusters).toBeGreaterThanOrEqual(Math.ceil(run / 0.1))
+  })
+
   it('two winders (a U made of two quarter-turns) both fan', () => {
     const spec: StairSpec = {
       ...defaultStairSpec(),
