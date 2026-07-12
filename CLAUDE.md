@@ -31,6 +31,33 @@ Plans: `docs/superpowers/plans/` · Backlog: `docs/BACKLOG.md`
 
 ## Status
 
+- **Stairs S0 (parametric straight-stair generator — standalone `?stairs`) — DONE
+  & verified headless.** A digression: a powerful parametric 3D STAIR generator,
+  built on the WALKLINE model (a stair = a walk along a plan path, extruded up one
+  step at a time — straight/L/U/winder/spiral/curved all fall out of *what path
+  you walk*). Spec: `docs/superpowers/specs/2026-07-12-stair-generator.md` (read
+  before stair work; S0–S7 plan). Layered like cuts/SDF: `stairs/spec.ts` (pure
+  `StairSpec` — totalRise/width/going/tread/nosing/riser + by-rise↔by-count
+  sizing), `stairs/layout.ts` (pure THE BRAIN — `layoutStair()` walks the flight
+  into tread/riser box `Part`s + `metrics` {equal risers, going, run, pitch,
+  2R+G} + informational US-IRC `advisories`; zero graphics, fully arithmetic-
+  tested), `stairs/build.ts` (`stairToCsg` folds parts into ONE `CsgNode` union,
+  meshed by the SHARED manifold kernel `render/csg.ts` — exact/watertight/
+  printable; also `stairKey` for memo). `CsgNode` gained a batch `union` node
+  (`Manifold.union`) — the one geometry-vocab extension stairs needed.
+  `stairs/StairApp.tsx` + `main.tsx` route: `?stairs` = a standalone playground
+  (param panel, live re-meshing preview that falls back while baking, metrics/
+  advisory readout, STL/glTF export); default (no query) = the builder. VERIFIED:
+  12 stair tests (215 total); the meshed 2.7 m / 15-riser stair has an EXACT bbox
+  (W 1.000, H 2.700 = floor-to-floor, D 3.545), 542 tris, watertight; tsc +
+  production build clean (emits the wasm + the new route). NO browser harness in
+  this env, so the interactive UI wasn't click-tested — but the risky path
+  (params→layout→manifold solid) is proven headless and a side-elevation SVG
+  drawn from the real parts confirmed the geometry. NEXT per plan: S1 = turns via
+  landings (L 90° / U 180°) → the `flights: Segment[]` path model; then stringers
+  (S2), winders (S3), spiral/curved (S4), railings (S5), code engine + fit-to-
+  opening + BOM (S6), sandbox insert as anchored MeshShape piece (S7).
+
 - **M-Cuts slice 1b (drilled holes are REAL in physics + export) — DONE &
   verified against the real WASM kernels.** The hole an anchored piece shows is
   now the hole it COLLIDES as, and the hole it EXPORTS/prints. `render/csg.ts`
