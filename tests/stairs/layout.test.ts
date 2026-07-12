@@ -136,6 +136,33 @@ describe('stairs/layout — turns', () => {
     expect(metrics.rise).toBeCloseTo(spec.totalRise / 15, 6)
   })
 
+  it('the landing sits flush on the last riser — no one-going gap (regression)', () => {
+    const spec: StairSpec = {
+      ...defaultStairSpec(),
+      stringer: { kind: 'none', thickness: 0.04, depth: 0.25 },
+      railing: { sides: 'none', height: 0.9, postSize: 0.08, balusterSize: 0.03, balusterGap: 0.1 },
+      going: 0.25,
+      sizing: { mode: 'byCount', count: 16 },
+      turns: [newTurn({ angle: 90, direction: 'right', kind: 'landing', landingShape: 'square' })],
+    }
+    const parts = layoutStair(spec).parts
+    const f1 = parts.filter((p) => p.kind === 'tread' && p.shape === 'box' && p.rotYDeg === 0)
+    const lastBack = (() => { const t = f1.at(-1)!; if (t.shape !== 'box') throw new Error(); return t.center[2] + t.size[2] / 2 })()
+    const landing = parts.find((p) => p.kind === 'landing')!
+    if (landing.shape !== 'box') throw new Error('expected box')
+    const near = landing.center[2] - landing.size[2] / 2
+    expect(Math.abs(near - lastBack)).toBeLessThan(1e-6) // flush, no gap
+  })
+
+  it('stringers rake UP with the flight, not down (regression)', () => {
+    const spec: StairSpec = { ...defaultStairSpec(), sizing: { mode: 'byCount', count: 12 } }
+    const stringer = layoutStair(spec).parts.find((p) => p.kind === 'stringer')!
+    if (stringer.shape !== 'box') throw new Error('expected box')
+    // a positive pitch would send the forward (+Z) end down; the flight climbs, so
+    // the pitch must be negative.
+    expect(stringer.pitchDeg).toBeLessThan(0)
+  })
+
   it('a landing turn adds fascia so the sidings continue through the corner', () => {
     const withStr: StairSpec = {
       ...defaultStairSpec(),

@@ -162,7 +162,10 @@ export function layoutStair(spec: StairSpec): StairLayout {
     }
     emitFlightStringers(parts, spec, base, walk.heading, steps, rise)
     emitFlightRailing(parts, spec, base, walk.heading, steps, rise, walk.climbed === 0)
-    walk.pos = add(add(base, [0, steps * rise, 0]), scale(f, steps * G))
+    // A landing IS the flight's top tread (its top tread was skipped), so it sits
+    // one going back — flush on the last riser. Otherwise advance the full run.
+    const advance = toppedByLanding ? steps - 1 : steps
+    walk.pos = add(add(base, [0, steps * rise, 0]), scale(f, advance * G))
     walk.climbed += steps
   }
 
@@ -294,7 +297,9 @@ function emitFlightStringers(parts: Part[], spec: StairSpec, base: Vec3, heading
   const run = steps * G
   const climb = steps * rise
   const hyp = Math.hypot(run, climb)
-  const pitchDeg = (Math.atan2(climb, run) * 180) / Math.PI
+  // Negative: pitching a box about +X sends its +Z (forward) end DOWN, but the
+  // flight climbs as it goes forward — so rake up, not down.
+  const pitchDeg = (-Math.atan2(climb, run) * 180) / Math.PI
   const offsets = spec.stringer.kind === 'mono' ? [0] : [spec.width / 2 - th / 2, -(spec.width / 2 - th / 2)]
   for (const off of offsets) {
     const c = add(add(base, scale(f, run / 2)), scale(r, off))
@@ -326,7 +331,7 @@ function emitFlightRailing(parts: Part[], spec: StairSpec, base: Vec3, heading: 
   const run = steps * G
   const climb = steps * rise
   const hyp = Math.hypot(run, climb)
-  const pitchDeg = (Math.atan2(climb, run) * 180) / Math.PI
+  const pitchDeg = (-Math.atan2(climb, run) * 180) / Math.PI // rake up-forward (see stringers)
   const sides = R.sides === 'both' ? [1, -1] : R.sides === 'right' ? [1] : [-1]
   const ps = R.postSize
   const bs = R.balusterSize
