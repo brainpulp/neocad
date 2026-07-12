@@ -31,6 +31,36 @@ Plans: `docs/superpowers/plans/` · Backlog: `docs/BACKLOG.md`
 
 ## Status
 
+- **Stairs S1 (turns, descansos, winders, stringers, wood cut-list) — DONE &
+  verified headless.** The stair generator gained the WALKLINE path model: total
+  risers N split across `turns.length+1` flights, with a LANDING (flat, 0 risers,
+  pivots the heading) or a WINDER (w wedge steps that climb AND turn) between
+  flights. `spec.ts` gained `turns: TurnSpec[]` (angle/direction/kind + landing
+  shape or winder step count) + `StringerSpec` (none/two-side/mono, thickness,
+  depth) + `material`. `layout.ts` rewritten as a WALK: oriented (yawed) tread/
+  riser boxes per flight; LANDINGS = square box, TRIANGULAR descanso (extruded
+  prism), or a 2W×W half-turn rectangle for 180°; WINDERS = kite-shaped prism
+  treads fanning around a newel pivot at the inner edge; STRINGERS = raked side
+  boards (pitched boxes) per straight flight. `Part` is now box (with yaw +
+  optional pitch) or prism (plan polygon extruded in Y). `render/csg.ts` +
+  `CsgNode` gained an `extrude` node (plan polygon → vertical prism; verified
+  orientation empirically). `bom.ts` (NEW): `stairBom()` tallies parts into
+  grouped cut-list lines (identical boards collapse to a qty; winder wedges/
+  triangular landings collapse to one "shaped" line at the max blank size) with
+  board-feet; `bomToCsv` for a lumber order. `StairApp.tsx` gained a turn editor
+  (add/remove, Landing↔Winder, 90/180/custom, L/R, square/triangular, winder
+  steps), stringer controls, wood picker, a live cut-list table + CSV download,
+  and camera auto-framing from the mesh bbox. VERIFIED: 225 tests (+10: turn
+  layout, turn meshing, BOM); numeric checks confirm an L turns the 2nd flight
+  +90° (rotY 90, x>0) with the landing at the flight-1 top and monotonic step
+  heights, and a winder fans 3 kite treads climbing 0.18 m each around the pivot;
+  plan-view SVGs of L-square / L-triangular / winder / U confirm the footprints;
+  tsc + production build clean. KNOWN LIMITS: winder/landing sections have no
+  stringers yet (straight flights only); custom (non-90/180) landing angles use
+  the general perpendicular-exit formula (90/180 are exact); the physics-sandbox
+  insert (S7) is still pending. NEXT per plan: S2 stringer refinement through
+  turns, S4 spiral/curved, S5 railings, S6 code engine + fit-to-opening.
+
 - **Stairs S0 (parametric straight-stair generator — standalone `?stairs`) — DONE
   & verified headless.** A digression: a powerful parametric 3D STAIR generator,
   built on the WALKLINE model (a stair = a walk along a plan path, extruded up one

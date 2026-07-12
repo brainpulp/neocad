@@ -5,11 +5,33 @@ import { csgToGeometry } from '../../src/render/csg'
 
 describe('stairs/build', () => {
   it('unions the parts into one CsgNode', () => {
-    const node = stairToCsg(defaultStairSpec())
+    const node = stairToCsg({ ...defaultStairSpec(), stringer: { kind: 'none', thickness: 0.04, depth: 0.25 } })
     expect(node?.kind).toBe('union')
     if (node?.kind !== 'union') throw new Error('expected union')
-    // 15 risers + 14 treads for the default 2.7 m / 0.18 m stair
+    // 15 risers + 14 treads for the default 2.7 m / 0.18 m stair (no stringers)
     expect(node.children.length).toBe(15 + 14)
+  })
+
+  it('an L-stair with a landing still meshes watertight', async () => {
+    const spec: StairSpec = {
+      ...defaultStairSpec(),
+      sizing: { mode: 'byCount', count: 16 },
+      turns: [{ id: 't', angle: 90, direction: 'right', kind: 'landing', landingShape: 'triangular', winderSteps: 3 }],
+    }
+    const geo = await csgToGeometry(stairToCsg(spec)!)
+    expect(geo.getAttribute('position').count).toBeGreaterThan(0)
+    geo.dispose()
+  })
+
+  it('a winder stair meshes watertight', async () => {
+    const spec: StairSpec = {
+      ...defaultStairSpec(),
+      sizing: { mode: 'byCount', count: 15 },
+      turns: [{ id: 't', angle: 90, direction: 'right', kind: 'winder', landingShape: 'square', winderSteps: 3 }],
+    }
+    const geo = await csgToGeometry(stairToCsg(spec)!)
+    expect(geo.getAttribute('position').count).toBeGreaterThan(0)
+    geo.dispose()
   })
 
   it('meshes to a watertight solid via the manifold kernel', async () => {

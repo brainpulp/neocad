@@ -79,6 +79,20 @@ function build(top: ManifoldToplevel, node: CsgNode): Manifold {
       parts.forEach((p) => p.delete())
       return r
     }
+    case 'extrude': {
+      // A plan polygon (world X,Z, CCW) extruded vertically. Manifold extrudes an
+      // XY polygon along +Z; rotating +90° about X stands it up as (x,y,z)→
+      // (x,−z,y), so manifold-Y(=world z) stays world z and the height axis
+      // becomes −Y (the prism hangs below). Lifting by `top` lands it in
+      // [bottom, top]. A pure rotation preserves winding (no empty/inside-out).
+      const h = node.top - node.bottom
+      const flat = M.extrude([node.polygon.map(([x, z]) => [x, z] as [number, number])], h)
+      const stood = flat.rotate([90, 0, 0])
+      flat.delete()
+      const r = stood.translate([0, node.top, 0])
+      stood.delete()
+      return r
+    }
     case 'transform': {
       let m = build(top, node.child)
       if (node.rotate) {

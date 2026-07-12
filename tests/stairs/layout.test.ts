@@ -1,6 +1,8 @@
 import { describe, it, expect } from 'vitest'
-import { defaultStairSpec, type StairSpec } from '../../src/stairs/spec'
+import { defaultStairSpec, newTurn, type StairSpec } from '../../src/stairs/spec'
 import { layoutStair, riserCount } from '../../src/stairs/layout'
+
+const noStringer = { kind: 'none' as const, thickness: 0.04, depth: 0.25 }
 
 describe('stairs/layout', () => {
   it('byRise derives an equal-riser count near the target', () => {
@@ -44,6 +46,7 @@ describe('stairs/layout', () => {
     const { parts, metrics } = layoutStair(spec)
     expect(metrics.totalRun).toBeCloseTo(7 * 0.25, 6)
     const topTread = parts.filter((p) => p.kind === 'tread').at(-1)!
+    if (topTread.shape !== 'box') throw new Error('expected box tread')
     // top tread's top surface (centre.y + halfThickness) is at (N-1)·rise
     const topY = topTread.center[1] + topTread.size[1] / 2
     expect(topY).toBeCloseTo(7 * (2.0 / 8), 6)
@@ -62,5 +65,69 @@ describe('stairs/layout', () => {
     expect(metrics.rise).toBeCloseTo(0.18, 6)
     expect(metrics.twoRplusG).toBeCloseTo(2 * 0.18 + 0.28, 6)
     expect(metrics.pitchDeg).toBeCloseTo((Math.atan2(0.18, 0.28) * 180) / Math.PI, 4)
+  })
+})
+
+describe('stairs/layout — turns', () => {
+  it('an L (90° landing) splits into two flights and preserves equal risers', () => {
+    const spec: StairSpec = {
+      ...defaultStairSpec(),
+      stringer: noStringer,
+      sizing: { mode: 'byCount', count: 16 },
+      turns: [newTurn({ angle: 90, direction: 'right', kind: 'landing', landingShape: 'square' })],
+    }
+    const { parts, metrics } = layoutStair(spec)
+    expect(metrics.flights).toEqual([8, 8]) // 16 straight steps, split evenly
+    expect(metrics.risers).toBe(16)
+    expect(metrics.rise).toBeCloseTo(spec.totalRise / 16, 6)
+    // one square landing (a box), no prism parts
+    const landings = parts.filter((p) => p.kind === 'landing')
+    expect(landings).toHaveLength(1)
+    expect(landings[0].shape).toBe('box')
+  })
+
+  it('a triangular descanso emits a prism landing', () => {
+    const spec: StairSpec = {
+      ...defaultStairSpec(),
+      stringer: noStringer,
+      sizing: { mode: 'byCount', count: 12 },
+      turns: [newTurn({ kind: 'landing', landingShape: 'triangular' })],
+    }
+    const landing = layoutStair(spec).parts.find((p) => p.kind === 'landing')!
+    expect(landing.shape).toBe('prism')
+    if (landing.shape !== 'prism') throw new Error('expected prism')
+    expect(landing.polygon).toHaveLength(3) // a triangle
+  })
+
+  it('a winder consumes its steps as fanning wedge treads', () => {
+    const spec: StairSpec = {
+      ...defaultStairSpec(),
+      stringer: noStringer,
+      sizing: { mode: 'byCount', count: 15 },
+      turns: [newTurn({ angle: 90, direction: 'right', kind: 'winder', winderSteps: 3 })],
+    }
+    const { parts, metrics } = layoutStair(spec)
+    // 15 total risers − 3 winder = 12 straight, split across 2 flights = [6,6]
+    expect(metrics.flights).toEqual([6, 6])
+    // winder wedges are triangular prisms among the treads
+    const wedges = parts.filter((p) => p.kind === 'tread' && p.shape === 'prism')
+    expect(wedges).toHaveLength(3)
+    // all risers still equal
+    expect(metrics.rise).toBeCloseTo(spec.totalRise / 15, 6)
+  })
+
+  it('two winders (a U made of two quarter-turns) both fan', () => {
+    const spec: StairSpec = {
+      ...defaultStairSpec(),
+      stringer: noStringer,
+      sizing: { mode: 'byCount', count: 18 },
+      turns: [
+        newTurn({ angle: 90, direction: 'right', kind: 'winder', winderSteps: 3 }),
+        newTurn({ angle: 90, direction: 'right', kind: 'winder', winderSteps: 3 }),
+      ],
+    }
+    const { parts, metrics } = layoutStair(spec)
+    expect(metrics.flights).toEqual([4, 4, 4]) // 18-6 winder = 12 across 3 flights
+    expect(parts.filter((p) => p.kind === 'tread' && p.shape === 'prism')).toHaveLength(6)
   })
 })

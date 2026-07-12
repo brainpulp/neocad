@@ -25,6 +25,10 @@ export type CsgNode =
   | { kind: 'sphere'; radius: number }
   | { kind: 'subtract'; a: CsgNode; b: CsgNode }
   | { kind: 'union'; children: CsgNode[] } // batch boolean-OR (assembling many parts, e.g. a stair)
+  // A vertical prism: a plan polygon (world X,Z points) extruded in world Y from
+  // `bottom` to `top`. Used for triangular landings, winder (trapezoid) treads,
+  // and stringer profiles — anything a box can't express.
+  | { kind: 'extrude'; polygon: [number, number][]; bottom: number; top: number }
   | { kind: 'transform'; translate?: [number, number, number]; rotate?: [number, number, number]; child: CsgNode } // rotate = Euler degrees
 
 const csgSubtract = (a: CsgNode, b: CsgNode): CsgNode => ({ kind: 'subtract', a, b })

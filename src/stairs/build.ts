@@ -10,7 +10,14 @@ import type { StairSpec } from './spec'
 import { layoutStair, type Part } from './layout'
 
 function partToCsg(p: Part): CsgNode {
-  return { kind: 'transform', translate: p.center, child: { kind: 'box', size: p.size } }
+  if (p.shape === 'prism') {
+    return { kind: 'extrude', polygon: p.polygon, bottom: p.bottom, top: p.top }
+  }
+  // A box: pitch about local X (stringer rake), then yaw about Y, then place.
+  const box: CsgNode = { kind: 'box', size: p.size }
+  const pitched: CsgNode = p.pitchDeg ? { kind: 'transform', rotate: [p.pitchDeg, 0, 0], child: box } : box
+  const yawed: CsgNode = p.rotYDeg ? { kind: 'transform', rotate: [0, p.rotYDeg, 0], child: pitched } : pitched
+  return { kind: 'transform', translate: p.center, child: yawed }
 }
 
 /** The whole stair as a single union CsgNode (null if it has no parts). */
@@ -24,6 +31,10 @@ export function stairToCsg(spec: StairSpec): CsgNode | null {
 export function stairKey(spec: StairSpec): string {
   const s = spec.sizing
   const sizing = s.mode === 'byCount' ? `c${s.count}` : `r${s.targetRise}`
+  const turns = spec.turns
+    .map((t) => `${t.angle}${t.direction[0]}${t.kind[0]}${t.landingShape[0]}${t.winderSteps}`)
+    .join(',')
+  const str = `${spec.stringer.kind}:${spec.stringer.thickness}:${spec.stringer.depth}`
   return [
     spec.totalRise,
     spec.width,
@@ -33,5 +44,7 @@ export function stairKey(spec: StairSpec): string {
     spec.riserMode,
     spec.riserThickness,
     sizing,
+    turns,
+    str,
   ].join('|')
 }
