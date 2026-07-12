@@ -86,6 +86,26 @@ describe('stairs/layout — turns', () => {
     expect(landings[0].shape).toBe('box')
   })
 
+  it('flight 2 seats on the landing edge — no floating gap (regression)', () => {
+    const spec: StairSpec = {
+      ...defaultStairSpec(),
+      stringer: noStringer,
+      width: 1,
+      going: 0.25,
+      sizing: { mode: 'byCount', count: 16 },
+      turns: [newTurn({ angle: 90, direction: 'right', kind: 'landing', landingShape: 'square' })],
+    }
+    const { parts } = layoutStair(spec)
+    const landing = parts.find((p) => p.kind === 'landing')!
+    if (landing.shape !== 'box') throw new Error('expected box')
+    const landingRightEdge = landing.center[0] + landing.size[0] / 2 // +X face
+    const f2 = parts.filter((p) => p.kind === 'tread' && p.shape === 'box' && Math.abs(p.rotYDeg - 90) < 1)
+    // the first flight-2 tread's near (foot) edge must meet the landing edge, not
+    // sit half a width beyond it (the bug that left flight 2 floating).
+    const firstNearX = (f2[0] as { center: [number, number, number] }).center[0] - spec.going / 2
+    expect(Math.abs(firstNearX - landingRightEdge)).toBeLessThan(0.1)
+  })
+
   it('a triangular descanso emits a prism landing', () => {
     const spec: StairSpec = {
       ...defaultStairSpec(),

@@ -30,16 +30,35 @@ import { stairBom, bomToCsv } from './bom'
 
 const WOODS = ['pine', 'oak', 'walnut', 'plywood', 'bamboo', 'mdf', 'maple']
 
+/**
+ * A labelled control with BOTH a range slider and a typeable number box (shown in
+ * display units, e.g. mm). Tab moves between the number boxes; focusing one
+ * selects its text so you can Tab-then-type to punch an exact value.
+ */
 function Slider({ label, value, min, max, step, unit = 'mm', scale = 1000, onChange }: {
   label: string; value: number; min: number; max: number; step: number; unit?: string; scale?: number; onChange: (v: number) => void
 }) {
+  const clamp = (v: number) => Math.min(max, Math.max(min, v))
+  const disp = Math.round(value * scale * 1000) / 1000
   return (
     <label style={{ display: 'block', margin: '9px 0', fontSize: 13 }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 6 }}>
         <span>{label}</span>
-        <span style={{ opacity: 0.7 }}>{Math.round(value * scale)} {unit}</span>
+        <span style={{ display: 'flex', alignItems: 'center', gap: 3 }}>
+          <input
+            type="number"
+            value={disp}
+            min={min * scale}
+            max={max * scale}
+            step={step * scale}
+            onFocus={(e) => e.target.select()}
+            onChange={(e) => { const v = parseFloat(e.target.value); if (!Number.isNaN(v)) onChange(clamp(v / scale)) }}
+            style={{ width: 62, fontSize: 12, textAlign: 'right', background: '#2a2b2f', color: '#e8e8ea', border: '1px solid #444', borderRadius: 4, padding: '2px 4px' }}
+          />
+          <span style={{ opacity: 0.6, width: 20 }}>{unit}</span>
+        </span>
       </div>
-      <input type="range" min={min} max={max} step={step} value={value} style={{ width: '100%' }} onChange={(e) => onChange(parseFloat(e.target.value))} />
+      <input type="range" min={min} max={max} step={step} value={value} style={{ width: '100%' }} tabIndex={-1} onChange={(e) => onChange(parseFloat(e.target.value))} />
     </label>
   )
 }

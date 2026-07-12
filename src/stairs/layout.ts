@@ -182,7 +182,11 @@ export function layoutStair(spec: StairSpec): StairLayout {
       const center = add(A, scale(f, half))
       parts.push({ kind: 'landing', shape: 'box', center: [center[0], top - Tt / 2, center[2]], size: [W, Tt, W], rotYDeg: walk.heading })
     }
-    const exit = add(entryInner, scale(forward(walk.heading + s * t.angle), half))
+    // Flight 2 departs from the MIDDLE of the turn-side edge of the landing:
+    // step to the inner corner, then along the ORIGINAL forward by half a width
+    // (the turn-side edge runs along `f`). Using the rotated forward here was the
+    // bug that left flight 2 floating half a width off the landing.
+    const exit = add(entryInner, scale(f, half))
     walk.pos = [exit[0], top, exit[2]]
     walk.heading += s * t.angle
   }
