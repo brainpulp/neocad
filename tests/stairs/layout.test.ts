@@ -69,6 +69,22 @@ describe('stairs/layout', () => {
 })
 
 describe('stairs/layout — turns', () => {
+  it('stepsBefore fixes a flight; the rest go to the remaining flights', () => {
+    const spec: StairSpec = {
+      ...defaultStairSpec(),
+      stringer: noStringer,
+      sizing: { mode: 'byCount', count: 16 },
+      turns: [
+        newTurn({ kind: 'landing', stepsBefore: 5 }),
+        newTurn({ kind: 'landing' }), // auto
+      ],
+    }
+    // 16 straight steps, flight 0 fixed at 5 → remaining 11 split across 2 → [5,6,5] or [5,6,5]/[5,5,6]
+    const { metrics } = layoutStair(spec)
+    expect(metrics.flights[0]).toBe(5)
+    expect(metrics.flights.reduce((a, b) => a + b, 0)).toBe(16)
+  })
+
   it('an L (90° landing) splits into two flights and preserves equal risers', () => {
     const spec: StairSpec = {
       ...defaultStairSpec(),
@@ -106,20 +122,28 @@ describe('stairs/layout — turns', () => {
     expect(Math.abs(firstNearX - landingRightEdge)).toBeLessThan(0.1)
   })
 
-  it('a triangular descanso emits a prism landing', () => {
+  it('a square two-part winder splits the corner by the diagonal to the outer corner', () => {
     const spec: StairSpec = {
       ...defaultStairSpec(),
       stringer: noStringer,
-      sizing: { mode: 'byCount', count: 12 },
-      turns: [newTurn({ kind: 'landing', landingShape: 'triangular' })],
+      width: 1,
+      going: 0.25,
+      sizing: { mode: 'byCount', count: 14 },
+      turns: [newTurn({ angle: 90, direction: 'right', kind: 'winder', winderSteps: 2 })],
     }
-    const landing = layoutStair(spec).parts.find((p) => p.kind === 'landing')!
-    expect(landing.shape).toBe('prism')
-    if (landing.shape !== 'prism') throw new Error('expected prism')
-    expect(landing.polygon).toHaveLength(3) // a triangle
+    const { parts, metrics } = layoutStair(spec)
+    // 14 − 2 winder = 12 straight across 2 flights = [6,6]
+    expect(metrics.flights).toEqual([6, 6])
+    const wedges = parts.filter((p) => p.kind === 'tread' && p.shape === 'prism')
+    expect(wedges).toHaveLength(2)
+    // each is a triangle (newel + two outer-corner points), not a 4-gon
+    wedges.forEach((wg) => {
+      if (wg.shape !== 'prism') throw new Error()
+      expect(wg.polygon).toHaveLength(3)
+    })
   })
 
-  it('a winder consumes its steps as fanning wedge treads', () => {
+  it('a winder consumes its steps and climbs each one equally', () => {
     const spec: StairSpec = {
       ...defaultStairSpec(),
       stringer: noStringer,
@@ -129,10 +153,11 @@ describe('stairs/layout — turns', () => {
     const { parts, metrics } = layoutStair(spec)
     // 15 total risers − 3 winder = 12 straight, split across 2 flights = [6,6]
     expect(metrics.flights).toEqual([6, 6])
-    // winder wedges are triangular prisms among the treads
     const wedges = parts.filter((p) => p.kind === 'tread' && p.shape === 'prism')
     expect(wedges).toHaveLength(3)
-    // all risers still equal
+    // winder tops climb one rise each
+    const tops = wedges.map((w) => (w.shape === 'prism' ? w.top : 0)).sort((a, b) => a - b)
+    expect(tops[1] - tops[0]).toBeCloseTo(spec.totalRise / 15, 5)
     expect(metrics.rise).toBeCloseTo(spec.totalRise / 15, 6)
   })
 

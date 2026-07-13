@@ -48,14 +48,6 @@ function right(theta: number): Vec3 {
 }
 const add = (a: Vec3, b: Vec3): Vec3 => [a[0] + b[0], a[1] + b[1], a[2] + b[2]]
 const scale = (a: Vec3, s: number): Vec3 => [a[0] * s, a[1] * s, a[2] * s]
-/** Rotate a plan point (x,z) about pivot (px,pz) by `deg` (right/+ = toward +X). */
-function rotAbout(x: number, z: number, px: number, pz: number, deg: number): [number, number] {
-  const c = Math.cos(deg * DEG)
-  const s = Math.sin(deg * DEG)
-  const dx = x - px
-  const dz = z - pz
-  return [px + dx * c + dz * s, pz - dx * s + dz * c]
-}
 function signedArea(poly: [number, number][]): number {
   let a = 0
   for (let i = 0; i < poly.length; i++) {
@@ -102,6 +94,27 @@ function splitFlights(straightSteps: number, flightCount: number): number[] {
   return Array.from({ length: flightCount }, (_, i) => base + (i < rem ? 1 : 0))
 }
 
+/**
+ * Resolve the steps per straight flight. A turn may fix the count of the flight
+ * that LEADS UP TO it (`stepsBefore`); the remaining steps are split evenly across
+ * the un-fixed flights (the final flight is always auto). This is what lets the
+ * user decide how many steps come before each turn.
+ */
+function resolveFlights(straightSteps: number, turns: TurnSpec[]): number[] {
+  const n = turns.length + 1
+  const fixed: (number | null)[] = Array.from({ length: n }, (_, i) => {
+    const o = i < turns.length ? turns[i].stepsBefore : undefined
+    return o != null && o > 0 ? Math.round(o) : null
+  })
+  const fixedSum = fixed.reduce<number>((s, v) => s + (v ?? 0), 0)
+  const autoIdx = fixed.map((v, i) => (v == null ? i : -1)).filter((i) => i >= 0)
+  const remaining = Math.max(autoIdx.length, straightSteps - fixedSum)
+  const autoSplit = splitFlights(remaining, Math.max(1, autoIdx.length))
+  const res = fixed.slice()
+  autoIdx.forEach((idx, k) => (res[idx] = autoSplit[k] ?? 1))
+  return res.map((v) => (v == null ? 1 : v))
+}
+
 // US IRC residential reference bands (metres), informational.
 const IRC_MAX_RISE = 0.196
 const IRC_MIN_GOING = 0.254
@@ -141,7 +154,7 @@ export function layoutStair(spec: StairSpec): StairLayout {
   const flightCount = turns.length + 1
   const winderTotal = turns.reduce((s, t) => s + (t.kind === 'winder' ? Math.max(1, t.winderSteps) : 0), 0)
   const straightSteps = Math.max(flightCount, N - winderTotal)
-  const flights = splitFlights(straightSteps, flightCount)
+  const flights = resolveFlights(straightSteps, turns)
 
   const parts: Part[] = []
   const walk: Walk = { pos: [0, 0, 0], heading: 0, climbed: 0 }
@@ -193,28 +206,12 @@ export function layoutStair(spec: StairSpec): StairLayout {
     const farInner = add(entryInner, scale(f, W))
     const farOuter = add(entryOuter, scale(f, W))
     const str = spec.stringer
-    if (t.landingShape === 'triangular') {
-      parts.push({
-        kind: 'landing',
-        shape: 'prism',
-        polygon: ensureCCW([
-          [entryOuter[0], entryOuter[2]],
-          [entryInner[0], entryInner[2]],
-          [farInner[0], farInner[2]],
-        ]),
-        bottom: top - Tt,
-        top,
-      })
-      // Fascia along the hypotenuse (the outer edge) — continues the sidings.
-      if (str.kind !== 'none') parts.push(fasciaBoard('fascia', farInner, entryOuter, top, str.depth, str.thickness))
-    } else {
-      const center = add(A, scale(f, half))
-      parts.push({ kind: 'landing', shape: 'box', center: [center[0], top - Tt / 2, center[2]], size: [W, Tt, W], rotYDeg: walk.heading })
-      // Fascia around the two OUTER edges (the L-bend) — continues the sidings.
-      if (str.kind !== 'none') {
-        parts.push(fasciaBoard('fascia', entryOuter, farOuter, top, str.depth, str.thickness))
-        parts.push(fasciaBoard('fascia', farOuter, farInner, top, str.depth, str.thickness))
-      }
+    const center = add(A, scale(f, half))
+    parts.push({ kind: 'landing', shape: 'box', center: [center[0], top - Tt / 2, center[2]], size: [W, Tt, W], rotYDeg: walk.heading })
+    // Fascia around the two OUTER edges (the L-bend) — continues the sidings.
+    if (str.kind !== 'none') {
+      parts.push(fasciaBoard('fascia', entryOuter, farOuter, top, str.depth, str.thickness))
+      parts.push(fasciaBoard('fascia', farOuter, farInner, top, str.depth, str.thickness))
     }
     // Flight 2 departs from the MIDDLE of the turn-side edge of the landing:
     // step to the inner corner, then along the ORIGINAL forward by half a width
@@ -226,38 +223,51 @@ export function layoutStair(spec: StairSpec): StairLayout {
   }
 
   const emitWinder = (t: TurnSpec) => {
+    // A SQUARE-cornered winder: the treads fill a W×W corner whose OUTER boundary
+    // is the two perpendicular walls meeting at a 90° corner (not an arc). The
+    // newel sits at the inner corner; the outer L-path (nearOuter→farOuter→
+    // farInner, length 2W) is divided into `w` equal parts, and each tread is the
+    // triangle/quad from the newel to that segment. 2 parts → split by the diagonal
+    // to the outer corner (the classic square two-part winder). Always a 90° turn.
     const s = t.direction === 'right' ? 1 : -1
-    const w = Math.max(1, t.winderSteps)
-    const per = t.angle / w
+    const w = Math.max(2, t.winderSteps)
     const A = walk.pos
-    const start = walk.heading
-    const r0 = right(start)
-    // Pivot at the inner walkline edge (a newel post); winder treads are kites
-    // with their apex at the pivot, fanning to the outer edge (radius W).
-    const pivot: Vec3 = [A[0] + r0[0] * s * (W / 2), A[1], A[2] + r0[2] * s * (W / 2)]
-    const eOuter = add(A, scale(r0, -s * (W / 2)))
+    const f = forward(walk.heading)
+    const r = right(walk.heading)
+    const half = W / 2
+    const nearOuter = add(A, scale(r, -s * half))
+    const nearInner = add(A, scale(r, s * half)) // the newel corner
+    const farOuter = add(nearOuter, scale(f, W))
+    const farInner = add(nearInner, scale(f, W))
+    const newel = nearInner
+    const lerp = (a: Vec3, b: Vec3, u: number): Vec3 => [a[0] + (b[0] - a[0]) * u, 0, a[2] + (b[2] - a[2]) * u]
+    const outerAt = (d: number): Vec3 => (d <= W ? lerp(nearOuter, farOuter, d / W) : lerp(farOuter, farInner, (d - W) / W))
     const str = spec.stringer
     for (let i = 1; i <= w; i++) {
-      const [ox0, oz0] = rotAbout(eOuter[0], eOuter[2], pivot[0], pivot[2], s * per * (i - 1))
-      const [ox1, oz1] = rotAbout(eOuter[0], eOuter[2], pivot[0], pivot[2], s * per * i)
+      const d0 = ((i - 1) / w) * 2 * W
+      const d1 = (i / w) * 2 * W
+      const chain: Vec3[] = [outerAt(d0)]
+      if (d0 < W && d1 > W) chain.push(farOuter) // the segment rounds the outer corner
+      chain.push(outerAt(d1))
       const top = A[1] + i * rise
       parts.push({
         kind: 'tread',
         shape: 'prism',
-        polygon: ensureCCW([
-          [pivot[0], pivot[2]],
-          [ox0, oz0],
-          [ox1, oz1],
-        ]),
+        polygon: ensureCCW([[newel[0], newel[2]], ...chain.map((p) => [p[0], p[2]] as [number, number])]),
         bottom: top - Tt,
         top,
       })
-      // Fascia along this wedge's outer edge — the winder's outer stringer arc.
-      if (str.kind !== 'none') parts.push(fasciaBoard('fascia', [ox0, top, oz0], [ox1, top, oz1], top, str.depth, str.thickness))
+      // Fascia along the outer boundary segment(s) of this tread.
+      if (str.kind !== 'none') {
+        for (let k = 0; k < chain.length - 1; k++) {
+          parts.push(fasciaBoard('fascia', [chain[k][0], top, chain[k][2]], [chain[k + 1][0], top, chain[k + 1][2]], top, str.depth, str.thickness))
+        }
+      }
     }
-    const [mx, mz] = rotAbout(A[0], A[2], pivot[0], pivot[2], s * t.angle)
-    walk.pos = [mx, A[1] + w * rise, mz]
-    walk.heading = start + s * t.angle
+    // Flight 2 leaves from the middle of the exit edge (newel→farInner), turned 90°.
+    const exitMid = lerp(nearInner, farInner, 0.5)
+    walk.pos = [exitMid[0], A[1] + w * rise, exitMid[2]]
+    walk.heading += s * 90
     walk.climbed += w
   }
 
@@ -304,14 +314,21 @@ function emitFlightStringers(parts: Part[], spec: StairSpec, base: Vec3, heading
   // Negative: pitching a box about +X sends its +Z (forward) end DOWN, but the
   // flight climbs as it goes forward — so rake up, not down.
   const pitchDeg = (-Math.atan2(climb, run) * 180) / Math.PI
+  // The raw raked board would top out on the GOING line (through the tread backs),
+  // one whole rise BELOW the nosing line, so every step pokes up above it. Lift the
+  // top edge to the nosing line; a CLOSED string lifts an extra `margin` above so
+  // the board hides the whole step profile (the treads are already inset behind it).
+  const margin = spec.stringer.kind === 'closed' ? 0.06 : 0
+  const lift = rise + margin
+  const boardH = depth + lift
   const offsets = spec.stringer.kind === 'mono' ? [0] : [spec.width / 2 - th / 2, -(spec.width / 2 - th / 2)]
   for (const off of offsets) {
     const c = add(add(base, scale(f, run / 2)), scale(r, off))
     parts.push({
       kind: 'stringer',
       shape: 'box',
-      center: [c[0], base[1] + climb / 2 - depth / 2, c[2]],
-      size: [th, depth, hyp], // thickness × drop × length-along-rake
+      center: [c[0], base[1] + climb / 2 - depth / 2 + lift / 2, c[2]],
+      size: [th, boardH, hyp], // thickness × height × length-along-rake
       rotYDeg: heading,
       pitchDeg,
     })

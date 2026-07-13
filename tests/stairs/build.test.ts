@@ -20,7 +20,7 @@ describe('stairs/build', () => {
     const spec: StairSpec = {
       ...defaultStairSpec(),
       sizing: { mode: 'byCount', count: 16 },
-      turns: [{ id: 't', angle: 90, direction: 'right', kind: 'landing', landingShape: 'triangular', winderSteps: 3 }],
+      turns: [{ id: 't', angle: 90, direction: 'right', kind: 'landing', landingShape: 'square', winderSteps: 3 }],
     }
     const geo = await csgToGeometry(stairToCsg(spec)!)
     expect(geo.getAttribute('position').count).toBeGreaterThan(0)

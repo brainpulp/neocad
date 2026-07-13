@@ -19,8 +19,8 @@ export type StairSizing =
   | { mode: 'byCount'; count: number }
 
 export type TurnKind = 'landing' | 'winder'
-/** A flat landing's footprint: a full square, or a triangle cutting the corner. */
-export type LandingShape = 'square' | 'triangular'
+/** A flat landing's footprint. (A turn WITH steps is a winder, not a landing.) */
+export type LandingShape = 'square'
 
 export interface TurnSpec {
   id: string
@@ -32,6 +32,12 @@ export interface TurnSpec {
   landingShape: LandingShape
   /** Number of fanning wedge steps (kind === 'winder'); these DO climb. */
   winderSteps: number
+  /**
+   * Steps in the straight flight LEADING UP TO this turn. Undefined = auto (the
+   * total is split evenly across the un-fixed flights). The final flight is
+   * always the remainder.
+   */
+  stepsBefore?: number
 }
 
 /**

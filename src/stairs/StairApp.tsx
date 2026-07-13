@@ -1,15 +1,19 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Canvas } from '@react-three/fiber'
+import { Canvas, useThree } from '@react-three/fiber'
 import { Grid, OrbitControls } from '@react-three/drei'
+import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js'
 import {
   ACESFilmicToneMapping,
   Box3,
+  DoubleSide,
   Group,
   Mesh,
   MeshStandardMaterial,
+  PMREMGenerator,
   Vector3,
   type BufferGeometry,
 } from 'three'
+import { textureFor } from '../render/textures'
 import { GLTFExporter } from 'three/examples/jsm/exporters/GLTFExporter.js'
 import { STLExporter } from 'three/examples/jsm/exporters/STLExporter.js'
 import manifoldWasmUrl from 'manifold-3d/manifold.wasm?url'
@@ -31,6 +35,36 @@ import { stairBom, bomToCsv } from './bom'
 const WOODS = ['pine', 'oak', 'walnut', 'plywood', 'bamboo', 'mdf', 'maple']
 
 /**
+ * A number box that shows EXACTLY what you type. While focused it holds a local
+ * text buffer (so half-typed values like "5" on the way to "500" aren't clobbered
+ * by re-formatting or clamped away); the model is updated live (clamped so the
+ * preview stays valid) and the box reverts to the model's rounded value on blur.
+ */
+function NumField({ value, min, max, step, scale, onChange }: {
+  value: number; min: number; max: number; step: number; scale: number; onChange: (v: number) => void
+}) {
+  const shown = String(Math.round(value * scale * 100) / 100)
+  const [buf, setBuf] = useState<string | null>(null)
+  return (
+    <input
+      type="number"
+      value={buf ?? shown}
+      min={min * scale}
+      max={max * scale}
+      step={step * scale}
+      onFocus={(e) => { setBuf(shown); e.currentTarget.select() }}
+      onChange={(e) => {
+        setBuf(e.target.value)
+        const v = parseFloat(e.target.value)
+        if (!Number.isNaN(v)) onChange(Math.min(max, Math.max(min, v / scale)))
+      }}
+      onBlur={() => setBuf(null)}
+      style={{ width: 62, fontSize: 12, textAlign: 'right', background: '#2a2b2f', color: '#e8e8ea', border: '1px solid #444', borderRadius: 4, padding: '2px 4px' }}
+    />
+  )
+}
+
+/**
  * A labelled control with BOTH a range slider and a typeable number box (shown in
  * display units, e.g. mm). Tab moves between the number boxes; focusing one
  * selects its text so you can Tab-then-type to punch an exact value.
@@ -38,23 +72,12 @@ const WOODS = ['pine', 'oak', 'walnut', 'plywood', 'bamboo', 'mdf', 'maple']
 function Slider({ label, value, min, max, step, unit = 'mm', scale = 1000, onChange }: {
   label: string; value: number; min: number; max: number; step: number; unit?: string; scale?: number; onChange: (v: number) => void
 }) {
-  const clamp = (v: number) => Math.min(max, Math.max(min, v))
-  const disp = Math.round(value * scale * 1000) / 1000
   return (
     <label style={{ display: 'block', margin: '9px 0', fontSize: 13 }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 6 }}>
         <span>{label}</span>
         <span style={{ display: 'flex', alignItems: 'center', gap: 3 }}>
-          <input
-            type="number"
-            value={disp}
-            min={min * scale}
-            max={max * scale}
-            step={step * scale}
-            onFocus={(e) => e.target.select()}
-            onChange={(e) => { const v = parseFloat(e.target.value); if (!Number.isNaN(v)) onChange(clamp(v / scale)) }}
-            style={{ width: 62, fontSize: 12, textAlign: 'right', background: '#2a2b2f', color: '#e8e8ea', border: '1px solid #444', borderRadius: 4, padding: '2px 4px' }}
-          />
+          <NumField value={value} min={min} max={max} step={step} scale={scale} onChange={onChange} />
           <span style={{ opacity: 0.6, width: 20 }}>{unit}</span>
         </span>
       </div>
@@ -63,8 +86,32 @@ function Slider({ label, value, min, max, step, unit = 'mm', scale = 1000, onCha
   )
 }
 
-function StairMesh({ geometry, onBounds }: { geometry: BufferGeometry; onBounds: (c: Vector3, r: number) => void }) {
-  const material = useMemo(() => new MeshStandardMaterial({ color: '#c9a36a', roughness: 0.7, metalness: 0.05 }), [])
+/** Bakes three's procedural room to a PMREM probe → scene.environment, for real
+ *  image-based lighting (no external HDR). Same trick as the main builder. */
+function StudioEnv() {
+  const { scene, gl } = useThree()
+  useEffect(() => {
+    const pmrem = new PMREMGenerator(gl)
+    const env = pmrem.fromScene(new RoomEnvironment(), 0.04)
+    scene.environment = env.texture
+    return () => {
+      scene.environment = null
+      env.texture.dispose()
+      pmrem.dispose()
+    }
+  }, [scene, gl])
+  return null
+}
+
+function StairMesh({ geometry, wood, onBounds }: { geometry: BufferGeometry; wood: string; onBounds: (c: Vector3, r: number) => void }) {
+  const material = useMemo(() => {
+    const map = textureFor(wood)
+    if (map) {
+      map.wrapS = map.wrapT = 1000 // RepeatWrapping
+      map.repeat.set(3, 3)
+    }
+    return new MeshStandardMaterial({ color: '#caa06a', map: map ?? undefined, roughness: 0.62, metalness: 0.02, envMapIntensity: 0.85 })
+  }, [wood])
   useEffect(() => () => material.dispose(), [material])
   useEffect(() => {
     geometry.computeBoundingBox()
@@ -73,6 +120,20 @@ function StairMesh({ geometry, onBounds }: { geometry: BufferGeometry; onBounds:
     onBounds(c, box.getSize(new Vector3()).length() / 2)
   }, [geometry, onBounds])
   return <mesh geometry={geometry} material={material} castShadow receiveShadow />
+}
+
+/** Two faint translucent 5×5 m slabs marking the lower and upper storey floors. */
+function Storeys({ center, rise }: { center: Vector3; rise: number }) {
+  return (
+    <>
+      {[0, rise].map((y, i) => (
+        <mesh key={i} position={[center.x, y, center.z]} rotation={[-Math.PI / 2, 0, 0]} receiveShadow>
+          <planeGeometry args={[5, 5]} />
+          <meshStandardMaterial color="#9fb4c8" transparent opacity={0.16} roughness={0.9} metalness={0} side={DoubleSide} />
+        </mesh>
+      ))}
+    </>
+  )
 }
 
 const seg: React.CSSProperties = { fontSize: 12, padding: '3px 7px', borderRadius: 5, border: '1px solid #444', background: '#2a2b2f', color: '#ddd', cursor: 'pointer' }
@@ -101,18 +162,28 @@ function TurnRow({ turn, index, onChange, onRemove }: { turn: TurnSpec; index: n
         <button style={turn.direction === 'left' ? segOn : seg} onClick={() => up({ direction: 'left' })}>◀ Left</button>
         <button style={turn.direction === 'right' ? segOn : seg} onClick={() => up({ direction: 'right' })}>Right ▶</button>
       </div>
-      {turn.kind === 'landing' ? (
-        <div style={{ display: 'flex', gap: 4 }}>
-          <span style={{ fontSize: 12, opacity: 0.7, alignSelf: 'center' }}>Descanso</span>
-          <button style={turn.landingShape === 'square' ? segOn : seg} onClick={() => up({ landingShape: 'square' })}>Square</button>
-          <button style={turn.landingShape === 'triangular' ? segOn : seg} onClick={() => up({ landingShape: 'triangular' })}>Triangular</button>
-        </div>
-      ) : (
+      {turn.kind === 'winder' && (
         <label style={{ display: 'flex', gap: 6, alignItems: 'center', fontSize: 12 }}>
-          Winder steps
-          <input type="number" value={turn.winderSteps} min={2} max={6} step={1} style={{ width: 52 }} onChange={(e) => up({ winderSteps: Math.max(2, parseInt(e.target.value) || 3) })} />
+          Winder steps (square corner)
+          <input type="number" value={turn.winderSteps} min={2} max={4} step={1} style={{ width: 52 }} onChange={(e) => up({ winderSteps: Math.max(2, parseInt(e.target.value) || 2) })} />
         </label>
       )}
+      <label style={{ display: 'flex', gap: 6, alignItems: 'center', fontSize: 12, marginTop: 6 }}>
+        Steps before turn
+        <input
+          type="number"
+          value={turn.stepsBefore ?? ''}
+          placeholder="auto"
+          min={0}
+          max={30}
+          step={1}
+          style={{ width: 60 }}
+          onChange={(e) => {
+            const v = parseInt(e.target.value)
+            up({ stepsBefore: Number.isNaN(v) ? undefined : Math.max(0, v) })
+          }}
+        />
+      </label>
     </div>
   )
 }
@@ -120,6 +191,7 @@ function TurnRow({ turn, index, onChange, onRemove }: { turn: TurnSpec; index: n
 export function StairApp() {
   const [spec, setSpec] = useState<StairSpec>(defaultStairSpec)
   const [geo, setGeo] = useState<BufferGeometry | null>(null)
+  const [boundsCenter, setBoundsCenter] = useState(() => new Vector3(0, 1, 1))
   const key = stairKey(spec)
   const controls = useRef<{ target: Vector3; update: () => void } | null>(null)
 
@@ -158,6 +230,7 @@ export function StairApp() {
   const onDownloadBom = () => downloadBlob(new Blob([bomToCsv(bom)], { type: 'text/csv' }), 'stair-cutlist.csv')
 
   const onBounds = (c: Vector3, _r: number) => {
+    setBoundsCenter((prev) => (prev.equals(c) ? prev : c.clone()))
     if (controls.current) { controls.current.target.copy(c); controls.current.update() }
   }
 
@@ -272,12 +345,30 @@ export function StairApp() {
       </div>
 
       <div style={{ flex: 1, background: '#f4f4f5' }}>
-        <Canvas shadows camera={{ position: [4, spec.totalRise + 2, metrics.totalRun + 3], fov: 45 }} gl={{ toneMapping: ACESFilmicToneMapping }}>
-          <hemisphereLight intensity={0.6} groundColor="#b0b0b0" />
-          <directionalLight position={[5, 8, 4]} intensity={1.1} castShadow />
-          <Grid args={[30, 30]} cellColor="#c8c8c8" sectionColor="#a0a0a0" infiniteGrid fadeDistance={40} />
-          {geo && <StairMesh geometry={geo} onBounds={onBounds} />}
-          <OrbitControls ref={controls as never} target={[0, spec.totalRise / 2, metrics.totalRun / 2]} makeDefault />
+        <Canvas
+          shadows
+          camera={{ position: [4.5, spec.totalRise + 2.5, metrics.totalRun + 3.5], fov: 42 }}
+          gl={{ toneMapping: ACESFilmicToneMapping, antialias: true }}
+        >
+          <color attach="background" args={['#eef1f4']} />
+          <StudioEnv />
+          <hemisphereLight intensity={0.35} groundColor="#8a8578" color="#eaf2ff" />
+          <directionalLight
+            position={[6, 10, 5]}
+            intensity={2.1}
+            castShadow
+            shadow-mapSize={[2048, 2048]}
+            shadow-bias={-0.0002}
+            shadow-camera-left={-6}
+            shadow-camera-right={6}
+            shadow-camera-top={6}
+            shadow-camera-bottom={-6}
+          />
+          <directionalLight position={[-5, 4, -4]} intensity={0.5} color="#cfe0ff" />
+          <Grid args={[40, 40]} cellColor="#d2d6da" sectionColor="#b4bac0" infiniteGrid fadeDistance={45} />
+          <Storeys center={boundsCenter} rise={spec.totalRise} />
+          {geo && <StairMesh geometry={geo} wood={spec.material} onBounds={onBounds} />}
+          <OrbitControls ref={controls as never} target={[boundsCenter.x, boundsCenter.y, boundsCenter.z]} makeDefault />
         </Canvas>
       </div>
     </div>

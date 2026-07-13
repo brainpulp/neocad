@@ -32,7 +32,7 @@ export function stairKey(spec: StairSpec): string {
   const s = spec.sizing
   const sizing = s.mode === 'byCount' ? `c${s.count}` : `r${s.targetRise}`
   const turns = spec.turns
-    .map((t) => `${t.angle}${t.direction[0]}${t.kind[0]}${t.landingShape[0]}${t.winderSteps}`)
+    .map((t) => `${t.angle}${t.direction[0]}${t.kind[0]}${t.landingShape[0]}${t.winderSteps}s${t.stepsBefore ?? 'a'}`)
     .join(',')
   const str = `${spec.stringer.kind}:${spec.stringer.thickness}:${spec.stringer.depth}`
   const R = spec.railing
