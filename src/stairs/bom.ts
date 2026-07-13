@@ -50,6 +50,10 @@ interface Described {
 }
 
 function describe(p: Part): Described {
+  if (p.shape === 'csg') {
+    // Cut from a stock blank; the notched/cut piece is priced as its blank.
+    return { ext: p.blank.ext, volume: p.blank.volume, shaped: true }
+  }
   if (p.shape === 'box') {
     const ext = [...p.size].sort((a, b) => b - a) as [number, number, number]
     return { ext, volume: p.size[0] * p.size[1] * p.size[2], shaped: false }

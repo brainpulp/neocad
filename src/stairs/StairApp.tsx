@@ -122,14 +122,16 @@ function StairMesh({ geometry, wood, onBounds }: { geometry: BufferGeometry; woo
   return <mesh geometry={geometry} material={material} castShadow receiveShadow />
 }
 
-/** Two faint translucent 5×5 m slabs marking the lower and upper storey floors. */
-function Storeys({ center, rise }: { center: Vector3; rise: number }) {
+/** Two faint translucent 5×5 m slabs at the storeys the stair connects: the lower
+ *  floor at the foot (y=0) and the upper floor at the head (y=totalRise), each
+ *  centred at that end of the stair so they read as floors, not mid-span planes. */
+function Storeys({ lower, upper }: { lower: [number, number, number]; upper: [number, number, number] }) {
   return (
     <>
-      {[0, rise].map((y, i) => (
-        <mesh key={i} position={[center.x, y, center.z]} rotation={[-Math.PI / 2, 0, 0]} receiveShadow>
+      {[lower, upper].map((p, i) => (
+        <mesh key={i} position={p} rotation={[-Math.PI / 2, 0, 0]} receiveShadow>
           <planeGeometry args={[5, 5]} />
-          <meshStandardMaterial color="#9fb4c8" transparent opacity={0.16} roughness={0.9} metalness={0} side={DoubleSide} />
+          <meshStandardMaterial color="#9fb4c8" transparent opacity={0.18} roughness={0.9} metalness={0} side={DoubleSide} />
         </mesh>
       ))}
     </>
@@ -195,8 +197,21 @@ export function StairApp() {
   const key = stairKey(spec)
   const controls = useRef<{ target: Vector3; update: () => void } | null>(null)
 
-  const { metrics, advisories } = useMemo(() => layoutStair(spec), [key]) // eslint-disable-line react-hooks/exhaustive-deps
+  const layout = useMemo(() => layoutStair(spec), [key]) // eslint-disable-line react-hooks/exhaustive-deps
+  const { metrics, advisories } = layout
   const bom = useMemo(() => stairBom(spec), [key]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Storey slabs sit at the foot and head of the stair (the two floors it joins),
+  // offset outward from the first/last step so they don't cut through the flights.
+  const { lowerFloor, upperFloor } = useMemo(() => {
+    const treads = layout.parts.filter((p) => p.kind === 'tread' && p.shape === 'box') as Array<{ center: [number, number, number] }>
+    const foot = treads.reduce((lo, t) => (t.center[1] < lo.center[1] ? t : lo), treads[0])?.center ?? [0, 0, 0]
+    const head = treads.reduce((hi, t) => (t.center[1] > hi.center[1] ? t : hi), treads[0])?.center ?? [0, 0, 0]
+    return {
+      lowerFloor: [foot[0], 0, foot[2] - 1.5] as [number, number, number],
+      upperFloor: [head[0], spec.totalRise, head[2] + 1.5] as [number, number, number],
+    }
+  }, [layout, spec.totalRise])
 
   useEffect(() => {
     const node = stairToCsg(spec)
@@ -366,7 +381,7 @@ export function StairApp() {
           />
           <directionalLight position={[-5, 4, -4]} intensity={0.5} color="#cfe0ff" />
           <Grid args={[40, 40]} cellColor="#d2d6da" sectionColor="#b4bac0" infiniteGrid fadeDistance={45} />
-          <Storeys center={boundsCenter} rise={spec.totalRise} />
+          <Storeys lower={lowerFloor} upper={upperFloor} />
           {geo && <StairMesh geometry={geo} wood={spec.material} onBounds={onBounds} />}
           <OrbitControls ref={controls as never} target={[boundsCenter.x, boundsCenter.y, boundsCenter.z]} makeDefault />
         </Canvas>

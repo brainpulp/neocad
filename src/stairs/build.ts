@@ -10,6 +10,7 @@ import type { StairSpec } from './spec'
 import { layoutStair, type Part } from './layout'
 
 function partToCsg(p: Part): CsgNode {
+  if (p.shape === 'csg') return p.node
   if (p.shape === 'prism') {
     return { kind: 'extrude', polygon: p.polygon, bottom: p.bottom, top: p.top }
   }

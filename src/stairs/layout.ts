@@ -11,6 +11,7 @@
  * winder wedges).
  */
 import type { StairSpec, TurnSpec } from './spec'
+import type { CsgNode } from '../document/cuts'
 
 type Vec3 = [number, number, number]
 export type PartKind = 'tread' | 'riser' | 'landing' | 'stringer' | 'fascia' | 'rail' | 'baluster' | 'post'
@@ -18,6 +19,9 @@ export type PartKind = 'tread' | 'riser' | 'landing' | 'stringer' | 'fascia' | '
 export type Part =
   | { kind: PartKind; shape: 'box'; center: Vec3; size: Vec3; rotYDeg: number; pitchDeg?: number }
   | { kind: PartKind; shape: 'prism'; polygon: [number, number][]; bottom: number; top: number }
+  // A part built directly as a CSG tree (booleans) — for notched/end-cut stringers.
+  // `blank` is the uncut stock size (l≥w≥t, m) for the cut list.
+  | { kind: PartKind; shape: 'csg'; node: CsgNode; blank: { ext: Vec3; volume: number } }
 
 export interface StairMetrics {
   risers: number
@@ -318,20 +322,50 @@ function emitFlightStringers(parts: Part[], spec: StairSpec, base: Vec3, heading
   // one whole rise BELOW the nosing line, so every step pokes up above it. Lift the
   // top edge to the nosing line; a CLOSED string lifts an extra `margin` above so
   // the board hides the whole step profile (the treads are already inset behind it).
-  const margin = spec.stringer.kind === 'closed' ? 0.06 : 0
+  const kind = spec.stringer.kind
+  const margin = kind === 'closed' ? 0.06 : 0.02
   const lift = rise + margin
   const boardH = depth + lift
-  const offsets = spec.stringer.kind === 'mono' ? [0] : [spec.width / 2 - th / 2, -(spec.width / 2 - th / 2)]
+  const offsets = kind === 'mono' ? [0] : [spec.width / 2 - th / 2, -(spec.width / 2 - th / 2)]
+  const boardCY = base[1] + climb / 2 - depth / 2 + lift / 2
   for (const off of offsets) {
-    const c = add(add(base, scale(f, run / 2)), scale(r, off))
-    parts.push({
-      kind: 'stringer',
-      shape: 'box',
-      center: [c[0], base[1] + climb / 2 - depth / 2 + lift / 2, c[2]],
-      size: [th, boardH, hyp], // thickness × height × length-along-rake
-      rotYDeg: heading,
-      pitchDeg,
-    })
+    if (kind === 'two-side') {
+      // Open/CUT string: a raked board with the step profile NOTCHED out of its top
+      // (sawtooth). Built in the flight-local frame (forward +Z, up +Y) so the
+      // notch boxes stay world-vertical, then yawed + placed. Subtracting vertical
+      // boxes from the pitched board carves a clean rise×going tooth per step.
+      const localBoard: CsgNode = {
+        kind: 'transform',
+        translate: [off, boardCY - base[1], run / 2],
+        child: { kind: 'transform', rotate: [pitchDeg, 0, 0], child: { kind: 'box', size: [th, boardH, hyp] } },
+      }
+      const notches: CsgNode[] = []
+      const BIG = Math.max(1, climb + 1)
+      for (let k = 1; k <= steps; k++) {
+        notches.push({
+          kind: 'transform',
+          translate: [off, k * rise + BIG / 2, (k - 0.5) * G],
+          child: { kind: 'box', size: [th + 0.02, BIG, G + 0.0004] },
+        })
+      }
+      const local: CsgNode = { kind: 'subtract', a: localBoard, b: { kind: 'union', children: notches } }
+      // Place: yaw the local (flight-frame, base at origin) to the heading, then
+      // translate to the world flight base. `transform` applies rotate then translate.
+      const placed: CsgNode = { kind: 'transform', rotate: [0, heading, 0], translate: base, child: local }
+      const ext = [hyp, boardH, th].sort((a, b) => b - a) as Vec3
+      parts.push({ kind: 'stringer', shape: 'csg', node: placed, blank: { ext, volume: th * boardH * hyp } })
+    } else {
+      // Closed/mono: a solid raked board (closed hides the profile; treads are inset).
+      const c = add(add(base, scale(f, run / 2)), scale(r, off))
+      parts.push({
+        kind: 'stringer',
+        shape: 'box',
+        center: [c[0], boardCY, c[2]],
+        size: [th, boardH, hyp],
+        rotYDeg: heading,
+        pitchDeg,
+      })
+    }
   }
 }
 

@@ -180,7 +180,8 @@ describe('stairs/layout — turns', () => {
   })
 
   it('stringers rake UP with the flight, not down (regression)', () => {
-    const spec: StairSpec = { ...defaultStairSpec(), sizing: { mode: 'byCount', count: 12 } }
+    // closed strings are solid boxes (two-side is a notched csg); check the box pitch
+    const spec: StairSpec = { ...defaultStairSpec(), stringer: { kind: 'closed', thickness: 0.04, depth: 0.25 }, sizing: { mode: 'byCount', count: 12 } }
     const stringer = layoutStair(spec).parts.find((p) => p.kind === 'stringer')!
     if (stringer.shape !== 'box') throw new Error('expected box')
     // a positive pitch would send the forward (+Z) end down; the flight climbs, so
