@@ -6,7 +6,7 @@ describe('stairs/bom', () => {
   it('groups identical treads/risers into quantities', () => {
     const spec: StairSpec = {
       ...defaultStairSpec(),
-      stringer: { kind: 'none', thickness: 0.04, depth: 0.25 },
+      stringer: { kind: 'none', thickness: 0.04, depth: 0.25, endBottom: 'seat' as const, endTop: 'plumb' as const },
       sizing: { mode: 'byCount', count: 15 },
     }
     const bom = stairBom(spec)
@@ -31,7 +31,7 @@ describe('stairs/bom', () => {
   it('counts winder wedges and a landing in a turning stair', () => {
     const spec: StairSpec = {
       ...defaultStairSpec(),
-      stringer: { kind: 'none', thickness: 0.04, depth: 0.25 },
+      stringer: { kind: 'none', thickness: 0.04, depth: 0.25, endBottom: 'seat' as const, endTop: 'plumb' as const },
       sizing: { mode: 'byCount', count: 16 },
       turns: [newTurn({ kind: 'winder', winderSteps: 3, angle: 90 })],
     }

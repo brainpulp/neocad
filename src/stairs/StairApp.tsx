@@ -300,6 +300,18 @@ export function StairApp() {
           <>
             <Slider label="Stringer thickness" value={spec.stringer.thickness} min={0.02} max={0.08} step={0.002} onChange={(v) => setStringer({ thickness: v })} />
             <Slider label="Stringer depth" value={spec.stringer.depth} min={0.1} max={0.4} step={0.005} unit="mm" onChange={(v) => setStringer({ depth: v })} />
+            <div style={{ display: 'flex', gap: 4, marginTop: 6, alignItems: 'center' }}>
+              <span style={{ fontSize: 12, opacity: 0.7, width: 44 }}>Bottom</span>
+              {(['seat', 'level', 'plumb'] as const).map((e) => (
+                <button key={e} style={spec.stringer.endBottom === e ? segOn : seg} onClick={() => setStringer({ endBottom: e })}>{e}</button>
+              ))}
+            </div>
+            <div style={{ display: 'flex', gap: 4, marginTop: 4, alignItems: 'center' }}>
+              <span style={{ fontSize: 12, opacity: 0.7, width: 44 }}>Top</span>
+              {(['plumb', 'level', 'seat'] as const).map((e) => (
+                <button key={e} style={spec.stringer.endTop === e ? segOn : seg} onClick={() => setStringer({ endTop: e })}>{e}</button>
+              ))}
+            </div>
           </>
         )}
 

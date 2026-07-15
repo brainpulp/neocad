@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest'
 import { defaultStairSpec, newTurn, type StairSpec } from '../../src/stairs/spec'
 import { layoutStair, riserCount } from '../../src/stairs/layout'
 
-const noStringer = { kind: 'none' as const, thickness: 0.04, depth: 0.25 }
+const noStringer = { kind: 'none' as const, thickness: 0.04, depth: 0.25, endBottom: 'seat' as const, endTop: 'plumb' as const }
 
 describe('stairs/layout', () => {
   it('byRise derives an equal-riser count near the target', () => {
@@ -164,7 +164,7 @@ describe('stairs/layout — turns', () => {
   it('the landing sits flush on the last riser — no one-going gap (regression)', () => {
     const spec: StairSpec = {
       ...defaultStairSpec(),
-      stringer: { kind: 'none', thickness: 0.04, depth: 0.25 },
+      stringer: { kind: 'none', thickness: 0.04, depth: 0.25, endBottom: 'seat' as const, endTop: 'plumb' as const },
       railing: { sides: 'none', height: 0.9, postSize: 0.08, balusterSize: 0.03, balusterGap: 0.1 },
       going: 0.25,
       sizing: { mode: 'byCount', count: 16 },
@@ -179,14 +179,16 @@ describe('stairs/layout — turns', () => {
     expect(Math.abs(near - lastBack)).toBeLessThan(1e-6) // flush, no gap
   })
 
-  it('stringers rake UP with the flight, not down (regression)', () => {
-    // closed strings are solid boxes (two-side is a notched csg); check the box pitch
-    const spec: StairSpec = { ...defaultStairSpec(), stringer: { kind: 'closed', thickness: 0.04, depth: 0.25 }, sizing: { mode: 'byCount', count: 12 } }
+  it('stringers are CSG boards with a stock blank for the cut list', () => {
+    // Every stringer is now built as a CSG tree (notches + end cuts are booleans).
+    const spec: StairSpec = { ...defaultStairSpec(), sizing: { mode: 'byCount', count: 12 } }
     const stringer = layoutStair(spec).parts.find((p) => p.kind === 'stringer')!
-    if (stringer.shape !== 'box') throw new Error('expected box')
-    // a positive pitch would send the forward (+Z) end down; the flight climbs, so
-    // the pitch must be negative.
-    expect(stringer.pitchDeg).toBeLessThan(0)
+    expect(stringer.shape).toBe('csg')
+    if (stringer.shape !== 'csg') throw new Error('expected csg')
+    // the blank is the uncut board: longest extent ≈ the rake hypotenuse
+    const run = 12 * spec.going
+    const climb = spec.totalRise
+    expect(stringer.blank.ext[0]).toBeCloseTo(Math.hypot(run, climb), 1)
   })
 
   it('a landing turn adds fascia so the sidings continue through the corner', () => {
@@ -199,14 +201,14 @@ describe('stairs/layout — turns', () => {
     const fascia = layoutStair(withStr).parts.filter((p) => p.kind === 'fascia')
     expect(fascia.length).toBe(2) // the two outer edges of the square landing (the L-bend)
     // …and none when stringers are off
-    const noStr = layoutStair({ ...withStr, stringer: { kind: 'none', thickness: 0.04, depth: 0.25 } })
+    const noStr = layoutStair({ ...withStr, stringer: { kind: 'none', thickness: 0.04, depth: 0.25, endBottom: 'seat' as const, endTop: 'plumb' as const } })
     expect(noStr.parts.filter((p) => p.kind === 'fascia')).toHaveLength(0)
   })
 
   it('railings emit a rail, balusters and newel posts per flight/side', () => {
     const spec: StairSpec = {
       ...defaultStairSpec(),
-      stringer: { kind: 'none', thickness: 0.04, depth: 0.25 },
+      stringer: { kind: 'none', thickness: 0.04, depth: 0.25, endBottom: 'seat' as const, endTop: 'plumb' as const },
       sizing: { mode: 'byCount', count: 16 },
       railing: { sides: 'both', height: 0.9, postSize: 0.08, balusterSize: 0.03, balusterGap: 0.1 },
       turns: [newTurn({ angle: 90, direction: 'right', kind: 'landing', landingShape: 'square' })],
@@ -228,7 +230,7 @@ describe('stairs/layout — turns', () => {
   it('balusters are an integer count per tread, spaced a divisor of the going', () => {
     const spec: StairSpec = {
       ...defaultStairSpec(),
-      stringer: { kind: 'none', thickness: 0.04, depth: 0.25 },
+      stringer: { kind: 'none', thickness: 0.04, depth: 0.25, endBottom: 'seat' as const, endTop: 'plumb' as const },
       going: 0.3,
       sizing: { mode: 'byCount', count: 11 },
       railing: { sides: 'right', height: 0.9, postSize: 0.08, balusterSize: 0.03, balusterGap: 0.1 },
@@ -238,7 +240,7 @@ describe('stairs/layout — turns', () => {
     expect(balusters).toBe(11 * 3)
   })
 
-  it('closed-string houses the treads behind the boards (narrower treads)', () => {
+  it('side strings (open & closed) inset the treads; mono does not', () => {
     const base: StairSpec = {
       ...defaultStairSpec(),
       width: 1,
@@ -246,15 +248,18 @@ describe('stairs/layout — turns', () => {
       sizing: { mode: 'byCount', count: 12 },
     }
     const th = 0.04
-    const open = layoutStair({ ...base, stringer: { kind: 'two-side', thickness: th, depth: 0.25 } })
-    const closed = layoutStair({ ...base, stringer: { kind: 'closed', thickness: th, depth: 0.25 } })
-    const width = (l: typeof open) => {
+    const mk = (kind: 'two-side' | 'closed' | 'mono') =>
+      layoutStair({ ...base, stringer: { kind, thickness: th, depth: 0.25, endBottom: 'seat' as const, endTop: 'plumb' as const } })
+    const width = (l: ReturnType<typeof mk>) => {
       const t = l.parts.find((p) => p.kind === 'tread' && p.shape === 'box')!
       if (t.shape !== 'box') throw new Error()
       return t.size[0]
     }
-    expect(width(open)).toBeCloseTo(1, 6) // full width
-    expect(width(closed)).toBeCloseTo(1 - 2 * th, 6) // inset by a board thickness each side
+    // side boards sit outboard of the steps, so treads are inset a thickness each side
+    expect(width(mk('two-side'))).toBeCloseTo(1 - 2 * th, 6)
+    expect(width(mk('closed'))).toBeCloseTo(1 - 2 * th, 6)
+    // a central beam doesn't inset the treads
+    expect(width(mk('mono'))).toBeCloseTo(1, 6)
   })
 
   it('two winders (a U made of two quarter-turns) both fan', () => {
