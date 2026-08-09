@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Canvas, useThree } from '@react-three/fiber'
-import { Grid, OrbitControls } from '@react-three/drei'
+import { Grid, Html, OrbitControls } from '@react-three/drei'
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js'
 import {
   ACESFilmicToneMapping,
@@ -123,6 +123,40 @@ function StairMesh({ geometry, wood, onBounds }: { geometry: BufferGeometry; woo
   return <mesh geometry={geometry} material={material} castShadow receiveShadow />
 }
 
+/** On-model dimension labels: at each tread nosing, the running HEIGHT from the
+ *  floor (the riser mark) and the going — fixed screen size, toggle on/off. */
+function StepDims({ parts }: { parts: ReturnType<typeof layoutStair>['parts'] }) {
+  const treads = parts.filter((p) => p.kind === 'tread' && p.shape === 'box') as Array<{ center: [number, number, number]; size: [number, number, number]; rotYDeg: number }>
+  const going = treads[0] ? Math.round((treads[0].size[2]) * 1000) : 0
+  return (
+    <>
+      {treads.map((t, i) => {
+        const [cx, cy, cz] = t.center
+        const [w, tt, d] = t.size
+        const th = (t.rotYDeg || 0) * (Math.PI / 180)
+        const fx = Math.sin(th), fz = Math.cos(th), rx = Math.cos(th), rz = -Math.sin(th)
+        // outer-front (nosing) corner of the tread top
+        const px = cx - fx * (d / 2) + rx * (w / 2)
+        const py = cy + tt / 2
+        const pz = cz - fz * (d / 2) + rz * (w / 2)
+        const h = Math.round((cy + tt / 2) * 1000)
+        return (
+          <Html key={i} position={[px, py, pz]} center zIndexRange={[100, 0]} style={{ pointerEvents: 'none' }}>
+            <div style={{ background: 'rgba(20,22,26,0.85)', color: '#fff', fontSize: 10, fontFamily: 'system-ui', padding: '1px 5px', borderRadius: 4, whiteSpace: 'nowrap', transform: 'translateY(-2px)' }}>
+              ↥{h}
+            </div>
+          </Html>
+        )
+      })}
+      {treads[0] && (
+        <Html position={[treads[0].center[0], treads[0].center[1] + 0.5, treads[0].center[2]]} center style={{ pointerEvents: 'none' }}>
+          <div style={{ background: '#3b82c4', color: '#fff', fontSize: 10, padding: '2px 6px', borderRadius: 4, whiteSpace: 'nowrap' }}>going {going} mm · heights from floor (mm)</div>
+        </Html>
+      )}
+    </>
+  )
+}
+
 /** Two faint translucent 5×5 m slabs at the storeys the stair connects: the lower
  *  floor at the foot (y=0) and the upper floor at the head (y=totalRise), each
  *  centred at that end of the stair so they read as floors, not mid-span planes. */
@@ -197,6 +231,7 @@ export function StairApp() {
   const [boundsCenter, setBoundsCenter] = useState(() => new Vector3(0, 1, 1))
   const [setoutOpen, setSetoutOpen] = useState(false)
   const [setoutFlight, setSetoutFlight] = useState(0)
+  const [showDims, setShowDims] = useState(false)
   const key = stairKey(spec)
   const controls = useRef<{ target: Vector3; update: () => void } | null>(null)
 
@@ -353,6 +388,9 @@ export function StairApp() {
             {advisories.map((a, i) => <li key={i}>{a}</li>)}
           </ul>
         )}
+        <label style={{ display: 'flex', gap: 6, alignItems: 'center', fontSize: 13, margin: '10px 0 0' }}>
+          <input type="checkbox" checked={showDims} onChange={(e) => setShowDims(e.target.checked)} /> Show dimensions on model
+        </label>
 
         {setouts.length > 0 && (
           <>
@@ -446,6 +484,7 @@ export function StairApp() {
           <directionalLight position={[-5, 4, -4]} intensity={0.5} color="#cfe0ff" />
           <Grid args={[40, 40]} cellColor="#d2d6da" sectionColor="#b4bac0" infiniteGrid fadeDistance={45} />
           <Storeys lower={lowerFloor} upper={upperFloor} />
+          {showDims && <StepDims parts={layout.parts} />}
           {geo && <StairMesh geometry={geo} wood={spec.material} onBounds={onBounds} />}
           <OrbitControls ref={controls as never} target={[boundsCenter.x, boundsCenter.y, boundsCenter.z]} makeDefault />
         </Canvas>
