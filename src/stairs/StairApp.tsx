@@ -231,6 +231,7 @@ export function StairApp() {
   const [boundsCenter, setBoundsCenter] = useState(() => new Vector3(0, 1, 1))
   const [setoutOpen, setSetoutOpen] = useState(false)
   const [setoutFlight, setSetoutFlight] = useState(0)
+  const [setoutDatum, setSetoutDatum] = useState<'bottom' | 'top'>('bottom')
   const [showDims, setShowDims] = useState(false)
   const key = stairKey(spec)
   const controls = useRef<{ target: Vector3; update: () => void } | null>(null)
@@ -284,7 +285,7 @@ export function StairApp() {
   const onDownloadBom = () => downloadBlob(new Blob([bomToCsv(bom)], { type: 'text/csv' }), 'stair-cutlist.csv')
   const onDownloadSetoutCsv = () => downloadBlob(new Blob([setoutToCsv(setouts)], { type: 'text/csv' }), 'stringer-setout.csv')
   const onDownloadSetoutSvg = (s: (typeof setouts)[number]) =>
-    downloadBlob(new Blob([setoutSvg(s)], { type: 'image/svg+xml' }), `stringer-flight${s.flight}-marking.svg`)
+    downloadBlob(new Blob([setoutSvg(s, setoutDatum)], { type: 'image/svg+xml' }), `stringer-flight${s.flight}-marking.svg`)
 
   const onBounds = (c: Vector3, _r: number) => {
     setBoundsCenter((prev) => (prev.equals(c) ? prev : c.clone()))
@@ -448,18 +449,23 @@ export function StairApp() {
 
       <div style={{ flex: 1, background: '#f4f4f5', position: 'relative' }}>
         {setoutOpen && setouts.length > 0 && (
-          <div style={{ position: 'absolute', inset: 12, zIndex: 10, background: '#fff', borderRadius: 8, boxShadow: '0 6px 30px rgba(0,0,0,0.25)', display: 'flex', flexDirection: 'column' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 12px', borderBottom: '1px solid #e5e5e5' }}>
-              <b style={{ fontSize: 14, color: '#111' }}>Stringer marking — running dimensions from the bottom datum</b>
+          <div style={{ position: 'absolute', inset: 12, zIndex: 1000, background: '#fff', borderRadius: 8, boxShadow: '0 6px 30px rgba(0,0,0,0.25)', display: 'flex', flexDirection: 'column' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 12px', borderBottom: '1px solid #e5e5e5', flexWrap: 'wrap' }}>
+              <b style={{ fontSize: 14, color: '#111' }}>Stringer marking template</b>
               <span style={{ display: 'flex', gap: 4, marginLeft: 8 }}>
                 {setouts.map((s, i) => (
                   <button key={s.flight} onClick={() => setSetoutFlight(i)} style={i === setoutFlight ? segOn : seg}>Flight {s.flight}</button>
                 ))}
               </span>
+              <span style={{ display: 'flex', gap: 4, marginLeft: 8, alignItems: 'center' }}>
+                <span style={{ fontSize: 12, color: '#555' }}>Datum:</span>
+                <button onClick={() => setSetoutDatum('bottom')} style={setoutDatum === 'bottom' ? segOn : seg}>from bottom</button>
+                <button onClick={() => setSetoutDatum('top')} style={setoutDatum === 'top' ? segOn : seg}>from top</button>
+              </span>
               <button onClick={() => onDownloadSetoutSvg(setouts[setoutFlight])} style={{ ...seg, marginLeft: 'auto', color: '#333', borderColor: '#ccc', background: '#f2f2f2' }}>⬇ Print SVG</button>
               <button onClick={() => setSetoutOpen(false)} style={{ ...seg, color: '#333', borderColor: '#ccc', background: '#f2f2f2' }}>✕ Close</button>
             </div>
-            <div style={{ flex: 1, overflow: 'auto', padding: 12 }} dangerouslySetInnerHTML={{ __html: setoutSvg(setouts[setoutFlight]) }} />
+            <div style={{ flex: 1, overflow: 'auto', padding: 12 }} dangerouslySetInnerHTML={{ __html: setoutSvg(setouts[setoutFlight], setoutDatum) }} />
           </div>
         )}
         <Canvas
@@ -484,7 +490,7 @@ export function StairApp() {
           <directionalLight position={[-5, 4, -4]} intensity={0.5} color="#cfe0ff" />
           <Grid args={[40, 40]} cellColor="#d2d6da" sectionColor="#b4bac0" infiniteGrid fadeDistance={45} />
           <Storeys lower={lowerFloor} upper={upperFloor} />
-          {showDims && <StepDims parts={layout.parts} />}
+          {showDims && !setoutOpen && <StepDims parts={layout.parts} />}
           {geo && <StairMesh geometry={geo} wood={spec.material} onBounds={onBounds} />}
           <OrbitControls ref={controls as never} target={[boundsCenter.x, boundsCenter.y, boundsCenter.z]} makeDefault />
         </Canvas>
