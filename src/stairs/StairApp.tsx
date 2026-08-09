@@ -195,6 +195,8 @@ export function StairApp() {
   const [spec, setSpec] = useState<StairSpec>(defaultStairSpec)
   const [geo, setGeo] = useState<BufferGeometry | null>(null)
   const [boundsCenter, setBoundsCenter] = useState(() => new Vector3(0, 1, 1))
+  const [setoutOpen, setSetoutOpen] = useState(false)
+  const [setoutFlight, setSetoutFlight] = useState(0)
   const key = stairKey(spec)
   const controls = useRef<{ target: Vector3; update: () => void } | null>(null)
 
@@ -361,11 +363,14 @@ export function StairApp() {
             <div style={{ fontSize: 11, opacity: 0.65, marginBottom: 6 }}>
               Marking sheet per flight — every notch as a running dimension from the bottom datum (mark each from the datum, don't add up).
             </div>
-            {setouts.map((s) => (
+            {setouts.map((s, i) => (
               <div key={s.flight} style={{ border: '1px solid #2c2d31', borderRadius: 6, padding: 8, marginBottom: 6, fontSize: 12 }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4, gap: 4 }}>
                   <b>Flight {s.flight} · {s.steps} steps</b>
-                  <button onClick={() => onDownloadSetoutSvg(s)} style={segOn}>⬇ Marking sheet</button>
+                  <span style={{ display: 'flex', gap: 4 }}>
+                    <button onClick={() => { setSetoutFlight(i); setSetoutOpen(true) }} style={segOn}>📐 View</button>
+                    <button onClick={() => onDownloadSetoutSvg(s)} style={seg}>⬇</button>
+                  </span>
                 </div>
                 <div style={{ lineHeight: 1.5, opacity: 0.85 }}>
                   <div>Rise {Math.round(s.unitRise * 1000)} · Going {Math.round(s.unitGoing * 1000)} mm</div>
@@ -403,7 +408,22 @@ export function StairApp() {
         </div>
       </div>
 
-      <div style={{ flex: 1, background: '#f4f4f5' }}>
+      <div style={{ flex: 1, background: '#f4f4f5', position: 'relative' }}>
+        {setoutOpen && setouts.length > 0 && (
+          <div style={{ position: 'absolute', inset: 12, zIndex: 10, background: '#fff', borderRadius: 8, boxShadow: '0 6px 30px rgba(0,0,0,0.25)', display: 'flex', flexDirection: 'column' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 12px', borderBottom: '1px solid #e5e5e5' }}>
+              <b style={{ fontSize: 14, color: '#111' }}>Stringer marking — running dimensions from the bottom datum</b>
+              <span style={{ display: 'flex', gap: 4, marginLeft: 8 }}>
+                {setouts.map((s, i) => (
+                  <button key={s.flight} onClick={() => setSetoutFlight(i)} style={i === setoutFlight ? segOn : seg}>Flight {s.flight}</button>
+                ))}
+              </span>
+              <button onClick={() => onDownloadSetoutSvg(setouts[setoutFlight])} style={{ ...seg, marginLeft: 'auto', color: '#333', borderColor: '#ccc', background: '#f2f2f2' }}>⬇ Print SVG</button>
+              <button onClick={() => setSetoutOpen(false)} style={{ ...seg, color: '#333', borderColor: '#ccc', background: '#f2f2f2' }}>✕ Close</button>
+            </div>
+            <div style={{ flex: 1, overflow: 'auto', padding: 12 }} dangerouslySetInnerHTML={{ __html: setoutSvg(setouts[setoutFlight]) }} />
+          </div>
+        )}
         <Canvas
           shadows
           camera={{ position: [4.5, spec.totalRise + 2.5, metrics.totalRun + 3.5], fov: 42 }}
