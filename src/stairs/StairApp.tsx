@@ -23,6 +23,7 @@ import { defaultStairSpec, newTurn, type StairSpec, type StringerKind, type Turn
 import { layoutStair } from './layout'
 import { stairToCsg, stairKey } from './build'
 import { stairBom, bomToCsv } from './bom'
+import { flightSetouts, setoutToCsv, setoutSvg } from './setout'
 
 /**
  * Standalone stair-generator playground (`?stairs`). Parameters drive the pure
@@ -200,6 +201,7 @@ export function StairApp() {
   const layout = useMemo(() => layoutStair(spec), [key]) // eslint-disable-line react-hooks/exhaustive-deps
   const { metrics, advisories } = layout
   const bom = useMemo(() => stairBom(spec), [key]) // eslint-disable-line react-hooks/exhaustive-deps
+  const setouts = useMemo(() => flightSetouts(spec), [key]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Storey slabs sit at the foot and head of the stair (the two floors it joins),
   // offset outward from the first/last step so they don't cut through the flights.
@@ -243,6 +245,9 @@ export function StairApp() {
     downloadBlob(blob, 'stair.gltf')
   }, (e) => console.error('glTF export failed', e), {})
   const onDownloadBom = () => downloadBlob(new Blob([bomToCsv(bom)], { type: 'text/csv' }), 'stair-cutlist.csv')
+  const onDownloadSetoutCsv = () => downloadBlob(new Blob([setoutToCsv(setouts)], { type: 'text/csv' }), 'stringer-setout.csv')
+  const onDownloadSetoutSvg = (s: (typeof setouts)[number]) =>
+    downloadBlob(new Blob([setoutSvg(s)], { type: 'image/svg+xml' }), `stringer-flight${s.flight}-marking.svg`)
 
   const onBounds = (c: Vector3, _r: number) => {
     setBoundsCenter((prev) => (prev.equals(c) ? prev : c.clone()))
@@ -345,6 +350,33 @@ export function StairApp() {
           <ul style={{ margin: '10px 0 0', padding: '0 0 0 16px', fontSize: 12, color: '#f0b429' }}>
             {advisories.map((a, i) => <li key={i}>{a}</li>)}
           </ul>
+        )}
+
+        {setouts.length > 0 && (
+          <>
+            <div style={{ margin: '16px 0 6px', fontSize: 12, textTransform: 'uppercase', opacity: 0.6, display: 'flex', justifyContent: 'space-between' }}>
+              <span>Stringer setout</span>
+              <button onClick={onDownloadSetoutCsv} style={seg}>⬇ CSV</button>
+            </div>
+            <div style={{ fontSize: 11, opacity: 0.65, marginBottom: 6 }}>
+              Marking sheet per flight — every notch as a running dimension from the bottom datum (mark each from the datum, don't add up).
+            </div>
+            {setouts.map((s) => (
+              <div key={s.flight} style={{ border: '1px solid #2c2d31', borderRadius: 6, padding: 8, marginBottom: 6, fontSize: 12 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+                  <b>Flight {s.flight} · {s.steps} steps</b>
+                  <button onClick={() => onDownloadSetoutSvg(s)} style={segOn}>⬇ Marking sheet</button>
+                </div>
+                <div style={{ lineHeight: 1.5, opacity: 0.85 }}>
+                  <div>Rise {Math.round(s.unitRise * 1000)} · Going {Math.round(s.unitGoing * 1000)} mm</div>
+                  <div>Blank {Math.round(s.blank.length * 1000)}×{Math.round(s.blank.width * 1000)}×{Math.round(s.blank.thickness * 1000)} mm</div>
+                  <div>Pitch {s.pitchDeg.toFixed(1)}° · step along board {Math.round(s.hypPerStep * 1000)} mm</div>
+                  <div>Drop {Math.round(s.bottomDrop * 1000)} mm · throat {Math.round(s.throat * 1000)} mm{s.throat < 0.089 ? ' ⚠ below 89' : ''}</div>
+                  <div>Ends: {s.endBottom} (foot) / {s.endTop} (head)</div>
+                </div>
+              </div>
+            ))}
+          </>
         )}
 
         <div style={{ margin: '16px 0 6px', fontSize: 12, textTransform: 'uppercase', opacity: 0.6, display: 'flex', justifyContent: 'space-between' }}>
