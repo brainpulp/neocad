@@ -321,7 +321,7 @@ function emitFlightStringers(parts: Part[], spec: StairSpec, base: Vec3, heading
   const climb = steps * rise
   const hyp = Math.hypot(run, climb)
   const pitchDeg = (-Math.atan2(climb, run) * 180) / Math.PI // rake up-forward
-  const margin = S.kind === 'closed' ? 0.06 : 0.02
+  const margin = S.kind === 'closed' ? 0.03 : 0.02
   const lift = rise + margin
   const boardH = depth + lift
   const boardCY = climb / 2 - depth / 2 + lift / 2 // local (base at y=0)
@@ -341,7 +341,9 @@ function emitFlightStringers(parts: Part[], spec: StairSpec, base: Vec3, heading
     }
     const cuts: CsgNode[] = []
     // open/cut sawtooth: remove everything above each tread's level, over its going.
-    if (S.kind === 'two-side') {
+    // Two-side (side carriages) AND mono (central carriage) are notched so the
+    // steps seat in them instead of the solid board stabbing through the profile.
+    if (S.kind === 'two-side' || S.kind === 'mono') {
       for (let k = 1; k <= steps; k++) {
         cuts.push({ kind: 'transform', translate: [off, k * rise + BIG / 2, (k - 0.5) * G], child: { kind: 'box', size: [th + 0.02, BIG, G + 0.0004] } })
       }

@@ -111,12 +111,12 @@ export function defaultStairSpec(): StairSpec {
     going: 0.25,
     treadThickness: 0.04,
     nosing: 0.025,
-    riserMode: 'closed',
+    riserMode: 'open',
     riserThickness: 0.02,
     sizing: { mode: 'byRise', targetRise: 0.18 },
     turns: [],
     stringer: { kind: 'two-side', thickness: 0.04, depth: 0.25, endBottom: 'seat', endTop: 'plumb' },
-    railing: { sides: 'both', height: 0.9, postSize: 0.08, balusterSize: 0.03, balusterGap: 0.1 },
+    railing: { sides: 'none', height: 0.9, postSize: 0.08, balusterSize: 0.03, balusterGap: 0.1 },
     material: 'pine',
   }
 }

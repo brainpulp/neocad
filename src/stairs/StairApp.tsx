@@ -142,8 +142,8 @@ function StepDims({ parts }: { parts: ReturnType<typeof layoutStair>['parts'] })
         const h = Math.round((cy + tt / 2) * 1000)
         return (
           <Html key={i} position={[px, py, pz]} center zIndexRange={[100, 0]} style={{ pointerEvents: 'none' }}>
-            <div style={{ background: 'rgba(20,22,26,0.85)', color: '#fff', fontSize: 10, fontFamily: 'system-ui', padding: '1px 5px', borderRadius: 4, whiteSpace: 'nowrap', transform: 'translateY(-2px)' }}>
-              ↥{h}
+            <div style={{ background: 'rgba(20,22,26,0.9)', color: '#fff', fontSize: 14, fontWeight: 600, fontFamily: 'system-ui', padding: '2px 7px', borderRadius: 5, whiteSpace: 'nowrap' }}>
+              {h}
             </div>
           </Html>
         )

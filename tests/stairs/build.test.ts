@@ -7,6 +7,7 @@ describe('stairs/build', () => {
   it('unions the parts into one CsgNode', () => {
     const node = stairToCsg({
       ...defaultStairSpec(),
+      riserMode: 'closed',
       stringer: { kind: 'none', thickness: 0.04, depth: 0.25, endBottom: 'seat' as const, endTop: 'plumb' as const },
       railing: { sides: 'none', height: 0.9, postSize: 0.08, balusterSize: 0.03, balusterGap: 0.1 },
     })

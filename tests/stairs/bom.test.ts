@@ -6,6 +6,7 @@ describe('stairs/bom', () => {
   it('groups identical treads/risers into quantities', () => {
     const spec: StairSpec = {
       ...defaultStairSpec(),
+      riserMode: 'closed',
       stringer: { kind: 'none', thickness: 0.04, depth: 0.25, endBottom: 'seat' as const, endTop: 'plumb' as const },
       sizing: { mode: 'byCount', count: 15 },
     }
