@@ -321,10 +321,16 @@ function emitFlightStringers(parts: Part[], spec: StairSpec, base: Vec3, heading
   const climb = steps * rise
   const hyp = Math.hypot(run, climb)
   const pitchDeg = (-Math.atan2(climb, run) * 180) / Math.PI // rake up-forward
-  const margin = S.kind === 'closed' ? 0.03 : 0.02
-  const lift = rise + margin
-  const boardH = depth + lift
-  const boardCY = climb / 2 - depth / 2 + lift / 2 // local (base at y=0)
+  const Tt = spec.treadThickness
+  // Board sized from the NOSING (tread) line: `depth` is the drop BELOW that line,
+  // so the board is ~`depth` tall (a closed string adds a small `margin` above the
+  // nosings to hide the profile) — not depth+rise+margin as before.
+  const margin = S.kind === 'closed' ? 0.03 : 0.0
+  const nosingMid = climb / 2 + rise // vertical height of the nosing line at mid-flight
+  const topMid = nosingMid + margin
+  const botMid = nosingMid - depth
+  const boardH = topMid - botMid // = depth + margin
+  const boardCY = (topMid + botMid) / 2 // local (base at y=0)
   const offsets = S.kind === 'mono' ? [0] : [spec.width / 2 - th / 2, -(spec.width / 2 - th / 2)]
   const BIG = 10
   // half-space subtract boxes, in the flight-local frame
@@ -344,8 +350,12 @@ function emitFlightStringers(parts: Part[], spec: StairSpec, base: Vec3, heading
     // Two-side (side carriages) AND mono (central carriage) are notched so the
     // steps seat in them instead of the solid board stabbing through the profile.
     if (S.kind === 'two-side' || S.kind === 'mono') {
+      // A CENTRAL beam (mono) carries the treads on top, so its notch cuts to the
+      // tread UNDERSIDE (k·rise − Tt) — otherwise it fills up into the treads and
+      // clips through. A SIDE string (two-side) nests beside the tread, cut to k·rise.
       for (let k = 1; k <= steps; k++) {
-        cuts.push({ kind: 'transform', translate: [off, k * rise + BIG / 2, (k - 0.5) * G], child: { kind: 'box', size: [th + 0.02, BIG, G + 0.0004] } })
+        const notchTop = S.kind === 'mono' ? k * rise - Tt : k * rise
+        cuts.push({ kind: 'transform', translate: [off, notchTop + BIG / 2, (k - 0.5) * G], child: { kind: 'box', size: [th + 0.02, BIG, G + 0.0004] } })
       }
     }
     // end cuts (bottom / top). level = a horizontal face, plumb = a vertical face.
