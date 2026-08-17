@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Canvas, useThree } from '@react-three/fiber'
-import { Edges, Grid, Html, Line, OrbitControls } from '@react-three/drei'
+import { Edges, Grid, Html, Line, OrbitControls, TransformControls } from '@react-three/drei'
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js'
 import {
   ACESFilmicToneMapping,
@@ -182,14 +182,45 @@ interface CBox {
   kind: BoxKind
   size: [number, number, number]
   pos: [number, number, number]
+  rot?: [number, number, number]
 }
 const BOX_COLOR: Record<BoxKind, string> = { floor: '#8aa0ab', ceiling: '#a7b6bd', wall: '#a1887f', box: '#7cb342' }
 const mmv = (x: number) => Math.round(x * 1000)
 const pill: React.CSSProperties = { background: 'rgba(20,22,26,0.9)', color: '#fff', fontSize: 12, fontWeight: 600, fontFamily: 'system-ui', padding: '2px 7px', borderRadius: 5, whiteSpace: 'nowrap' }
 
+/** One context box: translucent solid + edges + always-on dim label. When selected
+ *  it gets a TransformControls gizmo (move or rotate) that commits back to state. */
+function BoxMesh({ box, selected, mode, onSelect, onChange }: {
+  box: CBox; selected: boolean; mode: 'translate' | 'rotate'; onSelect: () => void; onChange: (patch: Partial<CBox>) => void
+}) {
+  const [obj, setObj] = useState<Group | null>(null)
+  const commit = () => {
+    if (!obj) return
+    const r = (v: number) => Math.round(v * 1000) / 1000
+    onChange({ pos: [r(obj.position.x), r(obj.position.y), r(obj.position.z)], rot: [obj.rotation.x, obj.rotation.y, obj.rotation.z] })
+  }
+  return (
+    <>
+      <group ref={setObj} position={box.pos} rotation={box.rot ?? [0, 0, 0]} onPointerDown={(e) => { e.stopPropagation(); onSelect() }}>
+        <mesh>
+          <boxGeometry args={box.size} />
+          <meshStandardMaterial color={BOX_COLOR[box.kind]} transparent opacity={selected ? 0.22 : 0.14} side={DoubleSide} depthWrite={false} />
+          <Edges color={selected ? '#ff9800' : BOX_COLOR[box.kind]} />
+        </mesh>
+        <Html center position={[0, box.size[1] / 2 + 0.08, 0]} style={{ pointerEvents: 'none' }}>
+          <div style={{ ...pill, background: selected ? '#e67e22' : pill.background }}>{box.kind} · {mmv(box.size[0])}×{mmv(box.size[2])}×{mmv(box.size[1])}</div>
+        </Html>
+      </group>
+      {selected && obj && <TransformControls object={obj} mode={mode} onObjectChange={commit} />}
+    </>
+  )
+}
+
 /** User-placed boxes with ALWAYS-ON dimension labels, so you can recreate the
  *  surrounding floors/ceilings/walls and read the fit (incl. floor→ceiling). */
-function ContextBoxes({ boxes }: { boxes: CBox[] }) {
+function ContextBoxes({ boxes, selectedId, mode, onSelect, onChange }: {
+  boxes: CBox[]; selectedId: number | null; mode: 'translate' | 'rotate'; onSelect: (id: number) => void; onChange: (id: number, patch: Partial<CBox>) => void
+}) {
   const floor = boxes.find((b) => b.kind === 'floor')
   const ceil = boxes.find((b) => b.kind === 'ceiling')
   let clear: React.ReactNode = null
@@ -209,16 +240,7 @@ function ContextBoxes({ boxes }: { boxes: CBox[] }) {
   return (
     <>
       {boxes.map((b) => (
-        <group key={b.id} position={b.pos}>
-          <mesh>
-            <boxGeometry args={b.size} />
-            <meshStandardMaterial color={BOX_COLOR[b.kind]} transparent opacity={0.14} side={DoubleSide} depthWrite={false} />
-            <Edges color={BOX_COLOR[b.kind]} />
-          </mesh>
-          <Html center position={[0, b.size[1] / 2 + 0.08, 0]} style={{ pointerEvents: 'none' }}>
-            <div style={pill}>{b.kind} · {mmv(b.size[0])}×{mmv(b.size[2])}×{mmv(b.size[1])}</div>
-          </Html>
-        </group>
+        <BoxMesh key={b.id} box={b} selected={b.id === selectedId} mode={mode} onSelect={() => onSelect(b.id)} onChange={(patch) => onChange(b.id, patch)} />
       ))}
       {clear}
     </>
@@ -305,6 +327,8 @@ export function StairApp() {
     try { return JSON.parse(localStorage.getItem('neocad-stair-boxes') || '[]') } catch { return [] }
   })
   const boxId = useRef(1 + boxes.reduce((m, b) => Math.max(m, b.id), 0))
+  const [selBox, setSelBox] = useState<number | null>(null)
+  const [boxMode, setBoxMode] = useState<'translate' | 'rotate'>('translate')
   useEffect(() => { localStorage.setItem('neocad-stair-boxes', JSON.stringify(boxes)) }, [boxes])
   const key = stairKey(spec)
   const controls = useRef<{ target: Vector3; update: () => void } | null>(null)
@@ -411,7 +435,24 @@ export function StairApp() {
         {spec.turns.map((t, i) => (
           <TurnRow key={t.id} turn={t} index={i} onChange={(nt) => updateTurn(i, nt)} onRemove={() => removeTurn(i)} />
         ))}
-        {spec.turns.length > 0 && <div style={{ fontSize: 12, opacity: 0.6 }}>Flights: {metrics.flights.join(' · ')} steps</div>}
+        {spec.turns.length > 0 && (
+          <>
+            <label style={{ display: 'flex', gap: 6, alignItems: 'center', fontSize: 12, margin: '4px 0' }}>
+              Steps after last turn
+              <input
+                type="number"
+                value={spec.finalFlightSteps ?? ''}
+                placeholder="auto"
+                min={0}
+                max={30}
+                step={1}
+                style={{ width: 60 }}
+                onChange={(e) => { const v = parseInt(e.target.value); set({ finalFlightSteps: Number.isNaN(v) ? undefined : Math.max(0, v) }) }}
+              />
+            </label>
+            <div style={{ fontSize: 12, opacity: 0.6 }}>Flights: {metrics.flights.join(' · ')} steps · {metrics.risers} risers total</div>
+          </>
+        )}
 
         <div style={{ margin: '14px 0 6px', fontSize: 12, textTransform: 'uppercase', opacity: 0.6 }}>Treads &amp; risers</div>
         <Slider label="Tread thickness" value={spec.treadThickness} min={0.02} max={0.08} step={0.002} onChange={(v) => set({ treadThickness: v })} />
@@ -487,11 +528,18 @@ export function StairApp() {
             <button key={k} style={seg} onClick={() => addBox(k)}>＋ {k}</button>
           ))}
         </div>
+        {selBox != null && (
+          <div style={{ display: 'flex', gap: 4, alignItems: 'center', marginBottom: 6 }}>
+            <span style={{ fontSize: 11, opacity: 0.6 }}>Drag on canvas:</span>
+            <button style={boxMode === 'translate' ? segOn : seg} onClick={() => setBoxMode('translate')}>↔ Move</button>
+            <button style={boxMode === 'rotate' ? segOn : seg} onClick={() => setBoxMode('rotate')}>↻ Rotate</button>
+          </div>
+        )}
         {boxes.map((b) => (
-          <div key={b.id} style={{ border: '1px solid #2c2d31', borderRadius: 6, padding: 7, marginBottom: 6 }}>
+          <div key={b.id} onClick={() => setSelBox(b.id)} style={{ border: `1px solid ${b.id === selBox ? '#e67e22' : '#2c2d31'}`, borderRadius: 6, padding: 7, marginBottom: 6, cursor: 'pointer' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
-              <b style={{ fontSize: 12, textTransform: 'capitalize' }}>{b.kind}</b>
-              <button onClick={() => removeBox(b.id)} style={{ ...seg, color: '#e57373', padding: '2px 6px' }}>✕</button>
+              <b style={{ fontSize: 12, textTransform: 'capitalize' }}>{b.kind}{b.rot && (b.rot[0] || b.rot[1] || b.rot[2]) ? ` · ${Math.round((b.rot[1] * 180) / Math.PI)}°` : ''}</b>
+              <button onClick={(e) => { e.stopPropagation(); removeBox(b.id) }} style={{ ...seg, color: '#e57373', padding: '2px 6px' }}>✕</button>
             </div>
             <div style={{ display: 'flex', gap: 4, marginBottom: 3 }}>
               {(['W', 'H', 'D'] as const).map((ax, j) => (
@@ -585,6 +633,7 @@ export function StairApp() {
           shadows
           camera={{ position: [4.5, spec.totalRise + 2.5, metrics.totalRun + 3.5], fov: 42 }}
           gl={{ toneMapping: ACESFilmicToneMapping, antialias: true }}
+          onPointerMissed={() => setSelBox(null)}
         >
           <color attach="background" args={['#eef1f4']} />
           <StudioEnv />
@@ -603,7 +652,7 @@ export function StairApp() {
           <directionalLight position={[-5, 4, -4]} intensity={0.5} color="#cfe0ff" />
           <Grid args={[40, 40]} cellColor="#d2d6da" sectionColor="#b4bac0" infiniteGrid fadeDistance={45} />
           <Storeys lower={lowerFloor} upper={upperFloor} />
-          {!setoutOpen && <ContextBoxes boxes={boxes} />}
+          {!setoutOpen && <ContextBoxes boxes={boxes} selectedId={selBox} mode={boxMode} onSelect={setSelBox} onChange={updateBox} />}
           {showDims && !setoutOpen && <StepDims parts={layout.parts} />}
           {geo && <StairMesh geometry={geo} wood={spec.material} onBounds={onBounds} />}
           <OrbitControls ref={controls as never} target={[boundsCenter.x, boundsCenter.y, boundsCenter.z]} makeDefault />

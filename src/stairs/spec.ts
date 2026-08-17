@@ -96,6 +96,8 @@ export interface StairSpec {
   sizing: StairSizing
   /** Turns between flights, bottom → top. Empty = a single straight flight. */
   turns: TurnSpec[]
+  /** Steps in the FINAL flight (after the last turn). Undefined = auto (remainder). */
+  finalFlightSteps?: number
   /** Side stringers ("sidings"). */
   stringer: StringerSpec
   /** Handrail / balustrade. */

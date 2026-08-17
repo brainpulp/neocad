@@ -104,10 +104,12 @@ function splitFlights(straightSteps: number, flightCount: number): number[] {
  * the un-fixed flights (the final flight is always auto). This is what lets the
  * user decide how many steps come before each turn.
  */
-function resolveFlights(straightSteps: number, turns: TurnSpec[]): number[] {
+function resolveFlights(straightSteps: number, turns: TurnSpec[], finalFlightSteps?: number): number[] {
   const n = turns.length + 1
   const fixed: (number | null)[] = Array.from({ length: n }, (_, i) => {
-    const o = i < turns.length ? turns[i].stepsBefore : undefined
+    // flights 0..n-2 are fixed by the following turn's stepsBefore; the LAST
+    // flight (after the last turn) is fixed by finalFlightSteps.
+    const o = i < turns.length ? turns[i].stepsBefore : finalFlightSteps
     return o != null && o > 0 ? Math.round(o) : null
   })
   const fixedSum = fixed.reduce<number>((s, v) => s + (v ?? 0), 0)
@@ -143,8 +145,7 @@ interface Walk {
 }
 
 export function layoutStair(spec: StairSpec): StairLayout {
-  const N = riserCount(spec)
-  const rise = spec.totalRise / N
+  const targetN = riserCount(spec)
   const G = spec.going
   const W = spec.width
   const Tt = spec.treadThickness
@@ -158,8 +159,12 @@ export function layoutStair(spec: StairSpec): StairLayout {
   const stepW = W - 2 * sideInset
   const flightCount = turns.length + 1
   const winderTotal = turns.reduce((s, t) => s + (t.kind === 'winder' ? Math.max(1, t.winderSteps) : 0), 0)
-  const straightSteps = Math.max(flightCount, N - winderTotal)
-  const flights = resolveFlights(straightSteps, turns)
+  const straightSteps = Math.max(flightCount, targetN - winderTotal)
+  const flights = resolveFlights(straightSteps, turns, spec.finalFlightSteps)
+  // The resolved flights (+ winder steps) are the ACTUAL riser count — so fixing
+  // flight step counts directly controls the total and the per-step rise.
+  const N = flights.reduce((a, b) => a + b, 0) + winderTotal
+  const rise = spec.totalRise / N
 
   const parts: Part[] = []
   const walk: Walk = { pos: [0, 0, 0], heading: 0, climbed: 0 }
