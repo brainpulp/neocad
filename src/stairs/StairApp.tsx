@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Canvas, useThree } from '@react-three/fiber'
-import { Grid, Html, OrbitControls } from '@react-three/drei'
+import { Edges, Grid, Html, Line, OrbitControls } from '@react-three/drei'
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js'
 import {
   ACESFilmicToneMapping,
@@ -41,6 +41,24 @@ const WOODS = ['pine', 'oak', 'walnut', 'plywood', 'bamboo', 'mdf', 'maple']
  * by re-formatting or clamped away); the model is updated live (clamped so the
  * preview stays valid) and the box reverts to the model's rounded value on blur.
  */
+/** A tiny labelled mm number box (local buffer so typing shows exactly what you type). */
+function MiniNum({ label, vmm, onCommit }: { label: string; vmm: number; onCommit: (mm: number) => void }) {
+  const [buf, setBuf] = useState<string | null>(null)
+  return (
+    <label style={{ fontSize: 10, display: 'flex', flexDirection: 'column', flex: 1, gap: 1 }}>
+      <span style={{ opacity: 0.55 }}>{label}</span>
+      <input
+        type="number"
+        value={buf ?? String(Math.round(vmm))}
+        onFocus={(e) => { setBuf(String(Math.round(vmm))); e.currentTarget.select() }}
+        onChange={(e) => { setBuf(e.target.value); const v = parseFloat(e.target.value); if (!Number.isNaN(v)) onCommit(v) }}
+        onBlur={() => setBuf(null)}
+        style={{ width: '100%', fontSize: 11, textAlign: 'right', background: '#2a2b2f', color: '#e8e8ea', border: '1px solid #444', borderRadius: 3, padding: '1px 3px' }}
+      />
+    </label>
+  )
+}
+
 function NumField({ value, min, max, step, scale, onChange }: {
   value: number; min: number; max: number; step: number; scale: number; onChange: (v: number) => void
 }) {
@@ -157,6 +175,56 @@ function StepDims({ parts }: { parts: ReturnType<typeof layoutStair>['parts'] })
   )
 }
 
+// ---- context boxes (walls / floors / ceilings the stair sits in) -----------
+type BoxKind = 'floor' | 'ceiling' | 'wall' | 'box'
+interface CBox {
+  id: number
+  kind: BoxKind
+  size: [number, number, number]
+  pos: [number, number, number]
+}
+const BOX_COLOR: Record<BoxKind, string> = { floor: '#8aa0ab', ceiling: '#a7b6bd', wall: '#a1887f', box: '#7cb342' }
+const mmv = (x: number) => Math.round(x * 1000)
+const pill: React.CSSProperties = { background: 'rgba(20,22,26,0.9)', color: '#fff', fontSize: 12, fontWeight: 600, fontFamily: 'system-ui', padding: '2px 7px', borderRadius: 5, whiteSpace: 'nowrap' }
+
+/** User-placed boxes with ALWAYS-ON dimension labels, so you can recreate the
+ *  surrounding floors/ceilings/walls and read the fit (incl. floor→ceiling). */
+function ContextBoxes({ boxes }: { boxes: CBox[] }) {
+  const floor = boxes.find((b) => b.kind === 'floor')
+  const ceil = boxes.find((b) => b.kind === 'ceiling')
+  let clear: React.ReactNode = null
+  if (floor && ceil) {
+    const ft = floor.pos[1] + floor.size[1] / 2
+    const cb = ceil.pos[1] - ceil.size[1] / 2
+    const cx = floor.pos[0], cz = floor.pos[2]
+    clear = (
+      <>
+        <Line points={[[cx, ft, cz], [cx, cb, cz]]} color="#c0392b" lineWidth={2} />
+        <Html center position={[cx, (ft + cb) / 2, cz]} style={{ pointerEvents: 'none' }}>
+          <div style={{ ...pill, background: '#c0392b' }}>floor→ceiling {mmv(cb - ft)} mm</div>
+        </Html>
+      </>
+    )
+  }
+  return (
+    <>
+      {boxes.map((b) => (
+        <group key={b.id} position={b.pos}>
+          <mesh>
+            <boxGeometry args={b.size} />
+            <meshStandardMaterial color={BOX_COLOR[b.kind]} transparent opacity={0.14} side={DoubleSide} depthWrite={false} />
+            <Edges color={BOX_COLOR[b.kind]} />
+          </mesh>
+          <Html center position={[0, b.size[1] / 2 + 0.08, 0]} style={{ pointerEvents: 'none' }}>
+            <div style={pill}>{b.kind} · {mmv(b.size[0])}×{mmv(b.size[2])}×{mmv(b.size[1])}</div>
+          </Html>
+        </group>
+      ))}
+      {clear}
+    </>
+  )
+}
+
 /** Two faint translucent 5×5 m slabs at the storeys the stair connects: the lower
  *  floor at the foot (y=0) and the upper floor at the head (y=totalRise), each
  *  centred at that end of the stair so they read as floors, not mid-span planes. */
@@ -233,6 +301,11 @@ export function StairApp() {
   const [setoutFlight, setSetoutFlight] = useState(0)
   const [setoutDatum, setSetoutDatum] = useState<'bottom' | 'top'>('bottom')
   const [showDims, setShowDims] = useState(false)
+  const [boxes, setBoxes] = useState<CBox[]>(() => {
+    try { return JSON.parse(localStorage.getItem('neocad-stair-boxes') || '[]') } catch { return [] }
+  })
+  const boxId = useRef(1 + boxes.reduce((m, b) => Math.max(m, b.id), 0))
+  useEffect(() => { localStorage.setItem('neocad-stair-boxes', JSON.stringify(boxes)) }, [boxes])
   const key = stairKey(spec)
   const controls = useRef<{ target: Vector3; update: () => void } | null>(null)
 
@@ -286,6 +359,20 @@ export function StairApp() {
   const onDownloadSetoutCsv = () => downloadBlob(new Blob([setoutToCsv(setouts)], { type: 'text/csv' }), 'stringer-setout.csv')
   const onDownloadSetoutSvg = (s: (typeof setouts)[number]) =>
     downloadBlob(new Blob([setoutSvg(s, setoutDatum)], { type: 'image/svg+xml' }), `stringer-flight${s.flight}-marking.svg`)
+
+  const addBox = (kind: BoxKind) => {
+    const cx = boundsCenter.x, cz = boundsCenter.z
+    const H = spec.totalRise
+    const presets: Record<BoxKind, CBox> = {
+      floor: { id: 0, kind, size: [5, 0.2, 5], pos: [cx, -0.1, cz] },
+      ceiling: { id: 0, kind, size: [5, 0.2, 5], pos: [cx, H + 0.1, cz] },
+      wall: { id: 0, kind, size: [0.2, H + 0.6, 5], pos: [cx - 2.5, (H + 0.6) / 2 - 0.2, cz] },
+      box: { id: 0, kind, size: [1, 1, 1], pos: [cx, 0.5, cz] },
+    }
+    setBoxes((bs) => [...bs, { ...presets[kind], id: boxId.current++ }])
+  }
+  const updateBox = (id: number, patch: Partial<CBox>) => setBoxes((bs) => bs.map((b) => (b.id === id ? { ...b, ...patch } : b)))
+  const removeBox = (id: number) => setBoxes((bs) => bs.filter((b) => b.id !== id))
 
   const onBounds = (c: Vector3, _r: number) => {
     setBoundsCenter((prev) => (prev.equals(c) ? prev : c.clone()))
@@ -393,6 +480,32 @@ export function StairApp() {
           <input type="checkbox" checked={showDims} onChange={(e) => setShowDims(e.target.checked)} /> Show dimensions on model
         </label>
 
+        <div style={{ margin: '16px 0 6px', fontSize: 12, textTransform: 'uppercase', opacity: 0.6 }}>Room / context ({boxes.length})</div>
+        <div style={{ fontSize: 11, opacity: 0.6, marginBottom: 6 }}>Add boxes for the surrounding floors, ceiling and walls — dimensions stay on screen (incl. floor→ceiling). Saved locally.</div>
+        <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', marginBottom: 6 }}>
+          {(['floor', 'ceiling', 'wall', 'box'] as BoxKind[]).map((k) => (
+            <button key={k} style={seg} onClick={() => addBox(k)}>＋ {k}</button>
+          ))}
+        </div>
+        {boxes.map((b) => (
+          <div key={b.id} style={{ border: '1px solid #2c2d31', borderRadius: 6, padding: 7, marginBottom: 6 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+              <b style={{ fontSize: 12, textTransform: 'capitalize' }}>{b.kind}</b>
+              <button onClick={() => removeBox(b.id)} style={{ ...seg, color: '#e57373', padding: '2px 6px' }}>✕</button>
+            </div>
+            <div style={{ display: 'flex', gap: 4, marginBottom: 3 }}>
+              {(['W', 'H', 'D'] as const).map((ax, j) => (
+                <MiniNum key={ax} label={`${ax} mm`} vmm={b.size[j] * 1000} onCommit={(mm) => updateBox(b.id, { size: b.size.map((v, i) => (i === j ? mm / 1000 : v)) as [number, number, number] })} />
+              ))}
+            </div>
+            <div style={{ display: 'flex', gap: 4 }}>
+              {(['X', 'Y', 'Z'] as const).map((ax, j) => (
+                <MiniNum key={ax} label={`${ax} mm`} vmm={b.pos[j] * 1000} onCommit={(mm) => updateBox(b.id, { pos: b.pos.map((v, i) => (i === j ? mm / 1000 : v)) as [number, number, number] })} />
+              ))}
+            </div>
+          </div>
+        ))}
+
         {setouts.length > 0 && (
           <>
             <div style={{ margin: '16px 0 6px', fontSize: 12, textTransform: 'uppercase', opacity: 0.6, display: 'flex', justifyContent: 'space-between' }}>
@@ -490,6 +603,7 @@ export function StairApp() {
           <directionalLight position={[-5, 4, -4]} intensity={0.5} color="#cfe0ff" />
           <Grid args={[40, 40]} cellColor="#d2d6da" sectionColor="#b4bac0" infiniteGrid fadeDistance={45} />
           <Storeys lower={lowerFloor} upper={upperFloor} />
+          {!setoutOpen && <ContextBoxes boxes={boxes} />}
           {showDims && !setoutOpen && <StepDims parts={layout.parts} />}
           {geo && <StairMesh geometry={geo} wood={spec.material} onBounds={onBounds} />}
           <OrbitControls ref={controls as never} target={[boundsCenter.x, boundsCenter.y, boundsCenter.z]} makeDefault />
