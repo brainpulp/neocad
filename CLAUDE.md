@@ -12,17 +12,11 @@ never abstract geometry/physics jargon.
 2. `npm install`
 3. Tell Claude: **"Read CLAUDE.md and pick up where we left off."**
 
-## ⚠️ In-flight work lives on branch `m-transform` (NOT merged)
+## ⚠️ Branch `m-transform` is SUPERSEDED — do not resume it
 
-The latest work — the Tinkercad-style transform gizmo (move/rotate/scale + inline editable
-dimensions + `✋ Grab` live drag) — is on branch **`m-transform`**, pushed but **not merged**
-to `main`. It is code-complete (68 tests pass) but its drag interaction needs a **hands-on
-mouse check** before merging (automated clicks can't drive R3F's 3D handles).
-
-To continue it: `git checkout m-transform` and **read that branch's CLAUDE.md** (it has the
-full resume + verification steps) and `docs/superpowers/plans/M-Transform-verification-notes.md`.
-Quick check: `npm run dev` → place a Block → click it → drag the colored gizmo handles; try the
-dimension labels; toggle ✋ Grab + Run and drag a piece. If it feels right, merge to `main`.
+The builder-UX milestone (below) re-implemented m-transform's goals directly on `main`
+with a different design (drag-first + pause-gizmo instead of always-on PivotControls).
+The `m-transform` branch remains only as reference; delete it when convenient.
 
 ## Two-stage vision
 
@@ -37,6 +31,457 @@ Plans: `docs/superpowers/plans/` · Backlog: `docs/BACKLOG.md`
 
 ## Status
 
+- **Stairs S1b (continuous stringers through turns + railings) — DONE & verified
+  headless.** Fixed the L/U landing GAP bug first (the exit point used the ROTATED
+  forward to centre the next flight, doubling the offset → flight 2 + its stringers
+  floated half a width off the landing, the "broken planks" screenshot); exit now
+  steps to the inner corner then along the ORIGINAL forward by half a width (regression
+  test asserts flight-2's first tread meets the landing edge). SIDINGS now continue
+  through turns: `fasciaBoard()` emits vertical boards along the OUTER edges of
+  landings (square = 2-edge L-bend, triangular = the hypotenuse) and along each
+  winder wedge's outer edge (the winder's outer arc). RAILINGS: `RailingSpec`
+  (sides none/left/right/both, height, postSize, balusterSize, balusterGap); per
+  straight flight a raking `rail` box above the nosing line, `baluster`s spaced ≤
+  the code gap (≈100 mm) from the treads up to the rail, and `post` newels at
+  flight ends (turns handled via a newel at each junction, real-stair style). New
+  PartKinds fascia/rail/baluster/post flow through BOM (grouped cut-list lines) and
+  the ?stairs UI got a railing section + every slider a typeable number box
+  (select-on-focus, Tab-cycles the number fields — sliders pulled from tab order).
+  VERIFIED: 229 tests (+ railing/fascia/regression); default L meshes watertight
+  (4282 tris: 16 risers, 14 treads, 4 stringers+2 fascia, 4 rails, 80 balusters,
+  6 newels); iso render confirms. KNOWN LIMITS: mono stringers don't wrap turns
+  (fascia is a side board, fine for two-side); baluster bottoms sit on the flight
+  base line not each tread nosing (cosmetic); 180° landing has no fascia yet.
+
+- **Stairs S1 (turns, descansos, winders, stringers, wood cut-list) — DONE &
+  verified headless.** The stair generator gained the WALKLINE path model: total
+  risers N split across `turns.length+1` flights, with a LANDING (flat, 0 risers,
+  pivots the heading) or a WINDER (w wedge steps that climb AND turn) between
+  flights. `spec.ts` gained `turns: TurnSpec[]` (angle/direction/kind + landing
+  shape or winder step count) + `StringerSpec` (none/two-side/mono, thickness,
+  depth) + `material`. `layout.ts` rewritten as a WALK: oriented (yawed) tread/
+  riser boxes per flight; LANDINGS = square box, TRIANGULAR descanso (extruded
+  prism), or a 2W×W half-turn rectangle for 180°; WINDERS = kite-shaped prism
+  treads fanning around a newel pivot at the inner edge; STRINGERS = raked side
+  boards (pitched boxes) per straight flight. `Part` is now box (with yaw +
+  optional pitch) or prism (plan polygon extruded in Y). `render/csg.ts` +
+  `CsgNode` gained an `extrude` node (plan polygon → vertical prism; verified
+  orientation empirically). `bom.ts` (NEW): `stairBom()` tallies parts into
+  grouped cut-list lines (identical boards collapse to a qty; winder wedges/
+  triangular landings collapse to one "shaped" line at the max blank size) with
+  board-feet; `bomToCsv` for a lumber order. `StairApp.tsx` gained a turn editor
+  (add/remove, Landing↔Winder, 90/180/custom, L/R, square/triangular, winder
+  steps), stringer controls, wood picker, a live cut-list table + CSV download,
+  and camera auto-framing from the mesh bbox. VERIFIED: 225 tests (+10: turn
+  layout, turn meshing, BOM); numeric checks confirm an L turns the 2nd flight
+  +90° (rotY 90, x>0) with the landing at the flight-1 top and monotonic step
+  heights, and a winder fans 3 kite treads climbing 0.18 m each around the pivot;
+  plan-view SVGs of L-square / L-triangular / winder / U confirm the footprints;
+  tsc + production build clean. KNOWN LIMITS: winder/landing sections have no
+  stringers yet (straight flights only); custom (non-90/180) landing angles use
+  the general perpendicular-exit formula (90/180 are exact); the physics-sandbox
+  insert (S7) is still pending. NEXT per plan: S2 stringer refinement through
+  turns, S4 spiral/curved, S5 railings, S6 code engine + fit-to-opening.
+
+- **Stairs S0 (parametric straight-stair generator — standalone `?stairs`) — DONE
+  & verified headless.** A digression: a powerful parametric 3D STAIR generator,
+  built on the WALKLINE model (a stair = a walk along a plan path, extruded up one
+  step at a time — straight/L/U/winder/spiral/curved all fall out of *what path
+  you walk*). Spec: `docs/superpowers/specs/2026-07-12-stair-generator.md` (read
+  before stair work; S0–S7 plan). Layered like cuts/SDF: `stairs/spec.ts` (pure
+  `StairSpec` — totalRise/width/going/tread/nosing/riser + by-rise↔by-count
+  sizing), `stairs/layout.ts` (pure THE BRAIN — `layoutStair()` walks the flight
+  into tread/riser box `Part`s + `metrics` {equal risers, going, run, pitch,
+  2R+G} + informational US-IRC `advisories`; zero graphics, fully arithmetic-
+  tested), `stairs/build.ts` (`stairToCsg` folds parts into ONE `CsgNode` union,
+  meshed by the SHARED manifold kernel `render/csg.ts` — exact/watertight/
+  printable; also `stairKey` for memo). `CsgNode` gained a batch `union` node
+  (`Manifold.union`) — the one geometry-vocab extension stairs needed.
+  `stairs/StairApp.tsx` + `main.tsx` route: `?stairs` = a standalone playground
+  (param panel, live re-meshing preview that falls back while baking, metrics/
+  advisory readout, STL/glTF export); default (no query) = the builder. VERIFIED:
+  12 stair tests (215 total); the meshed 2.7 m / 15-riser stair has an EXACT bbox
+  (W 1.000, H 2.700 = floor-to-floor, D 3.545), 542 tris, watertight; tsc +
+  production build clean (emits the wasm + the new route). NO browser harness in
+  this env, so the interactive UI wasn't click-tested — but the risky path
+  (params→layout→manifold solid) is proven headless and a side-elevation SVG
+  drawn from the real parts confirmed the geometry. NEXT per plan: S1 = turns via
+  landings (L 90° / U 180°) → the `flights: Segment[]` path model; then stringers
+  (S2), winders (S3), spiral/curved (S4), railings (S5), code engine + fit-to-
+  opening + BOM (S6), sandbox insert as anchored MeshShape piece (S7).
+
+- **M-Cuts slice 1b (drilled holes are REAL in physics + export) — DONE &
+  verified against the real WASM kernels.** The hole an anchored piece shows is
+  now the hole it COLLIDES as, and the hole it EXPORTS/prints. `render/csg.ts`
+  caches the manifold toplevel synchronously on init and adds `csgMeshSync(node)`
+  (piece-local triangle soup, null until the kernel loads) + `onCsgReady`/
+  `csgReady`. `physics/shapes.ts` `makeCutShape` → a Jolt `MeshShape` from those
+  triangles; `integration.ts` chains it before hollow/base FOR ANCHORED PIECES
+  ONLY (Jolt MeshShapes are static-only — a dynamic drilled piece keeps its solid
+  base shape until convex decomposition lands, a later slice). `structureKey`
+  gained `cutsKey`; `Scene.tsx` kicks off `initCsg` and bumps `worldEpoch` on
+  `onCsgReady` so a piece compiled before the WASM was ready gets ONE rebuild
+  with its real mesh (the kernel loads once, so no per-tick thrash). Export
+  (`export/scene.ts` + `exporters.ts`, now async) meshes cut pieces through
+  manifold so the printed part is really bored. VERIFIED against real Jolt: a
+  ball drops straight through a bored anchored plate while a ball too fat for the
+  bore rests on the rim (Ø0.24 ball on a Ø0.12 bore → centre parks at 1.144 =
+  1.04+√(0.12²−0.06²)); real manifold: a drilled block exports more tris than a
+  plain box. GOTCHA: a thin static MeshShape has NO continuous collision, so a
+  high-speed drop tunnels the rim — the fat-ball test drops from just above the
+  plate (real limitation, not a bug; dynamic-piece CCD is future). 203 tests
+  (+2 cut-physics, +1 export). Production build emits the wasm + compiles the
+  init path. ⚠️ STILL NOT: dynamic (unanchored) drilled pieces collide as the
+  uncut base shape; slice 1c = click-a-face drilling gesture. Only box/cylinder
+  stock is drillable.
+
+- **M-Cuts slice 1a (drilling in the builder — render + inspector) — DONE &
+  browser-verified.** A piece can carry subtractive `cuts` (bores) that mesh to
+  an EXACT watertight solid via manifold-3d. Buy-vs-build was benchmarked on the
+  sdf-core branch (manifold beat surface-nets + three-bvh-csg — see
+  `docs/superpowers/specs/2026-07-07-sdf-modeler.md`); this slice brings it into
+  the real app. `document/cuts.ts` (pure): `CutOp` (bore = radius+axis+2D
+  offset), `CsgNode` tree, `pieceToCsg(piece)` (base box/cylinder − oriented
+  cylinder bores), `cutsKey`. `render/csg.ts`: manifold WASM singleton
+  (`?url` wasm for Vite, on-disk for Node) + `csgToGeometry(node)` → welded
+  `BufferGeometry` with `toCreasedNormals` (crisp box edges, round bore walls).
+  `PieceMesh` async-meshes cut pieces (falls back to the plain shape while
+  pending) and the selection outline traces the drilled shape. Inspector DRILL
+  section: ＋ Drill bore, per-bore axis/Ø/position/remove; live re-cut via
+  `updatePiece({cuts})` (undoable). `Piece.cuts?` round-trips through serialize
+  (plain field). 200 tests (5 new cuts). ⚠️ NOT YET: physics still collides as
+  the UNCUT base shape (hole is visual/model-only) and export doesn't emit the
+  hole — slice 1b = static Jolt `MeshShape` + async export; slice 1c =
+  click-a-face drilling gesture. Only box/cylinder stock is drillable so far.
+
+- **M-Outline (selection outline — back-face hull with SMOOTHED normals) — DONE
+  & browser-verified (headless).** `OutlineHull` in `render/PieceMesh.tsx`: the
+  piece geometry rendered again `side: BackSide` with every vertex pushed OUT
+  along its normal in view space (`uOffset = 2.4px * worldUnitsPerPixel`,
+  recomputed each frame from camera distance → constant ~2px at any zoom). Two
+  fixes over the first hull attempt (which the user rejected — torn corners,
+  ground clip, solid orange patch over a hollow opening): (1) the outline
+  geometry is `mergeVertices()` + `computeVertexNormals()` (`outlineGeometryFrom`)
+  so a hard box corner is ONE welded vertex with an averaged (diagonal) normal
+  and the shell stays CONNECTED at corners instead of tearing (a raw
+  BoxGeometry corner is tripled with 3 face normals that push apart); (2) the
+  hull traces the piece's ACTUAL render geometry — for a hollow piece that's the
+  wall geometry (`hollowGeometry`), so the cavity/opening is outlined and NOT
+  painted over by a solid box's top face. Verified in the headless browser on
+  the exact cases the user flagged: solid box (connected corners + ground edge),
+  gear (all teeth), hollow open-top box (cavity traced, no fill). Renders in the
+  MAIN scene pass on purpose — a postprocessing screen-space `OutlineEffect`
+  draws NOTHING under the SwiftShader GL used to verify AND (found the hard way)
+  drew nothing in the user's real browser either, so it was abandoned. GOTCHA
+  that ate a session: a piece selected behind a DOM panel (inspector/palette)
+  looks like it has no outline — verify with a piece in the clear centre.
+  KNOWN LIMIT: the inner cavity walls get some orange bleed (back-face shell of
+  the inner walls), not a single clean rim line. R1 tone mapping is native
+  `gl={{ toneMapping: ACESFilmicToneMapping }}` (no composer/postprocessing dep).
+  195 tests.
+- **M-ConcentricAxle (co-axial joins at any diameter + auto-axle) — DONE &
+  browser-verified.** Choosing the Axle joint on two circular features (rims/
+  bores/centrelines of cylinders) now engages them CO-AXIAL regardless of
+  diameter — `concentricAxle` broadens the `ringPair` exemption in planJoint
+  (type==='cylindrical' + both cylinders + shaftKinds). Huge tolerance: any
+  radial gap is allowed and ANNOUNCED (`JointPlan.advisory` → jointNotice on
+  success: "Joined concentric — N cm radial gap"). AUTO-AXLE: clicking two
+  real HOLES (`isHoleFeature` = bore on a cylinder) with Axle drops in a shaft
+  — `planAxleThroughBores` aligns B co-axial to A, spaces them along the axis,
+  spawns a thin `axle` (radius = min bore ×0.4 capped 3 cm; length spans both;
+  steel) and gives each part a cylindrical joint to it ("Added an axle to
+  connect the two holes"). B must be free (returns null if anchored). Store
+  jointClick routes to the auto-axle path before planJoint. Also: adjustJoint
+  gained a NEW-collision veto (fold a hinged cube into its neighbour → refused,
+  gear-on-axle inherent overlap still allowed); hollow selection outline traces
+  the OUTER silhouette not the wall shell (no more orange flaps); paused
+  Alt-drag no longer both duplicates AND rotates; ✨ Demo button loads a
+  showcase scene; editable material physics in MaterialsEditor. 195 tests.
+  NEXT: M-Cuts (Fable slice) or M-Soft.
+- **M-Hollow (wall-thickness property: boxes + tubes) — DONE & browser-verified.**
+  Spec: `docs/superpowers/specs/2026-07-04-hollow-holes-rendering.md`. New
+  `Piece.hollow {thickness, openFace}`. ONE shared decomposition
+  (`document/hollow.ts` → `hollowBricks`) feeds BOTH physics and render, so the
+  visible walls ARE the collision walls: box → 6 (closed) or 5 (open-face)
+  non-overlapping BoxShape walls in a Jolt `StaticCompoundShapeSettings`
+  (works for dynamic bodies); cylinder → 12 box segments (tube = no caps, cup =
+  one cap). GOTCHA: `CompoundShapeSettings.AddShape` wants a ShapeSettings
+  (BoxShapeSettings, not a built BoxShape) + a userData arg. RENDER: boxes use
+  the merged brick BoxGeometries (exact); cylinders render a smooth
+  `LatheGeometry` of the wall cross-section (round tube/cup — physics keeps the
+  12-gon ring, <1% radial gap) — `render/hollowGeometry.ts`. `pieceVolume`
+  subtracts the cavity (weight chip + magnetism volume follow). Inspector
+  HOLLOW section: checkbox + wall-thickness slider/number (cm) + open-face
+  dropdown (box: 6 faces or closed; cylinder: tube / open-top cup / open-bottom
+  cup). structureKey includes hollow (world rebuilds on change); serialize
+  round-trips it (plain field); glTF/STL export emits the real walls. 188 tests
+  incl. a ball contained in an open-top box + a dowel dropping through a tube
+  bore against real Jolt. NEXT per spec: M-Cuts (Tinkercad negative shapes,
+  SDF-meshed) — the geometry core is a Fable slice.
+- **R1 (rendering upgrade phase 1: PBR environment lighting) — DONE &
+  browser-verified.** Spec: `docs/superpowers/specs/2026-07-04-hollow-holes-
+  rendering.md` (R1 → M-Hollow → M-Cuts; M-Cuts' SDF core is a Fable slice).
+  `StudioEnvironment` in Scene.tsx bakes three's procedural RoomEnvironment to
+  a PMREM probe → `scene.environment` (image-based lighting, NO external HDR,
+  app stays self-contained); background stays white (Tinkercad look). ACES
+  filmic tone mapping on the Canvas `gl` prop. New `Material.finish
+  {metalness, roughness, clearcoat}` with honest per-family values (metals
+  metalness 1; plastics/glazed-ceramic/polished-marble get a clearcoat lobe;
+  rubbers/woods matte); PieceMesh routes clearcoat finishes through
+  MeshPhysicalMaterial, everything else through MeshStandardMaterial;
+  `mergeLibraryMaterials` backfills `finish` onto old saves. Hemisphere fill
+  0.85→0.45 + key light 1.15→0.9 so the envmap's ambient doesn't blow out
+  metals. Metals now read as polished steel/brass/copper, not clay. NEXT:
+  M-Hollow (wall thickness + open-face, exact compound collision).
+- **M-Materials1 (materials become physics: magnets, real bounce, optics) —
+  DONE & browser-verified.** Roadmap (4 phases, read before material work):
+  `docs/superpowers/specs/2026-07-04-materials-roadmap.md`. SHIPPED: (1)
+  MAGNETISM — `Material.magnetic: 'magnet'|'ferrous'`; new 'magnet' material;
+  steel/cast-iron ferrous; per-step force pass in PhysicsWorld.step():
+  point-DIPOLE magnet↔magnet (flip one → repels; side-by-side parallel
+  repels — real physics), induced magnet↔ferrous attraction; softened 1/r²,
+  260 N cap, 2 m range, roster rebuilt with the world so painting a piece
+  'magnet' energizes it. (2) REAL BOUNCE — the global MAX_RESTITUTION 0.4
+  clamp (which made rubber thud like steel) lifted to 0.88; rubber-soft ball
+  rebounds to ~0.73× drop height, steel ~0.16×. (3) OPTICS —
+  `Material.optics {transmission, ior, roughness}` → MeshPhysicalMaterial
+  transmission in PieceMesh: glass (ior 1.5), ice (1.31 frosty), acrylic.
+  (4) MIGRATION GOTCHA (real bug found): autosaved/opened docs carry their
+  OWN materials list — old docs had no magnet/optics fields, so the features
+  were silently dead. `mergeLibraryMaterials` (store.loadDoc) backfills new
+  fields + appends new library entries WITHOUT clobbering user edits. Also:
+  `setPieceVelocity` test/tool API. 181 tests; browser demos: steel balls
+  cluster to an anchored magnet bar (pine ball ignores it), bounce race,
+  see-through glass pane + translucent ice. HEADLESS NOTE: sim advances one
+  fixed step per FRAME — SwiftShader runs ~well below 60 fps, so demo waits
+  must budget wall-time ≫ sim-time. NEXT per roadmap: M-Soft (soft-body
+  volumes, plasticity, brittle shatter) → M-Heat → M-Liquids.
+- **M-JointContact (surface-contact joining — the literal-joints slice) — DONE &
+  browser-verified.** THE MODEL (converged with user, spec:
+  `docs/superpowers/specs/2026-07-04-joints-literal-redesign.md` — read it before
+  ANY joint work): joining only BONDS; motion comes from HARDWARE (generic
+  hinge/bearing/slide parts, next milestone, Opus batch) or SHAPE (drilling,
+  later). THE SLICE: planJoint rewritten around SURFACE CONTACT — new
+  `document/contact.ts` has `surfaceAnchor` (nearest surface point + outward
+  normal per primitive) and a GJK boolean overlap test (support functions,
+  3 mm erosion margin so kiss-contact ≠ overlap). Landing = mover's clicked
+  surface normal opposed to stationary's, twist-snapped, clicked points kiss —
+  a dowel clicked onto a log's flank lands TANGENT on the barrel (was: buried
+  co-axially, the "trying to fix a dowel to a cylinder" screenshot). MOVER RULE:
+  second-clicked comes to the first; anchored never moves; both fixed → veto.
+  COLLISION VETO: landing that would interpenetrate ANY piece is refused
+  ("Solving this joint would create a collision"), `.joint-notice` toast in App.
+  Exemption: bore-meets-cylinder-shaft pairs (gear onto axle) stay co-axial and
+  unvetoed — mechanical stock collides as solid cylinders until drilling.
+  PAUSE-TO-JOIN: selecting the joint tool pauses (stays paused). WYSIWYG picker:
+  suggestions only update the DISPLAYED type at first click; displayed = applied
+  (old code silently substituted a suggestion at second click after tool
+  re-entry — the radio lied). Edge+pivot/cylindrical: lands flush via contact,
+  but the motion axis is the clicked EDGE line projected into the contact plane
+  (door swings on its edge, not the face normal). Slide stops now measured on
+  the stationary guide. Drop-attach (resolveJoin) reordered: target stays,
+  dropped piece moves. BATCH 2 (from the user's 4-cube hinge-chain repro):
+  (1) GJK DEGENERACY — box-box makes coplanar supports → zero-area simplexes →
+  zero direction, which the naive loop misread as "origin inside" → FALSE
+  "would create a collision" vetoes on good landings (and the opposite bug:
+  degenerate line case returned false on real overlap). Fixed with edgeDir
+  perpendicular fallbacks + collinear-triangle fallback + duplicate-support
+  termination; only the tetra containment may answer "overlap". (2) EDGE-TO-
+  EDGE landing: two clicked edges bring the edge LINES together (lid-on-chest
+  hinge), preserving the mover's roll (it's the hinge DOF) — the old surface
+  rule flipped cubes face-onto-face and STACKED them into towers. (3) GROUP
+  MOVE: relocating a fastened piece carries its whole chain rigidly
+  (connectedPieceIds + plan.groupMoves; veto tests every moved member vs
+  outsiders); joining two already-connected pieces fastens WHERE THEY STAND
+  (loop closing). (4) UI: inspector is now a FLOATING card over the viewport
+  (Tinkercad-style, .inspector-float, absent when nothing selected); sidebar
+  unifies SCENE + WORKBENCH + FORCES + MATERIALS. 174 tests; browser-verified:
+  the 4-cube 3-edge-hinge scenario lands flush side-by-side and survives Run.
+  BATCH 3: (1) edge-to-edge hinges on ROTATED cubes SWING-TO-CLEAR — if the
+  roll-preserving landing overlaps, planJoint rotates the mover about the
+  hinge line in 15° steps (nearest first) and lands at the first clear angle;
+  veto only if a full sweep fails. (2) adjustJoint uses the joining mover rule
+  (B moves, fixed never; both fixed → jointNotice instead of a silent no-op —
+  the "adjust buttons do nothing" report). (3) PULL-DRAG retuned: spring 4.5→
+  8 Hz (tight tracking), towCap 60/mass→240/mass capped 25 (cork at mouse
+  speed, granite crawls — the old 4 m/s ceiling made steel feel like cork),
+  force-bounding LEASH min(0.25, 4500/k) so jams still can't rip fasteners.
+  175 tests; browser-verified incl. REAL DOM clicks on the ADJUST buttons.
+  BATCH 4: edge-to-edge hinges land CENTERED (edge midpoint to midpoint — a
+  short edge centers on a long one; the click position ALONG an edge is
+  noise); "Offset along axis" row in the joint inspector (slider ±50 cm +
+  numeric, session-relative, applies deltas via adjustJoint) shifts the part
+  along the hinge/slide axis. Verified with real mouse drags on the slider.
+  176 tests. NEXT: Opus batch per the spec — on-canvas adjust handles,
+  generic hardware trio, weld-chain compiler collapse; motor invert toggle
+  queued in BACKLOG.
+- **M-JointEdit (Onshape-style joint adjust — actually moves the part) — DONE & browser-verified.**
+  ROOT INSIGHT from researching Onshape mates: a mate isn't baked once — it has
+  live offset/angle params that RE-SOLVE and MOVE the parts, plus a flip that
+  flips the part to the other side. NeoCad baked alignment at creation and never
+  re-applied it, so "Flip axis" only reversed the stored axis vector (motor
+  direction) and did nothing visible — the #1 "no way to modify the angle"
+  complaint. NEW: `adjustJoint(id,{rotate,slide})` rigidly turns/slides the LOOSE
+  piece about/along the world joint axis through the anchor (jointFrame +
+  rotatePieceAboutAxis/slidePieceAlongAxis in joints.ts), committed via
+  movePieceTransform (one undo, clamps slab). Inspector ADJUST row: ↺−15° /
+  ↻+15° / ⟲Flip(180°) / ←Slide→, labeled with which piece moves (the loose/
+  smaller one, matching the joint mover rule). Old Flip-axis/Swap-ends kept for
+  motion-direction. GHOST-DUPE: dumped the full render tree during place + pull-
+  drag — exactly ONE solid mesh + ONE inverted-hull outline per selected piece,
+  NO duplicate geometry. The "ghosts" are drop-shadows of lifted pieces or two
+  genuinely-overlapping solids (bad joint / stacked placement), not a render
+  bug. CLIP-TO-STAGE (the real "its clipping to stage" bug): clampAboveSlab's
+  on-slab test used the piece CENTRE, so a wide piece whose centre sits just
+  past the bench edge got clamped to the GROUND (y=0) while its body overhung
+  back onto the raised slab — sinking the overhang into the stage. Now the
+  floor is the slab top whenever the piece's FOOTPRINT (|x|−hx, |z|−hz) overlaps
+  the bench, ground only when fully clear; physics still tips a real overhang
+  off on Run. NEXT: gear/rack/screw couplings; the A→type→B joining GESTURE
+  stays a Fable task.
+- **M-JointFix2 (mover-by-size, huge-label bug, collapsible SCENE) — DONE & browser-verified.**
+  BAD-JOINT ROOT CAUSE: with both pieces free planJoint moved the FIRST-clicked
+  one, so clicking a big cylinder first ROTATED+SLID the whole cylinder onto a
+  thin dowel (the clipping screenshot). Now both-free → the SMALLER piece
+  (pieceVolume) moves; anchored still wins. GIANT "End" LABEL: FeatureMarker/
+  HeldPiece/JointEditor Html used drei `distanceFactor` → balloons to fill the
+  screen when the camera is close; removed it (fixed screen size like the
+  weight chip). SCENE tree is now a collapsible `<details>` card (SCENE · N)
+  with its own border/background so it stops blending into the inspector.
+- **M-JointAlign (flush face-mate fix + flat 2D joint symbols) — DONE & browser-verified.**
+  THE BIG JOINT BUG: joining two faces clipped instead of mating flush. Root
+  cause in features.ts — a box face's `axis` was the unsigned axis LINE
+  ([1,0,0] for BOTH the +x and −x faces), so planJoint could not tell which way
+  a face pointed. Faces now carry their true OUTWARD normal (−x face → [−1,0,0];
+  wedge bottom → [0,−1,0]). planJoint then separates ENGAGEMENT into two rules:
+  two faces mate ANTI-parallel (normals opposed → flush kiss, `faceMate` branch);
+  everything else (shaft→bore, peg→face, edge→edge) stays PARALLEL/co-axial as
+  before. `jointAxis` (stored motion axis) is now computed separately from the
+  alignment target. planJoint's `type` widened JointType→FastenerType so welds
+  can align too. Tests: face-mate flush + opposed normals; co-axial dowel-in-bore
+  unchanged. Browser-verified: two rotated boards hinge flush (survive Run);
+  a 45°-tilted dowel joints co-axial/vertical into a block (was the clipping
+  screenshot). GLYPHS are now FLAT 2D symbols in 3D planes (not chunky 3D):
+  ring-arc hinge, double-arrow slider, twin-ring axle lie in the joint-axis
+  plane; weld disc / bolt hex / nail / glue / spring billboard to camera.
+  meshBasicMaterial, DoubleSide, depthTest off (x-ray), toneMapped off.
+  STILL OPEN (Fable session): the A→type→B joining GESTURE itself (make it
+  "easy and concrete", motion-preview ghost before commit). NEXT Opus batch:
+  gear/rack/screw couplings (Jolt GearConstraint/RackAndPinionConstraint verified
+  exported) → then rebuild mechanisms.
+- **M-JointIdentity (maker renames + per-type 3D glyphs) — DONE & browser-verified.**
+  Labels now speak hardware (schema ids unchanged): Pivot→**Hinge**,
+  Cylindrical→**Axle**, Linear→**Slider**. FastenerMarker.tsx renders a distinct
+  screen-scaled 3D glyph per type, aligned per-frame to the live joint axis:
+  hinge = swing ARC whose sweep mirrors angleMin/Max + axis pin; slider =
+  travel arrow with end-stop ticks; axle = translucent bearing sleeve + spin
+  ring; weld = bead disc; bolt = hex head; nail = pin; glue = droplet; spring =
+  coil tether (world-space sibling mesh). Color language: orange = rigid bond,
+  blue = motion, green = elastic; selected = hot orange. Rigid badges X-RAY
+  (depthTest off) because they sit exactly at the mating interface and would
+  be buried between flush faces; motion glyphs stay depth-tested. Glyphs are
+  the click target for the joint inspector. NEXT (agreed in discussion, see
+  chat + this order): (1) gear/rack/screw COUPLINGS between existing joints —
+  Jolt's GearConstraint + RackAndPinionConstraint ARE exported by this binding
+  (verified at runtime); a coupling references two fastener ids + ratio;
+  (2) ball joint (SwingTwistConstraint, also exported); (3) pin-slot joint;
+  (4) mechanism library craft rebuild on top (real gear train, screw jack).
+  The JOINING-FLOW redesign (make A→type→B "easy and concrete", motion
+  preview ghosts before commit) is reserved for a Fable session per user.
+  DESIGN DOCTRINE from the joint discussion: joints must pass the "can a
+  maker point at the hardware?" test — Onshape's planar/parallel/tangent/
+  width mates are constraint-solver substitutes for physics and are
+  deliberately OMITTED (NeoCad's live physics already does their job).
+- **M-Placement (context-aware placement, de-anchored mechanisms, rope elasticity)
+  — DONE & browser-verified.** STOCK GHOST now rests ON the surface under the
+  cursor (rest height = floor + half-height-down, floor = slabTop on the bench
+  else 0) — WYSIWYG, no more 1.2 m sky-drop that stacked/clipped pieces onto
+  each other (the apparent "ghost duplicates" were two real overlapping pieces
+  from that drop, NOT a render bug — verified: exactly one solid mesh + one
+  outline per piece). MECHANISMS are placed via a MODE, not inserted at origin:
+  palette click → `placingMechanismId` + footprint ghost follows cursor →
+  ground click → `placeMechanismAt(pos)` (Esc cancels). NO MECHANISM IS
+  ANCHORED anymore (user-only Fix): every one is welded to a heavy concrete
+  BASE PLATE that just rests on the bench (`basePlate()` + `weld()` helpers in
+  mechanisms.ts); posts/stands/rails weld to it. `mechanismBounds()` sizes the
+  ghost. Test asserts no mechanism piece is `anchored` and each is one connected
+  assembly (catapult payload is the one allowed loose projectile). SWING GATE
+  rebuilt to read as a gate: two posts (hinge/latch) + a leaf hinged between
+  them with swing limits. ROPE ELASTICITY: new `Rope.elasticity` (0 = an
+  inextensible real rope, default; higher = bungee) drives edge compliance;
+  soft-body mLinearDamping + 12 iterations kill the old wiggle. Inspector's
+  "Stiffness" row is now "Springiness" (shows "rope" at 0, "bungee N%" above).
+- **M-Stability (bug batch: silent disintegration, teleports, dead audio) — DONE
+  & browser-verified.** IMPACT SOUNDS NEVER WORKED before this: Jolt's
+  OnContactAdded fires AFTER the solver kills the closing velocity, so live
+  GetLinearVelocity reads ~0 for every hit and nothing crossed the loudness
+  threshold — fix: capture per-body velocities BEFORE each step (preStepVel
+  map) and compute approach speed from those. Regression test asserts a
+  dropped block reports >2 m/s. PULL is now a SOFT tether (DistanceConstraint
+  min=max=0 + spring 4.5 Hz/damping 1, not a rigid PointConstraint): rigid
+  pulls generated unbounded force when the towed piece jammed against the
+  bench — enough to silently rip fasteners apart ("parts keep disappearing").
+  BREAKABLES need SUSTAINED overload (6 consecutive over-strength steps, or
+  3× strength once) — single solver spikes on deep contacts must not
+  disintegrate builds. clampAboveSlab now clamps ONLY the edited pieces
+  (whole-doc sweeps popped bystanders resting half off the bench edge on
+  every unrelated commit; sandbox resize still sweeps all). endPull clamps
+  exit SPIN (≤6 rad/s) and spinPull is capped ±8 rad/s (pinwheel-roll-away).
+  insertMechanism shifts new mechanisms +x clear of existing pieces (spawning
+  into a build exploded it). Dev hook `window.__audio` = {stats, state()}.
+- **M-Interaction (pull-drag, rotate ring, multi-select, breakable bonds) — DONE
+  & browser-verified.** PULL-DRAG is the default running drag: a Jolt
+  PointConstraint "mouse joint" — kinematic sensor HAND body (mIsSensor, silent
+  in the contact listener) point-constrained at the clicked spot; pieces dangle/
+  pivot under their weight; mass felt via tow-speed cap (60/mass, ≤4 m/s) +
+  angular damping 1.5 during the pull; Ctrl/Cmd = old rigid kinematic carry.
+  GOTCHA: hand-rolled point-impulse grabs are UNSTABLE at long lever arms (limit
+  cycle at the ±25 rad/s cap — looks frozen under aliased sampling); also
+  emscripten's GetInverseInertiaDiagonal lives in the inertia PRINCIPAL frame
+  (GetInertiaRotation), not body frame. ROTATE RING (RotateRing.tsx): paused +
+  selected + HOLD ALT → one ring for the current axis; X/Y/Z switch axis; drags
+  snap to 15° (Shift = free); jointed pieces get the ring on their JOINT axis
+  and swing about the anchor (no-rotation joints show no ring). Ctrl-drag
+  paused = move whole fastened ASSEMBLY rigidly (connectedGroup BFS, one undo
+  via transient API; frame loop must skip group members during the drag).
+  MULTI-SELECT: selectedIds[] (selectedId = primary), Shift-click toggles,
+  Shift+drag on empty ground = marquee (catcher plane mounts only while Shift
+  held so click-deselect/orbit survive; store.marquee rect + App overlay div);
+  drag on a selected piece moves the whole selection; Delete removes all.
+  COACH TIPS (CoachMarks.tsx): first-use cards (pull/joint/rope/blower/paused-
+  edit/multi-select), "Got it" per tip + "don't show tips again", localStorage.
+  BREAKABLE RIGID FASTENERS: strength (N) per type (weld 9000 / bolt 6000 /
+  nail 2000 / glue 1200, per-fastener override in inspector, shown as "holds
+  ~X kg"); compiled as all-axes-fixed SixDOFConstraint because THIS BINDING
+  ONLY EXPOSES GetTotalLambdaPosition ON SixDOF (Jolt.FixedConstraint is not
+  exported); |lambda|/dt > strength → RemoveConstraint + onBreak → store.
+  breakFastener (NO undo entry — a physics event; doc change re-keys the world).
+  MECHANISMS: four-bar linkage (Grashof crank–rocker, motorized), catapult
+  (counterweight + angle-limited pivot + loose payload), rope swing (2 soft-body
+  ropes; MechanismBuild.ropes[] now supported by insertMechanism).
+- **M-Quality1 (bug-fix batch from user critique) — DONE & browser-verified.**
+  ROTATION ARCS REMOVED entirely (user: "lose them completely") — rotation is
+  Alt-drag for now; a better single-axis UX is under discussion, do NOT rebuild
+  gizmos without agreement. WEDGE stock (ConvexHull physics, custom prism
+  geometry in `render/mechanical.ts` `wedgeGeometry`, slope/apex features).
+  Selection outline is SCREEN-CONSTANT (~2px via per-frame camera-distance rim
+  in PieceMesh useFrame) — balls and dowels read the same. WEIGHT display:
+  `pieceMass`/`formatMass` (catalog.ts), inspector row + floating chip on the
+  selected piece. BLOWER tool (🌬): hold LMB while running → force cone along
+  the cursor ray (`applyBlower`, gentle 1/(1+0.02t²) falloff because the nozzle
+  is the camera 4–8 m out), strength slider in EnvPanel, faint cone visual.
+  DEPENETRATION: `clampAboveSlab` sweeps pieces out of the workbench slab on
+  movePieceTransform + endTransient commits (resize-into-stage bug). FLUSH
+  TWIST-SNAP in planJoint: after primary axis alignment the mover's roll about
+  the joint axis snaps to the stationary piece's nearest projected axis (≤45°)
+  so edge joints engage parallel. ALL fastener types (weld/glue/…) selectable
+  from tree + markers, not just joints. Joint inspector: pivot swing limits
+  (degrees→Jolt hinge mLimits), cylindrical canSpin/canSlide toggles (remap to
+  hinge/slider/fixed at compile). Contact hardening: Baumgarte 0.18 + per-joint
+  velocity/position iteration overrides. Audio: ensureAudio returns the
+  resume() promise (playBeep awaits it — the old sync check raced and silently
+  no-oped), arming also on keydown (spacebar slingshot can be the first
+  gesture). Shadow gap fixed: 4096 map + ±5 m shadow frustum + normalBias.
 - **M1 (playful building) — DONE & verified.** Place stock from a palette into a live
   Jolt world, held-piece placement (inert until released), play/pause/reset, materials,
   IndexedDB autosave + file save/open. See `docs/superpowers/plans/M1-verification-notes.md`.
@@ -47,14 +492,83 @@ Plans: `docs/superpowers/plans/` · Backlog: `docs/BACKLOG.md`
 - **M2.5 (builder UX quick wins) — DONE & verified.** Delete pieces/fasteners, scene tree
   (select + delete), keyboard shortcuts (Delete/Esc/Ctrl+Z/Y), empty-state hint, fastener
   count in status bar. See `docs/superpowers/plans/M2.5-verification-notes.md`.
-- **M-Transform (direct manipulation) — NEXT, NOT STARTED.** Tinkercad-style move/rotate/scale
-  gizmo, inline editable dimensions, live-intervene grab; auto-pause-on-grab. Spec written
-  (`docs/superpowers/specs/2026-06-18-neocad-builder-ux-design.md`), needs its own plan.
+- **M-Ropes (soft bodies, stage 1) — DONE & browser-verified.** Ropes are Jolt SOFT
+  BODIES (particle chain + edge constraints, skip-one edges resist kinks) — the first
+  non-rigid element. `Document.ropes[]` stores rest params only (length/slack/
+  stiffness/segments/radius/looped/attachments); live particle state is evaluation
+  state, never persisted. 🪢 Rope tool: click end A → end B (clicking a piece TIES
+  the rope there, piece-local anchor). Pinned ends follow their pieces kinematically;
+  Jolt pins are one-way, so `updateRopeAttachments` mirrors end-edge strain as force
+  onto dynamic pieces — a rope genuinely HOLDS a hanging weight (unit-tested).
+  GOTCHA: soft-body vertex positions are RELATIVE to the body's drifting origin —
+  always add `body.GetPosition()`. Looped ropes = flat two-strand belts (pulley-ready).
+  Render: per-segment cylinder chain driven imperatively. Inspector: thickness/slack/
+  stiffness/segments/looped/delete; scene-tree rows. `hemp` material added.
+- **M-BuilderUX5 (motors, springs, mechanisms, materials) — DONE & browser-verified.**
+  FIXED the "joints act like springs" bug: the frame loop no longer steps/syncs a
+  STALE physics world (build-key gate in Scene.tsx) — align-on-create now sticks while
+  running. Fastened pairs only skip contact when their shapes overlap at the join
+  (doors can't clip through posts). MOTORS on pivot (rad/s + torque) and linear (m/s +
+  force) joints via the joint inspector; SPRING joint type (Jolt DistanceConstraint,
+  stiffness Hz/damping/rest length, wireframe tether visual); MECHANISMS palette
+  (see-saw, pendulum, swing gate, motorized crank-slider — plain pieces, fully
+  editable; crank-slider reciprocation is unit-tested). 30-material library with
+  honest densities (woods/rubbers/plastics/metals/minerals/ice), texture by family.
+  Env: hurricane mode (×6), drifting wind-direction arrows, camera quake-judder +
+  wind sway, rocks aim at the CURSOR with 10 jittered tumbling shapes. Sound: audio
+  re-arms on every gesture + 🔊 beep confirmation; dev `window.__impactCount`.
+  Alt-duplicate is paused-only. Palette: emoji icons + collapsible sections.
+- **M-BuilderUX4 (modifiers, forces, arcs, inspector) — DONE & browser-verified.**
+  Alt BEFORE click = drag a duplicate (drag survives the world rebuild); Alt DURING
+  drag = rotate in place (+Shift tilts about camera-right); dimension EXTENSION LINES
+  with end ticks during resize; joint tool reverts to Move after each joint; recovery
+  ladder (Put back / 🧹 Tidy / Adopt pose); wind (tips structures — pushes above the
+  midline), earthquake, spacebar slingshot (rocks on LAYER_PROJECTILE fly over the
+  sandbox walls; walls still contain pieces); velocity caps + softer Baumgarte;
+  TransformControls REPLACED by custom per-axis rotation arcs (RotateArcs.tsx) that
+  live on the bounding-box shell with the resize handles — no more gizmo fights;
+  joint inspector (flip axis / swap ends / numeric limits); procedural material
+  textures (render/textures.ts, canvas-generated, color multiplies through).
+- **M-BuilderUX3 (direct-manipulation polish) — DONE & browser-verified.** Corner resize
+  handles anchor the OPPOSITE corner (Tinkercad-style) with live cm dimension bubbles;
+  a lift cone raises/lowers pieces; rotate rings are always on while paused (no gizmo
+  modes); paused body-drag moves pieces — jointed pieces move ALONG their joint only
+  (slide within end stops / swing around the pivot axis) so users align motion after
+  joining; Shift while dragging lifts vertically; thin selection outline; view cube
+  (drei GizmoViewcube); zoom-extents (⛶ Fit, window event `neocad:fit`); linear joints
+  slide IN the mated face plane (not along the normal) and a JointEditor widget (select
+  a joint marker / tree row while paused) drags end-stop limits and re-aims the axis
+  on screen; sandbox workbench slab (Document.ground.sandbox, size slider when nothing
+  selected) with invisible walls so physics can't fling pieces away; capped drag speed
+  + clamped throw velocity; "Fix" affordance (pin in tree, F key); material/strength-
+  aware procedural impact sounds (WebAudio + Jolt ContactListenerJS, 🔊 toggle);
+  undo/redo bump worldEpoch so restored poses actually apply.
+- **M-BuilderUX2 (feature joints, resize handles, slider inspector) — DONE & browser-verified.**
+  Joints snap to part FEATURES (bore/centerline/ends/edges/face centers — see
+  `document/features.ts`), suggest their type from the pairing (bore→cylindrical,
+  edge→pivot, face+face→linear), and ALIGN the loose piece so anchors coincide before
+  constraining (`document/joints.ts` planJoint — no yank on Run). Linear/cylindrical
+  joints get slide END STOPS from the guide piece's extent (a gear can't fall off its
+  axle). Fastened pairs don't contact-collide (Jolt GroupFilterTable). Tinkercad-style
+  white resize handles (base corners = plan resize, top = height, base-fixed) live
+  alongside the Move/Rotate gizmo when paused; whole-gesture = one undo (transient API).
+  Inspector uses labeled cm sliders (Length/Width/Height/Radius/Thickness/Teeth).
+  Dev-only `window.__neocadStore` + `window.__camera` power Playwright e2e checks.
+- **M-BuilderUX (drag, gizmo, joints, mechanical stock) — DONE, needs hands-on feel pass.**
+  Tinkercad-style presentation (white bg, soft hemisphere+key lighting, light grid, orbit
+  clamped above ground); selection = orange inverted-hull outline (shading untouched);
+  default tool drags pieces across the canvas while the sim runs (kinematic grab, throwable)
+  and becomes a move/rotate/scale TransformControls gizmo when paused; dropping stock onto a
+  piece opens an attach dialog (weld/glue/bolt/nail, pivot/cylindrical/linear, or none —
+  physics pauses while it's open); Joint tool places point A → type → point B joints
+  (pivot=hinge, linear=slider, cylindrical=6-DOF) with piece-local anchors; mechanical
+  stock (gear/pinion/ratchet/cam/pulley/axle/pin) with real silhouettes, cylinder collision.
 - **Guidance Rings 2 & 3 — NOT STARTED.** Spec §13 amendment added a guidance layer; M2
   shipped Ring 1 (proximity) only. Ring 2 (rule-based nudges) then Ring 3 (LLM "what do you
   want to make?", needs the §12 backend-key decision) are a later **Guidance milestone**.
-- **M3 (mechanisms) — NOT STARTED.** Hinge/slider/ball/rope fasteners, motors
-  (axle/wheel), pulley + driven-cart demos, incremental physics-world updates.
+- **M3 (mechanisms) — PARTIALLY LANDED via M-BuilderUX.** Hinge/slider/cylindrical shipped
+  as joints. Remaining: ball/rope fasteners, motors (axle/wheel), gear-mesh physics,
+  pulley + driven-cart demos, incremental physics-world updates.
 
 ## Tech stack
 
@@ -65,7 +579,7 @@ static build → GitHub Pages.
 
 ## Architecture (key files)
 
-- `src/document/` — the source-of-truth document.
+- `src/document/` — the source-of-truth document (`math.ts` = three-free vec/quat helpers).
   - `types.ts` — Document (Definition + State), Piece, Material, Ground.
   - `catalog.ts` — real-world STOCK → engine primitive mapping + `makePiece`.
   - `document.ts` / `store.ts` — pure ops + Zustand store (undo/redo, activeTool, running, reset).
@@ -86,6 +600,18 @@ static build → GitHub Pages.
 
 ## Conventions / gotchas
 
+- **Selection signal is an outline, never shading** (`PieceMesh` inverted hull; orange =
+  selected, green = proximity/joint target).
+- **Joint fasteners store anchors/axis in piece-LOCAL space**; `integration.ts` converts to
+  world at compile time using current State, so rebuilds stay consistent after motion.
+- **Gizmo commits must bump `worldEpoch`** (`movePieceTransform`) or the paused Jolt body
+  keeps the old pose and Run snaps the piece back.
+- **Joint clicks snap to features; the CLICKED point is not the anchor.** Mechanical
+  parts have real bore holes — a ray through the hole hits nothing (e2e scripts must
+  aim at the disc, not the center).
+- **Directly-fastened pairs don't collide** (GroupFilterTable) — required because
+  mechanical stock collides as solid cylinders.
+
 - **Physics is ambient.** `running` defaults true; Pause freezes stepping.
 - **State sync mutates pieces in place** every frame and must NOT go through undo/redo —
   only structural Definition edits are undoable.
@@ -98,7 +624,7 @@ static build → GitHub Pages.
 ## Commands
 
 - `npm run dev` — dev server (Vite).
-- `npm test` — Vitest (23 tests; includes deterministic physics scenarios).
+- `npm test` — Vitest (114 tests; includes deterministic physics scenarios).
 - `npm run build` — production build → `dist/`.
 - Deploy: push to `main` triggers `.github/workflows/deploy.yml` (GitHub Pages).
   Enable Pages → "GitHub Actions" in repo settings once.

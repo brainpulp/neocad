@@ -16,9 +16,9 @@ it('a dropped block lands and rests on the ground (deterministic, fixed dt)', ()
   for (let i = 0; i < 180; i++) world.step(1 / 60) // 3 seconds
   world.syncToDocument(doc)
   const y = doc.pieces[0].state.transform.position[1]
-  // Half-extent is 0.15; Jolt allows ~0.02m penetration slop, so rest ≈ 0.13.
-  expect(y).toBeGreaterThan(0.12)
-  expect(y).toBeLessThan(0.16)
+  // Half-extent 0.15 on the 0.05-thick workbench slab (minus Jolt's ~0.02m slop).
+  expect(y).toBeGreaterThan(0.17)
+  expect(y).toBeLessThan(0.21)
   world.dispose()
 })
 

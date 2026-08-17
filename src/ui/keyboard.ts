@@ -1,4 +1,4 @@
-export type KeyAction = 'delete' | 'cancel' | 'undo' | 'redo'
+export type KeyAction = 'delete' | 'cancel' | 'undo' | 'redo' | 'fix'
 
 interface KeyLike {
   key: string
@@ -14,6 +14,7 @@ export function keyToAction(e: KeyLike): KeyAction | null {
   if (mod && (e.key === 'y' || e.key === 'Y')) return 'redo'
   if (e.key === 'Delete' || e.key === 'Backspace') return 'delete'
   if (e.key === 'Escape') return 'cancel'
+  if (!mod && (e.key === 'f' || e.key === 'F')) return 'fix' // pin/unpin the selection
   return null
 }
 
